@@ -42,19 +42,42 @@ if [[ ! -d "${APP_DIR}/.git-kioku" ]]; then
 fi
 
 # -----------------------------------------------------------------------------
-# ファイル同期
+# kioku リポの .git を復元して、まず next ブランチに切り替える (clean WT を確保)
+#
+# 重要: rsync より「先に」branch checkout を済ませる。WT を dirty にしてから
+# checkout すると「上書きされちゃうよ」と git にアボートされるため。
 # -----------------------------------------------------------------------------
 
+cd "${APP_DIR}"
+mv .git-kioku .git
+trap 'cd "${APP_DIR}" && [[ -d .git ]] && mv .git .git-kioku 2>/dev/null || true' EXIT
+
+# next ブランチに切り替え (なければ作成)
+if git show-ref --quiet refs/heads/next 2>/dev/null; then
+  git checkout next --quiet
+else
+  git checkout -b next --quiet
+  echo "  [created] next branch"
+fi
+
+# -----------------------------------------------------------------------------
+# ファイル同期 (clean な next の上に親リポの最新を被せる → 差分 = 今回の追加分)
+# -----------------------------------------------------------------------------
+
+cd "${BRAIN_DIR}"
 echo "=== sync-to-app: copying from parent to app/ ==="
 
 # 同期対象ディレクトリ
 # mcp/ は Phase M で追加された独立 npm プロジェクト。node_modules/ はユーザーが
 # `bash scripts/setup-mcp.sh` で導入するため、rsync 側でも除外する。
+# Phase N で追加した build/ と dist/ (MCPB バンドルのビルド成果物) も同様に除外。
 for dir in hooks scripts templates skills tests mcp; do
   if [[ -d "${BRAIN_DIR}/${dir}" ]]; then
     rsync -a --delete \
       --exclude='.git*' \
       --exclude='node_modules' \
+      --exclude='build' \
+      --exclude='dist' \
       "${BRAIN_DIR}/${dir}/" "${APP_DIR}/${dir}/"
     echo "  [synced] ${dir}/"
   fi
@@ -77,22 +100,10 @@ fi
 echo ""
 
 # -----------------------------------------------------------------------------
-# kioku リポの .git を復元して操作
+# 差分確認 / commit / push
 # -----------------------------------------------------------------------------
 
 cd "${APP_DIR}"
-mv .git-kioku .git
-trap 'cd "${APP_DIR}" && mv .git .git-kioku' EXIT
-
-# next ブランチに切り替え (なければ作成)
-if git show-ref --quiet refs/heads/next 2>/dev/null; then
-  git checkout next --quiet
-else
-  git checkout -b next --quiet
-  echo "  [created] next branch"
-fi
-
-# 差分確認
 git add -A
 if git diff --cached --quiet; then
   echo "=== sync-to-app: no changes to sync ==="
@@ -106,7 +117,10 @@ echo ""
 
 if [[ "${DRY_RUN}" == "1" ]]; then
   echo "=== sync-to-app: DRY RUN — no commit made ==="
+  # rsync で持ち込んだ WT 変更を破棄して next の HEAD に戻す
   git reset HEAD --quiet
+  git checkout -- .
+  git clean -fd >/dev/null
   git checkout main --quiet 2>/dev/null || true
   exit 0
 fi
