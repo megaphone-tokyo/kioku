@@ -220,6 +220,19 @@ Six tools provided:
 - Use `kioku_write_wiki` only when the user explicitly wants the page to appear immediately
 - Coexists with the existing qmd MCP (HTTP :8181). Prefer the qmd MCP `search` tool when available; `kioku_search` is the fallback.
 
+##### Persistence & when to re-run
+
+**Once installed, you do not need to restart or re-run anything on reboot.** The MCP server is spawned on-demand by Claude Desktop / Claude Code when a new conversation opens, and terminates when the conversation ends — there's no daemon to manage. OS reboots, Desktop relaunches, and Claude Code restarts all "just work".
+
+Re-run the steps only in these specific cases:
+
+| Trigger | Re-run |
+|---|---|
+| Moved the repo to a different directory | Steps 3 & 5 (they record absolute paths to `mcp/server.mjs`) |
+| Switched Node version (mise / nvm / Volta) | Step 3 (the script hardcodes `command -v node`) |
+| Changed the `OBSIDIAN_VAULT` env var | Step 3 (the value is baked into the config at apply time) |
+| `@modelcontextprotocol/sdk` major version bump | Step 1 (`setup-mcp.sh` to refresh `node_modules`) |
+
 Uninstall:
 
 ```bash
@@ -262,6 +275,20 @@ bash scripts/build-mcpb.sh --clean
 The bundle is **gitignored** (`mcp/build/`, `mcp/dist/`). To publish a new release, run `build-mcpb.sh` and attach the resulting `.mcpb` to a new [GitHub Release](https://github.com/megaphone-tokyo/kioku/releases). End users will then download it via Option A.
 
 The traditional install paths in step 10 still work — MCPB is purely an *additional* delivery channel for Desktop-first users.
+
+##### Persistence & when to re-install
+
+**Once installed, the `.mcpb` persists through reboots and Desktop restarts.** Claude Desktop auto-spawns the server when a new conversation opens — you don't need to relaunch anything manually.
+
+Re-install only in these cases:
+
+| Trigger | Action |
+|---|---|
+| Moved your Obsidian Vault directory | Re-run the install (the dialog will re-ask for Vault directory) OR edit `~/Library/Application Support/Claude/claude_desktop_config.json` manually |
+| New `.mcpb` version released | Download the new `.mcpb` and drag-install; Desktop replaces the existing extension in place |
+| Uninstalled via Settings → Connectors by accident | Drag the same `.mcpb` back in |
+
+Unlike § 10, MCPB is self-contained — **switching Node versions or updating `@modelcontextprotocol/sdk` do NOT affect an already-installed `.mcpb`** (the bundle ships its own dependencies and launches via Desktop's built-in Node runtime).
 
 <br>
 

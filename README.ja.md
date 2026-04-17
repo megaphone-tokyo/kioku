@@ -229,6 +229,19 @@ claude mcp add --scope user --transport stdio kioku \
 - 即時反映が必要な時だけ `kioku_write_wiki`
 - 既存の qmd MCP (HTTP :8181) と共存。検索は qmd MCP の `search` を優先 (kioku_search はフォールバック)
 
+##### 永続性と再実行のタイミング
+
+**一度インストールすれば、再起動後も何もしなくて OK です。** MCP サーバーは Claude Desktop / Claude Code が新しい会話を開くたびに on-demand で起動され、会話終了で自動 kill されます — daemon として常駐管理する必要はありません。OS 再起動 / Desktop の再起動 / Claude Code の再起動すべて、**勝手に動きます**。
+
+以下のケースでのみ再実行が必要:
+
+| 条件 | 再実行するステップ |
+|---|---|
+| リポを別ディレクトリに移動した | ステップ 3 と 5 (`mcp/server.mjs` の絶対パスが config に焼かれているため) |
+| Node のバージョンを切り替えた (mise / nvm / Volta) | ステップ 3 (`command -v node` の絶対パスがハードコードされる) |
+| `OBSIDIAN_VAULT` 環境変数を変更した | ステップ 3 (apply 時の値が config に焼き込まれる) |
+| `@modelcontextprotocol/sdk` がメジャーアップデートされた | ステップ 1 (`setup-mcp.sh` で `node_modules` を更新) |
+
 アンインストール:
 
 ```bash
@@ -271,6 +284,20 @@ bash scripts/build-mcpb.sh --clean
 バンドルは **gitignore 対象** (`mcp/build/`, `mcp/dist/`)。新リリース公開時は `build-mcpb.sh` でビルドし、生成された `.mcpb` を新しい [GitHub Release](https://github.com/megaphone-tokyo/kioku/releases) に添付してください。エンドユーザーは Option A 経由でダウンロードできます。
 
 手順 10 の従来のインストール経路もそのまま使えます。MCPB は Desktop 中心ユーザー向けの**追加チャンネル**であり、置き換えではありません。
+
+##### 永続性と再インストールのタイミング
+
+**一度インストールすれば、再起動後も `.mcpb` はそのまま動き続けます。** Claude Desktop が新しい会話を開くたびに自動で server プロセスを起動してくれるので、ユーザー側で何かを手動起動する必要はありません。
+
+以下のケースでのみ再インストール:
+
+| 条件 | 対応 |
+|---|---|
+| Obsidian Vault ディレクトリを移動した | `.mcpb` を再インストール (ダイアログで Vault directory を再入力) または `~/Library/Application Support/Claude/claude_desktop_config.json` を手動編集 |
+| 新しい `.mcpb` バージョンがリリースされた | Releases から新しい `.mcpb` をダウンロードして drag-install。Desktop が既存の拡張を上書き更新 |
+| 誤って 設定 → Connectors でアンインストールした | 同じ `.mcpb` を再度ドラッグ |
+
+手順 10 と違い、MCPB は自己完結型です — **Node バージョン切り替え / `@modelcontextprotocol/sdk` アップデートは、インストール済み `.mcpb` に影響しません** (バンドル自体が依存を同梱しており、Desktop 内蔵の Node ランタイムで起動するため)。
 
 <br>
 
