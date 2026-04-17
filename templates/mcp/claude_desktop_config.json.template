@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "kioku-wiki": {
+      "command": "__NODE_BIN__",
+      "args": ["__SERVER_PATH__"],
+      "env": {
+        "OBSIDIAN_VAULT": "__OBSIDIAN_VAULT__"
+      }
+    }
+  }
+}

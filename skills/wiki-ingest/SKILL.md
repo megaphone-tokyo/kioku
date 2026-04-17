@@ -1,11 +1,11 @@
 ---
 name: wiki-ingest
-description: "特定のファイル・ディレクトリ、または最近の git 変更を KIOKU Wiki に取り込む軽量版 ingest。`/wiki-ingest <path>` でパス指定、`/wiki-ingest` 引数なしで最近のコミット差分を対象にする。日常的な単発ingest 用途。プロジェクト全体を一括投入したい時は `/wiki-ingest-all` を使う。"
+description: "特定のファイル・ディレクトリ、または最近の git 変更を claude-brain Wiki に取り込む軽量版 ingest。`/wiki-ingest <path>` でパス指定、`/wiki-ingest` 引数なしで最近のコミット差分を対象にする。日常的な単発ingest 用途。プロジェクト全体を一括投入したい時は `/wiki-ingest-all` を使う。"
 ---
 
 # wiki-ingest
 
-特定ファイル or 最近の git 変更から知見を抽出して KIOKU Wiki に取り込むスキル。`/wiki-ingest-all` の軽量版で、日常的に気になる点だけ Wiki に落とすために使う。
+特定ファイル or 最近の git 変更から知見を抽出して claude-brain Wiki に取り込むスキル。`/wiki-ingest-all` の軽量版で、日常的に気になる点だけ Wiki に落とすために使う。
 
 ## いつ使うか
 

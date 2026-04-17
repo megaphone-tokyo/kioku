@@ -8,12 +8,12 @@
 # 配下を既知の秘密パターンで grep し、マスキング漏れを検知する。
 #
 # 使用例:
-#   bash scripts/scan-secrets.sh                # 既定の Vault をスキャン
+#   bash tools/claude-brain/scripts/scan-secrets.sh                # 既定の Vault をスキャン
 #   OBSIDIAN_VAULT=/path bash scan-secrets.sh                      # 別の Vault
 #   bash scan-secrets.sh --json                                    # JSON サマリ出力 (機械可読)
 #
 # 環境変数:
-#   OBSIDIAN_VAULT   Vault ルート (未設定時は $HOME/kioku/main-kioku)
+#   OBSIDIAN_VAULT   Vault ルート (未設定時は $HOME/claude-brain/main-claude-brain)
 #
 # 終了コード:
 #   0  スキャン完了 (ヒットの有無に関わらず正常終了)
@@ -21,13 +21,13 @@
 #   2  マスキング漏れが 1 件以上見つかった (cron から監視したいとき用)
 #
 # cron からの利用例 (月次):
-#   0 9 1 * * /ABS/scan-secrets.sh >> "$HOME/KIOKU-scan.log" 2>&1
+#   0 9 1 * * /ABS/scan-secrets.sh >> "$HOME/claude-brain-scan.log" 2>&1
 
 set -euo pipefail
 
 LOG_PREFIX="[scan-secrets $(date +%Y%m%d-%H%M)]"
 
-OBSIDIAN_VAULT="${OBSIDIAN_VAULT:-${HOME}/kioku/main-kioku}"
+OBSIDIAN_VAULT="${OBSIDIAN_VAULT:-${HOME}/claude-brain/main-claude-brain}"
 
 # NEW-001: OBSIDIAN_VAULT のバリデーション (JSON フォールバック時のインジェクション防止)
 validate_vault_path() {
@@ -126,7 +126,7 @@ PATTERNS=(
 # -----------------------------------------------------------------------------
 # スキャン
 #
-# - `*.md` のみ対象 (session-logs/.KIOKU/errors.log などは除外)
+# - `*.md` のみ対象 (session-logs/.claude-brain/errors.log などは除外)
 # - ファイル名は sanitized 済みなので改行を含まない前提
 # - 各パターンのヒット件数を集計し、詳細は stderr に出力
 # -----------------------------------------------------------------------------

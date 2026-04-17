@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# auto-lint.sh — KIOKU 自動 Lint スクリプト (Phase G)
+# auto-lint.sh — claude-brain 自動 Lint スクリプト (Phase G)
 #
 # cron から呼び出され、wiki/ の健全性レポートを wiki/lint-report.md に出力する。
 # レポート生成のみ。自動修正はしない (--allowedTools に Edit を含めない)。
 #
 # 環境変数:
-#   OBSIDIAN_VAULT   Vault ルート (未設定時は $HOME/kioku/main-kioku)
+#   OBSIDIAN_VAULT   Vault ルート (未設定時は $HOME/claude-brain/main-claude-brain)
 #   KIOKU_DRY_RUN=1  claude -p を呼ばず、コマンドをログ出力するだけ (テスト用)
 #
 # 終了コード:
@@ -22,7 +22,7 @@ LOG_PREFIX="[auto-lint $(date +%Y%m%d-%H%M)]"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-OBSIDIAN_VAULT="${OBSIDIAN_VAULT:-${HOME}/kioku/main-kioku}"
+OBSIDIAN_VAULT="${OBSIDIAN_VAULT:-${HOME}/claude-brain/main-claude-brain}"
 
 # R4-001: OBSIDIAN_VAULT のバリデーション
 validate_vault_path() {

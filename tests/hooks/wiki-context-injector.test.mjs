@@ -1,6 +1,6 @@
 // wiki-context-injector.test.mjs — hooks/wiki-context-injector.mjs のユニットテスト
 //
-// 実行: node --test tests/hooks/wiki-context-injector.test.mjs
+// 実行: node --test tools/claude-brain/tests/hooks/wiki-context-injector.test.mjs
 //
 // 原則:
 //   - 実 Vault を触らない (mktemp -d)
@@ -24,10 +24,10 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const INJECTOR_PATH = join(__dirname, '..', 'hooks', 'wiki-context-injector.mjs');
+const INJECTOR_PATH = join(__dirname, '..', '..', 'hooks', 'wiki-context-injector.mjs');
 
 async function createVault() {
-  const root = await mkdtemp(join(tmpdir(), 'kioku-injector-test-'));
+  const root = await mkdtemp(join(tmpdir(), 'claude-brain-injector-test-'));
   const vault = join(root, 'vault');
   await mkdir(join(vault, 'wiki'), { recursive: true });
   return { root, vault };

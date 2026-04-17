@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# install-launchagents.sh — macOS 用 KIOKU 定期実行セットアップ (Phase L)
+# install-launchagents.sh — macOS 用 claude-brain 定期実行セットアップ (Phase L)
 #
 # templates/launchd/*.plist.template をプレースホルダ置換して
 # $HOME/Library/LaunchAgents/ (または CLAUDE_LAUNCHAGENTS_DIR) に配置し、
@@ -287,7 +287,7 @@ if [[ "${DRY_RUN}" -eq 0 ]] && [[ "${KIOKU_SKIP_LOAD:-0}" != "1" ]]; then
 ============================================================
 
   # 登録状態
-  launchctl list | grep KIOKU
+  launchctl list | grep kioku
 
   # 詳細
   launchctl print gui/\$(id -u)/com.kioku.ingest | head -30

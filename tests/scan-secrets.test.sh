@@ -2,7 +2,7 @@
 #
 # scan-secrets.test.sh — scripts/scan-secrets.sh のスモークテスト
 #
-# 実行: bash tests/scan-secrets.test.sh
+# 実行: bash tools/claude-brain/tests/scan-secrets.test.sh
 #
 # 検証項目:
 #   S1 OBSIDIAN_VAULT が存在しない → exit 1
@@ -17,8 +17,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-SCAN_SCRIPT="${REPO_ROOT}/scripts/scan-secrets.sh"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+SCAN_SCRIPT="${REPO_ROOT}/tools/claude-brain/scripts/scan-secrets.sh"
 
 TMPROOT="$(mktemp -d)"
 trap 'rm -rf "${TMPROOT}"' EXIT
@@ -186,9 +186,9 @@ assert_contains "${out_s6b}" '"total_hits"' "S6b JSON total_hits present"
 echo "test S7: non-md files not scanned"
 VAULT_S7="$(make_vault vault-s7)"
 # session-logs/ 直下の .log は対象外であるべき (errors.log など)
-mkdir -p "${VAULT_S7}/session-logs/.KIOKU"
+mkdir -p "${VAULT_S7}/session-logs/.claude-brain"
 printf 'ghp_abcdefghijklmnopqrstuvwxyz0123456789\n' \
-  > "${VAULT_S7}/session-logs/.KIOKU/errors.log"
+  > "${VAULT_S7}/session-logs/.claude-brain/errors.log"
 
 set +e
 out_s7="$(OBSIDIAN_VAULT="${VAULT_S7}" bash "${SCAN_SCRIPT}" 2>&1)"

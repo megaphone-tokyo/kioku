@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// session-logger.mjs — KIOKU Hook 本体
+// session-logger.mjs — claude-brain Hook 本体
 //
 // Claude Code の Hook イベントを stdin JSON で受け取り、1 セッション = 1 Markdown
 // ファイルとして $OBSIDIAN_VAULT/session-logs/ に追記する。
@@ -72,7 +72,7 @@ const MASK_RULES = [
 
 function debugLog(ctx, msg) {
   if (process.env.KIOKU_DEBUG !== '1') return;
-  process.stderr.write(`[kioku] ${msg}\n`);
+  process.stderr.write(`[claude-brain] ${msg}\n`);
   writeErrorLog(ctx, `DEBUG: ${msg}`).catch(() => {});
 }
 
@@ -517,7 +517,7 @@ async function main() {
   }
 
   const sessionLogsDir = join(vault, 'session-logs');
-  const internalDir = join(sessionLogsDir, '.kioku');
+  const internalDir = join(sessionLogsDir, '.claude-brain');
   const indexPath = join(internalDir, 'index.json');
   const ctx = { vault, sessionLogsDir, internalDir, indexPath };
 
@@ -572,7 +572,7 @@ async function main() {
 }
 
 process.on('unhandledRejection', (err) => {
-  process.stderr.write(`[kioku] unhandledRejection: ${err && err.message}\n`);
+  process.stderr.write(`[claude-brain] unhandledRejection: ${err && err.message}\n`);
   process.exit(0);
 });
 

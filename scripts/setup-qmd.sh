@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 #
-# 0 Phase J: qmd Wiki 検索セットアップ
+# setup-qmd.sh — claude-brain Phase J: qmd Wiki 検索セットアップ
 #
 # Vault 配下の wiki / raw-sources / session-logs を qmd のコレクションとして登録し、
 # 初回 BM25 インデックス + ベクトル埋め込みを生成する。MCP サーバーの起動は
 # install-qmd-daemon.sh が担当する。
 #
 # 環境変数:
-#   OBSIDIAN_VAULT  Vault ルート (未設定時は $HOME/kioku/main-kioku)
+#   OBSIDIAN_VAULT  Vault ルート (未設定時は $HOME/claude-brain/main-claude-brain)
 #   KIOKU_QMD_SKIP_EMBED=1  ベクトル埋め込み生成をスキップ (テスト用)
 #
 # 終了コード:
@@ -35,7 +35,7 @@ for arg in "$@"; do
   esac
 done
 
-OBSIDIAN_VAULT="${OBSIDIAN_VAULT:-${HOME}/kioku/main-kioku}"
+OBSIDIAN_VAULT="${OBSIDIAN_VAULT:-${HOME}/claude-brain/main-claude-brain}"
 
 # R4-001: OBSIDIAN_VAULT のバリデーション
 validate_vault_path() {

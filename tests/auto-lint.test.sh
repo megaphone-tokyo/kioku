@@ -2,7 +2,7 @@
 #
 # auto-lint.test.sh — scripts/auto-lint.sh のスモークテスト
 #
-# 実行: bash tests/auto-lint.test.sh
+# 実行: bash tools/claude-brain/tests/auto-lint.test.sh
 #
 # 検証項目 (Phase G.5 / G1〜G5):
 #   G1 wiki ページ 0 件 → claude 呼ばず exit 0
@@ -14,8 +14,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-AUTO_LINT="${REPO_ROOT}/scripts/auto-lint.sh"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+AUTO_LINT="${REPO_ROOT}/tools/claude-brain/scripts/auto-lint.sh"
 
 TMPROOT="$(mktemp -d)"
 trap 'rm -rf "${TMPROOT}"' EXIT

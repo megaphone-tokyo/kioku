@@ -2,7 +2,7 @@
 #
 # install-hooks.test.sh — scripts/install-hooks.sh のスモークテスト
 #
-# 実行: bash tests/install-hooks.test.sh
+# 実行: bash tools/claude-brain/tests/install-hooks.test.sh
 #
 # 検証項目:
 #   - OBSIDIAN_VAULT 未設定なら exit 1
@@ -15,8 +15,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-INSTALL_HOOKS="${REPO_ROOT}/scripts/install-hooks.sh"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+INSTALL_HOOKS="${REPO_ROOT}/tools/claude-brain/scripts/install-hooks.sh"
 
 TMPROOT="$(mktemp -d)"
 trap 'rm -rf "${TMPROOT}"' EXIT

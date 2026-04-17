@@ -1,11 +1,11 @@
 ---
 name: wiki-ingest-all
-description: "現在のプロジェクト全体を網羅的に探索し、設計判断・技術選択・アーキテクチャ・パターン・失敗事例を KIOKU Wiki に一括投入する。`/wiki-ingest-all` で起動。既存プロジェクトの backfill (Wiki にまだ記録されていない過去の知見を 1 回で取り込む) が主用途。新規プロジェクトを初めて Wiki に載せる時にも使える。トークン消費を気にせず深く探索する想定。"
+description: "現在のプロジェクト全体を網羅的に探索し、設計判断・技術選択・アーキテクチャ・パターン・失敗事例を claude-brain Wiki に一括投入する。`/wiki-ingest-all` で起動。既存プロジェクトの backfill (Wiki にまだ記録されていない過去の知見を 1 回で取り込む) が主用途。新規プロジェクトを初めて Wiki に載せる時にも使える。トークン消費を気にせず深く探索する想定。"
 ---
 
 # wiki-ingest-all
 
-現在の作業ディレクトリ (`$(pwd)`) にあるプロジェクトを網羅的に読み取り、KIOKU Wiki (`$OBSIDIAN_VAULT/wiki/`) に知見を書き込むスキル。
+現在の作業ディレクトリ (`$(pwd)`) にあるプロジェクトを網羅的に読み取り、claude-brain Wiki (`$OBSIDIAN_VAULT/wiki/`) に知見を書き込むスキル。
 
 ## いつ使うか
 
@@ -280,7 +280,7 @@ cd ~/projects/projectB
 # 完了後、MacBook で commit & push
 cd "$OBSIDIAN_VAULT/.."
 git status
-git add main-KIOKU/wiki/ main-KIOKU/raw-sources/
+git add main-claude-brain/wiki/ main-claude-brain/raw-sources/
 git commit -m "wiki: backfill N projects via wiki-ingest-all"
 git push
 ```

@@ -1,6 +1,6 @@
 // session-logger.test.mjs — hooks/session-logger.mjs のユニットテスト
 //
-// 実行: node --test tests/hooks/
+// 実行: node --test tools/claude-brain/tests/hooks/
 //
 // 原則:
 //   - 実 Vault を触らない (mktemp -d)
@@ -18,14 +18,14 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const HOOK_PATH = join(__dirname, '..', 'hooks', 'session-logger.mjs');
+const HOOK_PATH = join(__dirname, '..', '..', 'hooks', 'session-logger.mjs');
 
 // -----------------------------------------------------------------------------
 // ヘルパ
 // -----------------------------------------------------------------------------
 
 async function createVault() {
-  const dir = await mkdtemp(join(tmpdir(), 'kioku-test-'));
+  const dir = await mkdtemp(join(tmpdir(), 'claude-brain-test-'));
   const vault = join(dir, 'vault');
   await mkdir(vault, { recursive: true });
   return { root: dir, vault };
@@ -61,7 +61,7 @@ async function listSessionFiles(vault) {
 }
 
 async function readIndex(vault) {
-  const path = join(vault, 'session-logs', '.kioku', 'index.json');
+  const path = join(vault, 'session-logs', '.claude-brain', 'index.json');
   try {
     return JSON.parse(await readFile(path, 'utf8'));
   } catch {
@@ -672,7 +672,7 @@ describe('session-logger: index corruption recovery', () => {
   test('corrupted index.json is moved aside and new one created', async () => {
     const { root, vault } = await createVault();
     try {
-      const internalDir = join(vault, 'session-logs', '.kioku');
+      const internalDir = join(vault, 'session-logs', '.claude-brain');
       await mkdir(internalDir, { recursive: true });
       await writeFile(join(internalDir, 'index.json'), 'this is not json', 'utf8');
 

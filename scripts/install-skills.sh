@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# install-skills.sh — KIOKU のスキルを ~/.claude/skills/ に symlink で配置する
+# install-skills.sh — claude-brain のスキルを ~/.claude/skills/ に symlink で配置する
 #
 # Usage:
 #   bash install-skills.sh          # 冪等に symlink を作成

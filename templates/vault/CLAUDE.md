@@ -1,5 +1,5 @@
 <!--
-This file is managed by KIOKU setup-vault.sh.
+This file is managed by claude-brain setup-vault.sh.
 You can edit freely; it will not be overwritten on subsequent runs.
 -->
 
@@ -50,6 +50,21 @@ index.md の目次より高精度に関連ページを発見できます。
 qmd MCP ツールが Claude Code から見えない場合 (デーモン未起動・MCP 設定なし等) は、
 セッション開始時に注入された wiki/index.md の目次だけで関連ページを判断してください。
 qmd は **必須依存ではなく** Phase H (index.md 注入) と併用するオプション層です。
+
+## kioku-wiki MCP サーバー (Phase M / Claude Desktop 向け)
+
+Claude Desktop には Hook システムがないため、セッションログを自動収集できません。
+そこで `kioku-wiki` MCP サーバーが Wiki への手動経路を提供します:
+
+- `kioku_search` — Wiki 検索 (qmd MCP と同じ目的、`kioku_*` プレフィックスで重複回避)
+- `kioku_read` — wiki/<path>.md の内容を返す
+- `kioku_list` — wiki/ ディレクトリツリー
+- `kioku_write_note` (推奨) — ユーザーが「保存して」と言ったら呼ぶ。session-logs/ にメモを書き、次回 auto-ingest が wiki/ に構造化する
+- `kioku_write_wiki` (上級) — wiki/ への即時直書き。テンプレ準拠だが auto-ingest の整形を経ないので、ユーザーが「すぐ反映」と明示した時だけ使う
+- `kioku_delete` — wiki/.archive/ への移動 (復元可能)。wiki/index.md は不可
+
+**通常は qmd MCP の `search` を優先**。kioku-mcp の検索は qmd 不在環境のフォールバック。
+**書き込みは原則 `kioku_write_note`**。即時反映が必要なときだけ `kioku_write_wiki`。
 
 ## ディレクトリ規約
 

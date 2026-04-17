@@ -2,7 +2,7 @@
 #
 # setup-qmd.test.sh — scripts/setup-qmd.sh のスモークテスト (Phase J)
 #
-# 実行: bash tests/setup-qmd.test.sh
+# 実行: bash tools/claude-brain/tests/setup-qmd.test.sh
 #
 # 検証項目:
 #   J1  qmd 未インストール (PATH に無し)         -> exit 1 + 案内メッセージ
@@ -14,8 +14,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-SETUP_QMD="${REPO_ROOT}/scripts/setup-qmd.sh"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+SETUP_QMD="${REPO_ROOT}/tools/claude-brain/scripts/setup-qmd.sh"
 
 TMPROOT="$(mktemp -d)"
 trap 'rm -rf "${TMPROOT}"' EXIT

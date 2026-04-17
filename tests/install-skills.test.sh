@@ -2,7 +2,7 @@
 #
 # install-skills.test.sh — scripts/install-skills.sh のスモークテスト
 #
-# 実行: bash tests/install-skills.test.sh
+# 実行: bash tools/claude-brain/tests/install-skills.test.sh
 #
 # 検証項目:
 #   IS1 初回実行で wiki-ingest-all と wiki-ingest の 2 つの symlink が作成される
@@ -16,9 +16,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-INSTALL_SCRIPT="${REPO_ROOT}/scripts/install-skills.sh"
-SKILLS_SRC="${REPO_ROOT}/skills"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+INSTALL_SCRIPT="${REPO_ROOT}/tools/claude-brain/scripts/install-skills.sh"
+SKILLS_SRC="${REPO_ROOT}/tools/claude-brain/skills"
 
 TMPROOT="$(mktemp -d)"
 trap 'rm -rf "${TMPROOT}"' EXIT

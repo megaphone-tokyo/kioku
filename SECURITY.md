@@ -31,7 +31,7 @@ Instead, please report them via **GitHub Security Advisories**:
 
 ## Security Design
 
-KIOKU is a Hook system that accesses **all Claude Code session I/O**. This section documents the security architecture.
+claude-brain is a Hook system that accesses **all Claude Code session I/O**. This section documents the security architecture.
 
 ### Threat Model
 
@@ -54,8 +54,8 @@ KIOKU is a Hook system that accesses **all Claude Code session I/O**. This secti
 |---|---|---|
 | `session-logs/` (directory) | `0o700` | `session-logger.mjs` (`mkdir`) |
 | `session-logs/*.md` (log files) | `0o600` | `session-logger.mjs` (`writeFile` with `flag: 'wx'`) |
-| `session-logs/.kioku/` | `0o700` | `session-logger.mjs` (`mkdir`) |
-| `session-logs/.kioku/index.json` | `0o600` | `session-logger.mjs` (`writeFile`) |
+| `session-logs/.claude-brain/` | `0o700` | `session-logger.mjs` (`mkdir`) |
+| `session-logs/.claude-brain/index.json` | `0o600` | `session-logger.mjs` (`writeFile`) |
 | `hooks/session-logger.mjs` | `0o755` | `install-hooks.sh --apply` |
 | `hooks/wiki-context-injector.mjs` | `0o755` | `install-hooks.sh --apply` |
 | Vault directories (`wiki/`, etc.) | `umask 077` | `setup-vault.sh` |
@@ -82,3 +82,21 @@ Comprehensive security reviews are documented in [`security-review/`](security-r
 ### Network Policy
 
 Hook scripts (`session-logger.mjs`, `wiki-context-injector.mjs`) do **not** import `http`, `https`, `net`, or `dgram`. All network operations (git pull/push) are performed by shell one-liners in the Hook configuration, not by Node.js code.
+
+**Phase M / kioku-wiki MCP server**: The MCP server (`mcp/server.mjs`) runs as a separate process and may import the bundled `@modelcontextprotocol/sdk`. It uses **stdio transport only** — there is no `http`/`https`/`net`/`dgram` import in either `server.mjs` or any `tools/*.mjs` / `lib/*.mjs`. The server reads JSON-RPC messages from stdin and writes them to stdout; the parent client (Claude Desktop / Claude Code) is the only counterpart. The "stdlib only" policy is therefore scoped to **Hook scripts**; the MCP server is treated as an independent process boundary that may carry an SDK dependency.
+
+### Phase M Write Boundaries
+
+The MCP server adds write paths that did not exist before. The matrix:
+
+| Caller | Write target | Permissions | Boundary check |
+|---|---|---|---|
+| Hook (`session-logger.mjs`) | `session-logs/` | dir 0700 / file 0600 | (path-internal) |
+| cron (`auto-ingest.sh`, `auto-lint.sh`) | `wiki/` | inherits Vault perms | (no MCP gate) |
+| MCP `kioku_write_note` | `session-logs/` | dir 0700 / file 0600 | `assertInsideSessionLogs(rel)` |
+| MCP `kioku_write_wiki` | `wiki/` | file 0600 (atomic via tmpfile + rename) | `assertInsideWiki(rel)` |
+| MCP `kioku_delete` | `wiki/` → `wiki/.archive/` | dir 0700 (archive) | `assertInsideWiki(rel)` + `wiki/index.md` rejected |
+
+Cross-boundary writes (e.g. `kioku_write_wiki` pointing into `session-logs/`) are rejected at the realpath stage. All wiki/ writes are serialized through `$VAULT/.kioku-mcp.lock` (advisory flock with 30 s TTL) so MCP and `auto-ingest.sh` cannot collide. `MASK_RULES` (mirror of `session-logger.mjs`) is applied to every `body` argument before persistence.
+
+`scripts/install-mcp-client.sh` writes to `~/Library/Application Support/Claude/claude_desktop_config.json` only with `--apply`. It uses `jq` for idempotent merges, validates `OBSIDIAN_VAULT` against `^[a-zA-Z0-9/._[:space:]-]+$`, refuses to touch broken JSON, and creates `.bak.YYYYMMDD-HHMMSS` backups.
