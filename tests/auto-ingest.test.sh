@@ -2,7 +2,7 @@
 #
 # auto-ingest.test.sh — scripts/auto-ingest.sh のスモークテスト
 #
-# 実行: bash tests/auto-ingest.test.sh
+# 実行: bash tools/claude-brain/tests/auto-ingest.test.sh
 #
 # 検証項目 (Phase F.6 / F1〜F5):
 #   F1 未処理ログ 0 件 → claude 呼ばず exit 0
@@ -19,8 +19,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-AUTO_INGEST="${REPO_ROOT}/scripts/auto-ingest.sh"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+AUTO_INGEST="${REPO_ROOT}/tools/claude-brain/scripts/auto-ingest.sh"
 
 TMPROOT="$(mktemp -d)"
 trap 'rm -rf "${TMPROOT}"' EXIT

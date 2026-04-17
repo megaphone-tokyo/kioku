@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# auto-ingest.sh — KIOKU 自動 Ingest スクリプト (Phase F)
+# auto-ingest.sh — claude-brain 自動 Ingest スクリプト (Phase F)
 #
 # cron から呼び出され、session-logs/ の未処理ログ (ingested: false) を
 # claude -p 経由で wiki/ に取り込む。Ingest 後に git add/commit/push する。
 #
 # 環境変数:
-#   OBSIDIAN_VAULT   Vault ルート (未設定時は $HOME/kioku/main-kioku)
+#   OBSIDIAN_VAULT   Vault ルート (未設定時は $HOME/claude-brain/main-claude-brain)
 #   KIOKU_DRY_RUN=1  claude -p を呼ばず、コマンドをログ出力するだけ (テスト用)
 #
 # 終了コード:
@@ -21,7 +21,7 @@ set -euo pipefail
 LOG_PREFIX="[auto-ingest $(date +%Y%m%d-%H%M)]"
 
 # cron 環境では ~/.zshrc / ~/.zprofile が読まれないため、明示的に補完する。
-OBSIDIAN_VAULT="${OBSIDIAN_VAULT:-${HOME}/kioku/main-kioku}"
+OBSIDIAN_VAULT="${OBSIDIAN_VAULT:-${HOME}/claude-brain/main-claude-brain}"
 
 # R4-001: OBSIDIAN_VAULT のバリデーション
 validate_vault_path() {
@@ -84,7 +84,7 @@ if [[ ! -d "${SESSION_LOGS_DIR}" ]] && [[ ! -d "${RAW_SOURCES_DIR}" ]]; then
 fi
 
 # `ingested: false` を含む session-log ファイル数をカウント。
-# session-logs/ 直下の *.md のみ対象 (.KIOKU/ 等のサブディレクトリは除外)。
+# session-logs/ 直下の *.md のみ対象 (.claude-brain/ 等のサブディレクトリは除外)。
 UNPROCESSED_LOGS=0
 if [[ -d "${SESSION_LOGS_DIR}" ]]; then
   shopt -s nullglob
@@ -151,6 +151,12 @@ CLAUDE.md のスキーマに従って、session-logs/ にある ingested: false 
 - 特定プロジェクトに閉じない汎用的な知見を優先的に保存する
 - 同名のページが既に wiki/analyses/ に存在する場合は新規作成ではなく既存ページを更新すること (重複禁止)
 - 保存基準と具体的なページフォーマットは Vault の CLAUDE.md を参照すること
+
+追加の取り込み対象 (Phase M / mcp-note):
+- session-logs/ にある type: mcp-note のファイルは、Claude Desktop からユーザーが kioku_write_note 経由で保存したメモ
+- 通常の session-log と同列で扱い、wiki/ に構造化して取り込むこと
+- type: mcp-note は cwd フィールドが空でもよい (Desktop には対応する作業ディレクトリがない)
+- 取り込み後は通常の session-log と同様に ingested: true に更新する
 
 追加の取り込み対象 (raw-sources/):
 - raw-sources/ 配下のサブディレクトリ (articles/ books/ ideas/ transcripts/ 等) にある .md ファイルで、まだ対応する wiki/summaries/ ページが作られていないもの

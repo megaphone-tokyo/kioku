@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# setup-vault.sh — KIOKU Vault 初期化スクリプト
+# setup-vault.sh — claude-brain Vault 初期化スクリプト
 #
-# $OBSIDIAN_VAULT が指す Obsidian Vault 配下に、KIOKU が要求する
+# $OBSIDIAN_VAULT が指す Obsidian Vault 配下に、claude-brain が要求する
 # ディレクトリ構造・初期ファイル・.gitignore を「追加だけ」する。
 # 既存ファイルは絶対に上書きしない（冪等）。git init は行わない。
 #
@@ -75,7 +75,7 @@ error: OBSIDIAN_VAULT is not set.
 
 Please set the environment variable to your Obsidian Vault path, e.g.:
 
-  export OBSIDIAN_VAULT="$HOME/kioku/main-kioku"
+  export OBSIDIAN_VAULT="$HOME/claude-brain/main-claude-brain"
 
 Then re-run this script.
 EOF

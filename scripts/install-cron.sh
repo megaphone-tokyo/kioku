@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 #
-# install-cron.sh — KIOKU 用 cron エントリを出力する (Phase F + G)
+# install-cron.sh — claude-brain 用 cron エントリを出力する (Phase F + G)
 #
 # install-hooks.sh と同じく、手動でマージすべき設定を stdout に出す。
 # crontab 自体は書き換えない (非破壊)。
 #
 # 使い方:
-#   bash scripts/install-cron.sh
+#   bash tools/claude-brain/scripts/install-cron.sh
 #
 # 出力された行を `crontab -e` で手動追記する。
 
@@ -36,12 +36,12 @@ if [[ ! -f "${AUTO_LINT_ABS}" ]]; then
   exit 1
 fi
 
-VAULT_DEFAULT="${OBSIDIAN_VAULT:-${HOME}/kioku/main-KIOKU}"
+VAULT_DEFAULT="${OBSIDIAN_VAULT:-${HOME}/claude-brain/main-claude-brain}"
 validate_vault_path "${VAULT_DEFAULT}"
 
 cat <<EOF
 ============================================================
-KIOKU 自動化 — cron 設定
+claude-brain 自動化 — cron 設定
 ============================================================
 
 以下のコマンドで crontab を編集してください:
@@ -50,10 +50,10 @@ KIOKU 自動化 — cron 設定
 
 以下の行を追加 (パスはすでに絶対パスに展開済み):
 
-  # KIOKU: 毎日朝7時に自動 Ingest
+  # claude-brain: 毎日朝7時に自動 Ingest
   0 7 * * * ${AUTO_INGEST_ABS} >> "\$HOME/kioku-ingest.log" 2>&1
 
-  # KIOKU: 毎月1日 朝8時に自動 Lint
+  # claude-brain: 毎月1日 朝8時に自動 Lint
   0 8 1 * * ${AUTO_LINT_ABS} >> "\$HOME/kioku-lint.log" 2>&1
 
 ============================================================

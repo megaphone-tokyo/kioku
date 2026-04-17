@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# 0 定期実行セットアップの OS 分岐 dispatcher (Phase L)
+# install-schedule.sh — claude-brain 定期実行セットアップの OS 分岐 dispatcher (Phase L)
 #
 # macOS では install-launchagents.sh を、Linux/WSL/BSD では install-cron.sh を呼ぶ。
 # uname -s で判定するだけの薄いラッパー (YAGNI)。

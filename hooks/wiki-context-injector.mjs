@@ -10,7 +10,7 @@
 //   - 常に exit 0 (フェイルセーフ)
 //   - OBSIDIAN_VAULT 未設定 / index.md 不在 / 読み取り失敗 → 何も出力せず exit 0
 //
-// 参考: plan/26041502_参照の方法をKarpathyに合わせた形に修正.md
+// 参考: tools/claude-brain/plan/26041502_参照の方法をKarpathyに合わせた形に修正.md
 
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';

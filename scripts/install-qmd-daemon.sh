@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# 0 Phase J: qmd MCP デーモンの launchd 登録
+# install-qmd-daemon.sh — claude-brain Phase J: qmd MCP デーモンの launchd 登録
 #
 # qmd MCP サーバー (HTTP モード) を macOS launchd で常駐化する。
 # Mac 再起動後も Claude Code から qmd MCP ツールが利用できる状態を維持する。
@@ -77,7 +77,7 @@ if [[ ! "${QMD_BIN}" =~ $safe_re ]]; then
 fi
 
 echo "============================================================"
-echo "KIOKU: qmd MCP デーモンの launchd 登録"
+echo "claude-brain: qmd MCP デーモンの launchd 登録"
 echo "============================================================"
 echo "  Label      = ${LABEL}"
 echo "  Plist      = ${PLIST_PATH}"

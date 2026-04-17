@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# install-hooks.sh — KIOKU の Hook 設定スニペットを出力する
+# install-hooks.sh — claude-brain の Hook 設定スニペットを出力する
 #
 # デフォルトではユーザーの ~/.claude/settings.json を書き換えず、stdout に
 # JSON スニペットを出力するだけの安全な設計。--apply を付けた場合だけ
@@ -64,7 +64,7 @@ error: OBSIDIAN_VAULT is not set.
 
 Please set the environment variable first, e.g.:
 
-  export OBSIDIAN_VAULT="$HOME/kioku/main-kioku"
+  export OBSIDIAN_VAULT="$HOME/claude-brain/main-claude-brain"
 
 Then re-run this script.
 EOF
@@ -332,7 +332,7 @@ fi
 
 cat <<EOF
 # ============================================================================
-# KIOKU hook configuration
+# claude-brain hook configuration
 # ============================================================================
 #
 # This script DOES NOT modify ~/.claude/settings.json unless you pass --apply.

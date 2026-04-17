@@ -2,7 +2,7 @@
 #
 # install-launchagents.test.sh — scripts/install-launchagents.sh のスモークテスト (Phase L)
 #
-# 実行: bash tests/install-launchagents.test.sh
+# 実行: bash tools/claude-brain/tests/install-launchagents.test.sh
 #
 # 検証項目:
 #   LA1 初回実行で 2 つの plist が作成される (ingest + lint)
@@ -21,8 +21,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-INSTALL_SCRIPT="${REPO_ROOT}/scripts/install-launchagents.sh"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+INSTALL_SCRIPT="${REPO_ROOT}/tools/claude-brain/scripts/install-launchagents.sh"
 
 TMPROOT="$(mktemp -d)"
 trap 'rm -rf "${TMPROOT}"' EXIT

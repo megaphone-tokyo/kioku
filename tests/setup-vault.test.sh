@@ -2,7 +2,7 @@
 #
 # setup-vault.test.sh — scripts/setup-vault.sh のスモークテスト
 #
-# 実行: bash tests/setup-vault.test.sh
+# 実行: bash tools/claude-brain/tests/setup-vault.test.sh
 #
 # 方針:
 #   - 実 Vault を絶対に触らない。全テストは mktemp -d の tmpdir で完結
@@ -13,8 +13,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-SETUP_VAULT="${REPO_ROOT}/scripts/setup-vault.sh"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+SETUP_VAULT="${REPO_ROOT}/tools/claude-brain/scripts/setup-vault.sh"
 
 if [[ ! -x "${SETUP_VAULT}" && ! -f "${SETUP_VAULT}" ]]; then
   echo "FATAL: setup-vault.sh not found at ${SETUP_VAULT}" >&2

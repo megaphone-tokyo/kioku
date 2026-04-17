@@ -31,7 +31,7 @@ Instead, please report them via **GitHub Security Advisories**:
 
 ## Security Design
 
-KIOKU is a Hook system that accesses **all Claude Code session I/O**. This section documents the security architecture.
+claude-brain is a Hook system that accesses **all Claude Code session I/O**. This section documents the security architecture.
 
 ### Threat Model
 
@@ -54,8 +54,8 @@ KIOKU is a Hook system that accesses **all Claude Code session I/O**. This secti
 |---|---|---|
 | `session-logs/` (directory) | `0o700` | `session-logger.mjs` (`mkdir`) |
 | `session-logs/*.md` (log files) | `0o600` | `session-logger.mjs` (`writeFile` with `flag: 'wx'`) |
-| `session-logs/.kioku/` | `0o700` | `session-logger.mjs` (`mkdir`) |
-| `session-logs/.kioku/index.json` | `0o600` | `session-logger.mjs` (`writeFile`) |
+| `session-logs/.claude-brain/` | `0o700` | `session-logger.mjs` (`mkdir`) |
+| `session-logs/.claude-brain/index.json` | `0o600` | `session-logger.mjs` (`writeFile`) |
 | `hooks/session-logger.mjs` | `0o755` | `install-hooks.sh --apply` |
 | `hooks/wiki-context-injector.mjs` | `0o755` | `install-hooks.sh --apply` |
 | Vault directories (`wiki/`, etc.) | `umask 077` | `setup-vault.sh` |

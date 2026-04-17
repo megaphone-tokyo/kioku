@@ -1,0 +1,74 @@
+{
+  "$schema": "https://raw.githubusercontent.com/anthropics/mcpb/main/schemas/mcpb-manifest-v0.4.schema.json",
+  "manifest_version": "0.4",
+  "name": "kioku-wiki",
+  "display_name": "KIOKU Wiki",
+  "version": "0.1.0",
+  "description": "Read, search, and write your KIOKU Obsidian Wiki from Claude Desktop or Claude Code.",
+  "long_description": "KIOKU is a personal knowledge base ('second brain') built on top of an Obsidian Vault. This MCP server exposes six tools (kioku_search, kioku_read, kioku_list, kioku_write_note, kioku_write_wiki, kioku_delete) so that Claude Desktop and Claude Code can browse and update the Wiki without leaving the chat. All operations are local stdio — nothing leaves your machine. See https://github.com/megaphone-tokyo/kioku for the full project.",
+  "author": {
+    "name": "megaphone-tokyo",
+    "url": "https://github.com/megaphone-tokyo/kioku"
+  },
+  "homepage": "https://github.com/megaphone-tokyo/kioku",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/megaphone-tokyo/kioku"
+  },
+  "documentation": "https://github.com/megaphone-tokyo/kioku/blob/main/README.md",
+  "support": "https://github.com/megaphone-tokyo/kioku/issues",
+  "license": "MIT",
+  "keywords": ["kioku", "obsidian", "wiki", "knowledge-base", "second-brain", "claude"],
+  "server": {
+    "type": "node",
+    "entry_point": "server/server.mjs",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/server.mjs"],
+      "env": {
+        "OBSIDIAN_VAULT": "${user_config.vault_path}"
+      }
+    }
+  },
+  "user_config": {
+    "vault_path": {
+      "type": "directory",
+      "title": "Obsidian Vault directory",
+      "description": "Path to your KIOKU Vault — the directory that contains wiki/, session-logs/, raw-sources/. If you have not created a Vault yet, run scripts/setup-vault.sh from the kioku repo first.",
+      "required": true
+    }
+  },
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": ["darwin", "linux", "win32"],
+    "runtimes": {
+      "node": ">=18"
+    }
+  },
+  "tools": [
+    {
+      "name": "kioku_search",
+      "description": "Full-text search across the Wiki (delegates to qmd CLI when available, falls back to a Node grep)."
+    },
+    {
+      "name": "kioku_read",
+      "description": "Return the contents of wiki/<path>.md (capped at 256 KB)."
+    },
+    {
+      "name": "kioku_list",
+      "description": "List the wiki/ directory tree (depth 1-5, max 1000 entries)."
+    },
+    {
+      "name": "kioku_write_note",
+      "description": "Append a memo to session-logs/. The next auto-ingest cycle structures it into wiki/. Recommended default."
+    },
+    {
+      "name": "kioku_write_wiki",
+      "description": "Write directly into wiki/ (template + frontmatter + wikilink injection, flock-protected). Use only when immediate publication is required."
+    },
+    {
+      "name": "kioku_delete",
+      "description": "Move a wiki page to wiki/.archive/ (recoverable). wiki/index.md is protected."
+    }
+  ]
+}
