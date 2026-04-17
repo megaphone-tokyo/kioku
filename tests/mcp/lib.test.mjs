@@ -90,6 +90,50 @@ describe('vault-path', () => {
     const resolved = await assertInsideSessionLogs(vault, 'sl.md');
     assert.match(resolved, /\/session-logs\/sl\.md$/);
   });
+
+  test('LIB7a assertInsideWiki accepts Japanese filename (hiragana + katakana + kanji)', async () => {
+    const resolved = await assertInsideWiki(vault, 'メモ-日本語タイトル.md');
+    assert.match(resolved, /メモ-日本語タイトル\.md$/);
+  });
+
+  test('LIB7b assertInsideWiki accepts mixed ASCII + Japanese path', async () => {
+    const resolved = await assertInsideWiki(vault, 'concepts/プロジェクト-2026.md');
+    assert.match(resolved, /\/wiki\/concepts\/プロジェクト-2026\.md$/);
+  });
+
+  test('LIB7c assertInsideSessionLogs accepts Japanese filename', async () => {
+    const resolved = await assertInsideSessionLogs(vault, '20260417-143726-mcp-メモ.md');
+    assert.match(resolved, /\/session-logs\/20260417-143726-mcp-メモ\.md$/);
+  });
+
+  test('LIB7d assertInsideWiki accepts Chinese characters', async () => {
+    const resolved = await assertInsideWiki(vault, '中文笔记.md');
+    assert.match(resolved, /中文笔记\.md$/);
+  });
+
+  test('LIB7e assertInsideWiki accepts Korean hangul', async () => {
+    const resolved = await assertInsideWiki(vault, '한국어메모.md');
+    assert.match(resolved, /한국어메모\.md$/);
+  });
+
+  test('LIB7f assertInsideWiki still rejects shell metacharacters even with Unicode enabled', async () => {
+    // Shell metachars ($ ` ; | & < > etc) must still be rejected by SAFE_PATH_RE
+    await assert.rejects(
+      assertInsideWiki(vault, 'evil;rm-rf.md'),
+      (err) => err instanceof PathBoundaryError && err.code === 'invalid_path',
+    );
+    await assert.rejects(
+      assertInsideWiki(vault, 'evil`cmd`.md'),
+      (err) => err instanceof PathBoundaryError && err.code === 'invalid_path',
+    );
+  });
+
+  test('LIB7g assertInsideWiki still rejects traversal even with Japanese chars', async () => {
+    await assert.rejects(
+      assertInsideWiki(vault, '../session-logs/メモ.md'),
+      (err) => err instanceof PathBoundaryError && err.code === 'path_traversal',
+    );
+  });
 });
 
 describe('frontmatter', () => {

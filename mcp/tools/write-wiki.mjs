@@ -29,7 +29,7 @@ export const WRITE_WIKI_TOOL_DEF = {
       .string()
       .min(1)
       .max(512)
-      .regex(/^[A-Za-z0-9/._ -]+\.md$/)
+      .regex(/^[\p{L}\p{N}/._ -]+\.md$/u)
       .describe('Relative path under wiki/, e.g. "concepts/foo.md".'),
     title: z.string().min(1).max(MAX_TITLE),
     body: z.string().min(1).max(MAX_BODY),

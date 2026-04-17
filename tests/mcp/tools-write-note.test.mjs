@@ -104,4 +104,30 @@ describe('kioku_write_note', () => {
     assert.doesNotMatch(r.path, /\.\./);
     assert.doesNotMatch(r.path, /passwd\//);
   });
+
+  test('MCP15a accepts Japanese title and preserves hiragana/katakana/kanji in slug', async () => {
+    const r = await handleWriteNote(vault, {
+      title: 'MCPB スモーク 2026-04-17',
+      body: 'Phase N の動作確認 OK',
+    });
+    assert.strictEqual(r.action, 'created');
+    // Slug should preserve Japanese characters instead of stripping them
+    assert.match(r.path, /session-logs\/.*スモーク.*\.md$/);
+  });
+
+  test('MCP15b accepts pure-Japanese title without collapsing to untitled', async () => {
+    const r = await handleWriteNote(vault, {
+      title: '日本語のメモ',
+      body: 'body',
+    });
+    assert.strictEqual(r.action, 'created');
+    assert.match(r.path, /session-logs\/.*日本語のメモ\.md$/);
+  });
+
+  test('MCP15c accepts Chinese / Korean titles', async () => {
+    const r1 = await handleWriteNote(vault, { title: '中文笔记', body: 'body' });
+    assert.match(r1.path, /session-logs\/.*中文笔记\.md$/);
+    const r2 = await handleWriteNote(vault, { title: '한국어메모', body: 'body' });
+    assert.match(r2.path, /session-logs\/.*한국어메모\.md$/);
+  });
 });

@@ -4,7 +4,12 @@
 import { realpath } from 'node:fs/promises';
 import { isAbsolute, join, normalize, sep } from 'node:path';
 
-const SAFE_PATH_RE = /^[A-Za-z0-9/._ -]+$/;
+// 日本語・中国語・韓国語・その他の Unicode Letter を許可する (write-note.mjs の
+// makeSlug が \p{L} を保持するのと整合させるため)。
+// \p{L} = Unicode Letter property、\p{N} = Number property。
+// path traversal "." とパス区切り "/" は明示的に許可集合に入っており、
+// realpath + prefix containment (resolveWithinBase 参照) で escape を遮断する。
+const SAFE_PATH_RE = /^[\p{L}\p{N}/._ -]+$/u;
 const MAX_PATH_LEN = 512;
 
 export class PathBoundaryError extends Error {
