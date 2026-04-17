@@ -301,6 +301,21 @@ bash scripts/build-mcpb.sh --clean
 
 > ⚠️ **`.mcpb` を新規インストール / 上書きしたあとは、Claude Desktop を ⌘Q で完全終了してから再起動してください** (ウィンドウを閉じる ⌘W では不十分)。これをやらないと、前に起動済みの MCP サーバープロセスが古い code を memory に保持したまま動き続けます。tools/list の内容 (ツール名や schema) は更新されても、サーバー内部のロジック変更 (バグ修正、バリデーション緩和など) は反映されません。
 
+##### Tips — Claude Desktop で kioku を使うコツ
+
+Claude Code は Hook システム (`session-logger.mjs`) で**毎セッションを自動的に `session-logs/` に記録する**のに対し、**Claude Desktop には Hook システムがありません**。Desktop の会話は自動では Vault に保存されません — 明示的に Claude にお願いする必要があります。
+
+保存をトリガーする言い回し (Claude が description を見て適切なツールを選ぶ):
+
+| 言い方 | 呼ばれるツール | 保存先 |
+|---|---|---|
+| 「メモして」「保存して」「Wiki に追加して」 | `kioku_write_note` | `session-logs/` → 次回 auto-ingest で `wiki/` に構造化 |
+| 「今すぐ Wiki に作って」「即時に反映して」 | `kioku_write_wiki` | `wiki/` に直書き (即時、テンプレ準拠、wikilink 整合は best-effort) |
+
+実践的な習慣: 会話の区切りで **「今の話をまとめてメモしておいて」** **「この設計判断を記録して」** と一言お願いするのがおすすめ。これをやらないと、Desktop での会話は Claude のチャット履歴にしか残らず、Obsidian Vault には反映されません。
+
+Claude Code も併用している場合は、Claude Code 側は **自動記録** (上記ステップ 4 の Hook 経由) なので、何もしなくても Vault に蓄積されます。2 つのクライアントが同じ Vault に書き込むため、**どちらから使っても second brain は育っていきます**。
+
 <br>
 
 ## ディレクトリ構成

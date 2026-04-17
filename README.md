@@ -292,6 +292,21 @@ Unlike § 10, MCPB is self-contained — **switching Node versions or updating `
 
 > ⚠️ **After installing or updating a `.mcpb`, fully quit Claude Desktop (⌘Q, not just close the window) and relaunch.** Otherwise the previously-spawned MCP server process keeps serving cached code in memory — your new tool definitions will appear, but behavioral changes inside the server (bug fixes, validation updates, etc.) won't take effect until the process is recreated.
 
+##### Tips — using kioku on Claude Desktop
+
+Unlike Claude Code (which auto-logs every session via the `session-logger.mjs` hook), **Claude Desktop has no hook system — your conversations are NOT automatically captured into the Vault**. You must explicitly ask Claude to save each thing you want to remember.
+
+Phrases that trigger saves (Claude picks the right tool from the tool descriptions):
+
+| You say | Tool invoked | Destination |
+|---|---|---|
+| "save this to my wiki" / "remember this" / "メモして" | `kioku_write_note` | `session-logs/` → structured into `wiki/` by the next auto-ingest cycle |
+| "create this wiki page now" / "immediately reflect this" / "すぐ Wiki に作って" | `kioku_write_wiki` | `wiki/` directly (immediate, template applied, best-effort wikilink integrity) |
+
+Practical habit: at the end of a meaningful conversation segment, ask Claude something like **"今の話をまとめてメモしておいて"** or **"この設計判断を記録して"**. Without this nudge, your Desktop conversation stays only in Claude's chat history — not in your Obsidian Vault.
+
+If you also use Claude Code, its conversations are captured **automatically** without any manual request (via the hook system in step 4 above). The two clients write to the same Vault — your "second brain" accumulates knowledge from both.
+
 <br>
 
 ## Directory Structure
