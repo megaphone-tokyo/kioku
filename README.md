@@ -290,6 +290,8 @@ Re-install only in these cases:
 
 Unlike § 10, MCPB is self-contained — **switching Node versions or updating `@modelcontextprotocol/sdk` do NOT affect an already-installed `.mcpb`** (the bundle ships its own dependencies and launches via Desktop's built-in Node runtime).
 
+> ⚠️ **After installing or updating a `.mcpb`, fully quit Claude Desktop (⌘Q, not just close the window) and relaunch.** Otherwise the previously-spawned MCP server process keeps serving cached code in memory — your new tool definitions will appear, but behavioral changes inside the server (bug fixes, validation updates, etc.) won't take effect until the process is recreated.
+
 <br>
 
 ## Directory Structure
