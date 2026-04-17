@@ -180,6 +180,89 @@ git clone git@github.com:<USERNAME>/kioku.git ~/kioku/main-kioku
 # Repeat steps 2–6
 ```
 
+#### 10. MCP server for Claude Desktop / Code (optional)
+
+Claude Desktop has no Hook system, so it cannot record sessions automatically.
+The **`kioku-wiki` MCP server** lets both Claude Desktop and Claude Code search, read, and write the Wiki manually.
+
+```bash
+# 1. Install dependency (only inside mcp/, parent repo stays package.json-free)
+bash scripts/setup-mcp.sh
+
+# 2. Smoke test with the official Inspector
+npx @modelcontextprotocol/inspector node mcp/server.mjs
+
+# 3. Preview client-config changes
+bash scripts/install-mcp-client.sh --dry-run
+
+# 4. Apply (merges into ~/Library/Application Support/Claude/claude_desktop_config.json)
+bash scripts/install-mcp-client.sh --apply
+
+# 5. Register with Claude Code (CLI / VSCode) via the printed stdio command
+claude mcp add --scope user --transport stdio kioku \
+  "$(command -v node)" "$(pwd)/mcp/server.mjs"
+```
+
+Six tools provided:
+
+| Tool | Purpose |
+|---|---|
+| `kioku_search` | Wiki search (delegates to qmd CLI; falls back to a simple Node grep when qmd is unavailable) |
+| `kioku_read` | Return the contents of `wiki/<path>.md` |
+| `kioku_list` | Walk the `wiki/` directory tree |
+| `kioku_write_note` (recommended) | Append a memo to `session-logs/`; the next auto-ingest cycle structures it into `wiki/` |
+| `kioku_write_wiki` (advanced) | Write directly into `wiki/` with template + frontmatter auto-injection |
+| `kioku_delete` | Move a page to `wiki/.archive/` (recoverable; `wiki/index.md` cannot be deleted) |
+
+**Notes**:
+- Fully local (stdio transport, no network exposure, single dep `@modelcontextprotocol/sdk`)
+- For "save this to my wiki" prompts in Desktop, **prefer `kioku_write_note`** — it preserves wiki coherence
+- Use `kioku_write_wiki` only when the user explicitly wants the page to appear immediately
+- Coexists with the existing qmd MCP (HTTP :8181). Prefer the qmd MCP `search` tool when available; `kioku_search` is the fallback.
+
+Uninstall:
+
+```bash
+bash scripts/install-mcp-client.sh --uninstall
+rm -rf mcp/node_modules
+```
+
+#### 11. MCPB bundle for Claude Desktop (one-file install)
+
+If you only use **Claude Desktop** and want the shortest install path, install the [MCPB](https://github.com/anthropics/mcpb) bundle with a single drag & drop. The bundle includes `mcp/server.mjs` and all production dependencies; Claude Desktop launches it with its built-in Node runtime, so end users **do not need to install Node themselves**.
+
+##### Option A — Install a pre-built release (recommended for end users)
+
+1. Download the latest **`kioku-wiki-<version>.mcpb`** from [github.com/megaphone-tokyo/kioku/releases](https://github.com/megaphone-tokyo/kioku/releases)
+2. Open **Claude Desktop**
+3. Either:
+   - **Double-click** the `.mcpb` file in Finder (macOS associates `.mcpb` with Claude Desktop), or
+   - Open **Settings → Extensions / Connectors** and drag the `.mcpb` onto that screen
+   - (Don't drop it on the chat window — it'll be treated as a file attachment)
+4. In the install dialog, pick your **Vault directory** (the folder containing `wiki/`, `session-logs/`, `raw-sources/`) → **Install**
+5. Open **Settings → Connectors** and confirm `KIOKU Wiki` is enabled
+6. Start a **new** chat and try: `kioku_read で wiki/index.md を読んで` (existing chats won't see the new tools)
+
+> **Note**: Claude Desktop will warn that the extension has not been verified by Anthropic. This is expected — `mcpb sign` for code signing is a planned future enhancement.
+
+##### Option B — Build from source (developers / contributors)
+
+```bash
+# 1. Build the .mcpb bundle (writes mcp/dist/kioku-wiki-<version>.mcpb, ~3.2 MB)
+bash scripts/build-mcpb.sh
+
+# 2. (Optional) validate manifest + inspect contents
+bash scripts/build-mcpb.sh --validate
+npx --yes @anthropic-ai/mcpb info mcp/dist/kioku-wiki-0.1.0.mcpb
+
+# 3. Clean build artifacts
+bash scripts/build-mcpb.sh --clean
+```
+
+The bundle is **gitignored** (`mcp/build/`, `mcp/dist/`). To publish a new release, run `build-mcpb.sh` and attach the resulting `.mcpb` to a new [GitHub Release](https://github.com/megaphone-tokyo/kioku/releases). End users will then download it via Option A.
+
+The traditional install paths in step 10 still work — MCPB is purely an *additional* delivery channel for Desktop-first users.
+
 <br>
 
 ## Directory Structure
@@ -324,6 +407,24 @@ If you find a security issue, please report it via [SECURITY.md](SECURITY.md) �
 - [ ] **Team Wiki** — Multi-person Wiki sharing (each member's session-logs stay local; only wiki/ is shared via Git)
 
 > **Note**: KIOKU currently requires **Claude Code (Max plan)**. The Hook system (L0) and Wiki context injection are Claude Code-specific. The Ingest/Lint pipeline (L1/L2) can work with other LLM APIs by swapping the `claude -p` call — this is planned as a future enhancement.
+
+<br>
+
+## Changelog
+
+### 2026-04-17 — Phase N: MCPB bundle for Claude Desktop
+- New `mcp/manifest.json` (MCPB v0.4) and `scripts/build-mcpb.sh` produce `kioku-wiki-<version>.mcpb` (~3.2 MB)
+- Claude Desktop users can install the MCP server with a single drag & drop; `OBSIDIAN_VAULT` is configured via the install dialog's directory picker (no Node toolchain required on the user's machine — Desktop's bundled runtime is used)
+- See **§ 11** above for build / install steps
+
+### 2026-04-17 — Phase M: kioku-wiki MCP server
+- Local stdio MCP server (`mcp/`) exposing six tools — `kioku_search`, `kioku_read`, `kioku_list`, `kioku_write_note`, `kioku_write_wiki`, `kioku_delete`
+- Both Claude Desktop and Claude Code can now browse, search, and update the Wiki on demand without leaving the chat
+- See **§ 10** above for setup
+
+### 2026-04-16 — Phase L: macOS LaunchAgent migration
+- New `scripts/install-schedule.sh` dispatcher chooses macOS LaunchAgent or Linux cron automatically
+- Resolves the structural impossibility of cron loading the user's full PATH on macOS
 
 <br>
 
