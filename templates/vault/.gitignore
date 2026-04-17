@@ -1,0 +1,13 @@
+# セッションログはマシンごとにローカル保持（Git に含めない）
+# （配下の .claude-brain/ も同時に除外される）
+session-logs/
+
+# Obsidian の設定ファイル（マシンごとに異なるため）
+.obsidian/
+
+# macOS
+.DS_Store
+
+# 一時ファイル
+*.tmp
+*.swp
