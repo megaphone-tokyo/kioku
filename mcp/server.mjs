@@ -16,6 +16,7 @@ import { SEARCH_TOOL_DEF, handleSearch } from './tools/search.mjs';
 import { WRITE_NOTE_TOOL_DEF, handleWriteNote } from './tools/write-note.mjs';
 import { WRITE_WIKI_TOOL_DEF, handleWriteWiki } from './tools/write-wiki.mjs';
 import { DELETE_TOOL_DEF, handleDelete } from './tools/delete.mjs';
+import { INGEST_PDF_TOOL_DEF, handleIngestPdf } from './tools/ingest-pdf.mjs';
 
 const VAULT = process.env.OBSIDIAN_VAULT;
 if (!VAULT) {
@@ -76,6 +77,7 @@ register(SEARCH_TOOL_DEF, handleSearch);
 register(WRITE_NOTE_TOOL_DEF, handleWriteNote);
 register(WRITE_WIKI_TOOL_DEF, handleWriteWiki);
 register(DELETE_TOOL_DEF, handleDelete);
+register(INGEST_PDF_TOOL_DEF, handleIngestPdf);
 
 // 致命エラーでもプロセスを生かしてエラー応答できるようにする
 process.on('uncaughtException', (err) => {

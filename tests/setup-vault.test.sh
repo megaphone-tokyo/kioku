@@ -110,6 +110,10 @@ VAULT="${TMPROOT}/vault-fresh"
 mkdir -p "${VAULT}"
 OBSIDIAN_VAULT="${VAULT}" bash "${SETUP_VAULT}" >/dev/null
 assert_dir_exists "${VAULT}/raw-sources/articles" "raw-sources/articles created"
+assert_dir_exists "${VAULT}/raw-sources/papers" "raw-sources/papers created"
+assert_dir_exists "${VAULT}/raw-sources/books" "raw-sources/books created"
+assert_dir_exists "${VAULT}/raw-sources/ideas" "raw-sources/ideas created"
+assert_dir_exists "${VAULT}/raw-sources/transcripts" "raw-sources/transcripts created"
 assert_dir_exists "${VAULT}/session-logs" "session-logs created"
 assert_dir_exists "${VAULT}/wiki/concepts" "wiki/concepts created"
 assert_dir_exists "${VAULT}/wiki/projects" "wiki/projects created"
@@ -128,6 +132,21 @@ assert_file_exists "${VAULT}/templates/concept.md" "templates/concept.md placed"
 assert_file_exists "${VAULT}/templates/project.md" "templates/project.md placed"
 assert_file_exists "${VAULT}/templates/decision.md" "templates/decision.md placed"
 assert_file_exists "${VAULT}/templates/source-summary.md" "templates/source-summary.md placed"
+
+# .cache/ は setup-vault.sh では作らない (auto-ingest.sh が実行時に作成)。
+# 代わりに .gitignore に .cache/ エントリが含まれていることを検証する。
+if grep -q '^\.cache/' "${VAULT}/.gitignore"; then
+  pass ".gitignore excludes .cache/"
+else
+  fail ".gitignore should exclude .cache/ (PDF 抽出キャッシュ)"
+fi
+
+# 機能 2.1: cron auto-ingest と MCP が共有する lockfile を git に含めない
+if grep -q '^\.kioku-mcp\.lock$' "${VAULT}/.gitignore"; then
+  pass ".gitignore excludes .kioku-mcp.lock (feature 2.1)"
+else
+  fail ".gitignore should exclude .kioku-mcp.lock (cron/MCP shared lockfile)"
+fi
 
 # -----------------------------------------------------------------------------
 # Test 5: 冪等性 — 2 回目の実行で既存ファイルを壊さない

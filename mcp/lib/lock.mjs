@@ -7,7 +7,10 @@ import { join } from 'node:path';
 
 const DEFAULT_TTL_MS = 30_000;
 const POLL_INTERVAL_MS = 100;
-const ACQUIRE_TIMEOUT_MS = 10_000;
+// 機能 2.1 (論点 β): auto-ingest.sh が最大 30 分 lockfile を保持する可能性があるため、
+// 10 秒 → 60 秒に延長。Desktop からの write_note は 60 秒待っても成功しない場合は
+// LockTimeoutError を throw してクライアントへ明示通知する。
+const ACQUIRE_TIMEOUT_MS = 60_000;
 const LOCK_FILENAME = '.kioku-mcp.lock';
 
 export class LockTimeoutError extends Error {

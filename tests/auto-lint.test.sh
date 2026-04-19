@@ -272,6 +272,159 @@ assert_contains "${out_g8}" "[#6] WARNING" "G8 scan-secrets warning present"
 assert_contains "${out_g8}" "GitHub personal access token" "G8 leak category reported"
 
 # -----------------------------------------------------------------------------
+# 機能 2.1 (R1: Unicode 不可視文字検出) — LINT_PROMPT への注入を検証
+# -----------------------------------------------------------------------------
+# 方針: auto-ingest の I1-I3 と同じく stub claude で -p 引数をキャプチャして
+# LINT_PROMPT の文字列を検査する。DRY RUN ではプロンプト本文を出力しないため
+# 実経路 (stub claude) でテストする。
+# -----------------------------------------------------------------------------
+
+CAPTURE_DIR_LINT="${TMPROOT}/capture-lint"
+mkdir -p "${CAPTURE_DIR_LINT}"
+CAPTURE_FILE_LINT="${CAPTURE_DIR_LINT}/last-prompt.txt"
+
+STUB_CAPTURE_DIR_LINT="${TMPROOT}/stub-capture-bin-lint"
+mkdir -p "${STUB_CAPTURE_DIR_LINT}"
+cat > "${STUB_CAPTURE_DIR_LINT}/claude" <<STUB
+#!/usr/bin/env bash
+# Test stub for auto-lint: capture the -p prompt body to a file.
+while [[ \$# -gt 0 ]]; do
+  case "\$1" in
+    -p)
+      shift
+      printf '%s' "\$1" > "${CAPTURE_FILE_LINT}"
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+exit 0
+STUB
+chmod +x "${STUB_CAPTURE_DIR_LINT}/claude"
+
+# ---------------------------------------------------------------------------
+# Test R1-1: wiki に ZWSP を含むページがあると LINT_PROMPT に findings が注入される
+# ---------------------------------------------------------------------------
+echo "test R1-1: ZWSP in wiki page is reported in LINT_PROMPT"
+VAULT_R1A="$(make_vault vault-r1a)"
+# ZWSP (U+200B) を含む wiki ページを作る
+printf -- '---\ntitle: zwsp-page\nupdated: 2026-04-17\n---\n\nhello\xe2\x80\x8bworld\n' \
+  > "${VAULT_R1A}/wiki/zwsp-page.md"
+FAKE_HOME_R1A="${TMPROOT}/fake-home-r1a"
+mkdir -p "${FAKE_HOME_R1A}"
+
+rm -f "${CAPTURE_FILE_LINT}"
+set +e
+out_r1a="$(
+  env -i \
+    HOME="${FAKE_HOME_R1A}" \
+    PATH="${STUB_CAPTURE_DIR_LINT}:/usr/bin:/bin:$(dirname "$(command -v node 2>/dev/null || echo /usr/bin/false)")" \
+    OBSIDIAN_VAULT="${VAULT_R1A}" \
+    bash "${AUTO_LINT}" 2>&1
+)"
+rc=$?
+set -e
+assert_eq "0" "${rc}" "R1-1 exit code 0"
+if [[ ! -f "${CAPTURE_FILE_LINT}" ]]; then
+  fail "R1-1 prompt capture created"
+else
+  pass "R1-1 prompt capture created"
+  captured_r1a="$(cat "${CAPTURE_FILE_LINT}")"
+  assert_contains "${captured_r1a}" "R1 pre-scan findings" "R1-1 prompt contains R1 pre-scan section"
+  assert_contains "${captured_r1a}" "wiki/zwsp-page.md" "R1-1 findings include the offending page"
+  assert_contains "${captured_r1a}" "lines 6" "R1-1 findings include the line number"
+fi
+
+# ---------------------------------------------------------------------------
+# Test R1-2: RTLO を含むページが検出される
+# ---------------------------------------------------------------------------
+echo "test R1-2: RTLO (U+202E) is also detected"
+VAULT_R1B="$(make_vault vault-r1b)"
+# RTLO U+202E = 0xE2 0x80 0xAE
+printf -- '---\ntitle: rtlo-page\n---\n\nnormal\xe2\x80\xaereversed\n' \
+  > "${VAULT_R1B}/wiki/rtlo-page.md"
+FAKE_HOME_R1B="${TMPROOT}/fake-home-r1b"
+mkdir -p "${FAKE_HOME_R1B}"
+
+rm -f "${CAPTURE_FILE_LINT}"
+set +e
+env -i \
+  HOME="${FAKE_HOME_R1B}" \
+  PATH="${STUB_CAPTURE_DIR_LINT}:/usr/bin:/bin:$(dirname "$(command -v node 2>/dev/null || echo /usr/bin/false)")" \
+  OBSIDIAN_VAULT="${VAULT_R1B}" \
+  bash "${AUTO_LINT}" >/dev/null 2>&1
+rc=$?
+set -e
+assert_eq "0" "${rc}" "R1-2 exit code 0"
+if [[ -f "${CAPTURE_FILE_LINT}" ]]; then
+  captured_r1b="$(cat "${CAPTURE_FILE_LINT}")"
+  assert_contains "${captured_r1b}" "wiki/rtlo-page.md" "R1-2 RTLO page flagged"
+fi
+
+# ---------------------------------------------------------------------------
+# Test R1-2b (security review LOW-1): ファイル名にバッククォートが含まれていても
+#            LINT_PROMPT の findings セクションが破壊されない (self-injection 対策)
+# ---------------------------------------------------------------------------
+echo "test R1-2b: backtick in filename is sanitized (self-injection defense)"
+VAULT_R1D="$(make_vault vault-r1d)"
+# Filename contains a backtick (rare but legal on macOS/Linux). Content has ZWSP.
+# Writing via printf so the literal backtick ends up in the filename.
+EVIL_NAME=$'evil`page.md'
+printf -- '---\ntitle: evil\n---\n\nhi\xe2\x80\x8bthere\n' \
+  > "${VAULT_R1D}/wiki/${EVIL_NAME}"
+FAKE_HOME_R1D="${TMPROOT}/fake-home-r1d"
+mkdir -p "${FAKE_HOME_R1D}"
+
+rm -f "${CAPTURE_FILE_LINT}"
+set +e
+env -i \
+  HOME="${FAKE_HOME_R1D}" \
+  PATH="${STUB_CAPTURE_DIR_LINT}:/usr/bin:/bin:$(dirname "$(command -v node 2>/dev/null || echo /usr/bin/false)")" \
+  OBSIDIAN_VAULT="${VAULT_R1D}" \
+  bash "${AUTO_LINT}" >/dev/null 2>&1
+rc=$?
+set -e
+assert_eq "0" "${rc}" "R1-2b exit code 0"
+if [[ -f "${CAPTURE_FILE_LINT}" ]]; then
+  captured_r1d="$(cat "${CAPTURE_FILE_LINT}")"
+  # findings 行に生の backtick が含まれていないこと (サニタイズで ? に置換される)
+  # → codefence ` wiki/evil`page.md ` を脱出できない
+  if printf '%s' "${captured_r1d}" | grep -Fq 'wiki/evil`page.md'; then
+    fail "R1-2b raw backtick in filename leaked to prompt"
+  else
+    pass "R1-2b backtick sanitized (not leaked as raw \`)"
+  fi
+  assert_contains "${captured_r1d}" "wiki/evil?page.md" "R1-2b sanitized filename present with ? replacement"
+fi
+
+# ---------------------------------------------------------------------------
+# Test R1-3: 不可視文字なし → LINT_PROMPT に「該当なし」と書かれる
+# ---------------------------------------------------------------------------
+echo "test R1-3: no invisible chars -> prompt mentions '該当なし'"
+VAULT_R1C="$(make_vault vault-r1c)"
+add_wiki_page "${VAULT_R1C}" "clean-page"
+FAKE_HOME_R1C="${TMPROOT}/fake-home-r1c"
+mkdir -p "${FAKE_HOME_R1C}"
+
+rm -f "${CAPTURE_FILE_LINT}"
+set +e
+env -i \
+  HOME="${FAKE_HOME_R1C}" \
+  PATH="${STUB_CAPTURE_DIR_LINT}:/usr/bin:/bin:$(dirname "$(command -v node 2>/dev/null || echo /usr/bin/false)")" \
+  OBSIDIAN_VAULT="${VAULT_R1C}" \
+  bash "${AUTO_LINT}" >/dev/null 2>&1
+rc=$?
+set -e
+assert_eq "0" "${rc}" "R1-3 exit code 0"
+if [[ -f "${CAPTURE_FILE_LINT}" ]]; then
+  captured_r1c="$(cat "${CAPTURE_FILE_LINT}")"
+  assert_contains "${captured_r1c}" "R1 pre-scan findings" "R1-3 prompt still has R1 section header"
+  assert_contains "${captured_r1c}" "該当なし" "R1-3 prompt records '該当なし' when no findings"
+fi
+
+# -----------------------------------------------------------------------------
 # サマリ
 # -----------------------------------------------------------------------------
 echo

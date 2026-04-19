@@ -121,6 +121,7 @@ ensure_dir() {
 DIRS=(
   "raw-sources/articles"
   "raw-sources/books"
+  "raw-sources/papers"
   "raw-sources/transcripts"
   "raw-sources/ideas"
   "raw-sources/assets"

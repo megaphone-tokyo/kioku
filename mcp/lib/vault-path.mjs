@@ -94,3 +94,15 @@ export async function assertInsideSessionLogs(vault, rel) {
 export async function assertInsideArchive(vault, rel) {
   return resolveWithinBase(vault, 'wiki/.archive', rel);
 }
+
+// 機能 2.1: kioku_ingest_pdf 用の raw-sources/ 境界ガード。
+// 引数は raw-sources/ からの相対ではなく Vault からの相対パスで受ける
+// (例: "raw-sources/papers/foo.pdf") ので rel から先頭の "raw-sources/" を
+// 削ってから resolveWithinBase に渡す。
+export async function assertInsideRawSources(vault, rel) {
+  if (typeof rel !== 'string' || !rel) {
+    throw new PathBoundaryError('path must be a non-empty string', 'invalid_path');
+  }
+  const stripped = rel.startsWith('raw-sources/') ? rel.slice('raw-sources/'.length) : rel;
+  return resolveWithinBase(vault, 'raw-sources', stripped);
+}
