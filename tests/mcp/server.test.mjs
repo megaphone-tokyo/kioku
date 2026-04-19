@@ -126,6 +126,7 @@ describe('kioku-mcp server', () => {
     const names = (list.result?.tools ?? []).map((t) => t.name).sort();
     assert.deepEqual(names, [
       'kioku_delete',
+      'kioku_ingest_pdf',
       'kioku_list',
       'kioku_read',
       'kioku_search',

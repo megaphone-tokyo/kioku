@@ -10,6 +10,8 @@ import { appendFile, mkdir, readFile, writeFile, rename, open, stat, realpath } 
 import { dirname, join } from 'node:path';
 import { hostname } from 'node:os';
 
+import { MASK_RULES } from '../scripts/lib/masking.mjs';
+
 // -----------------------------------------------------------------------------
 // 定数
 // -----------------------------------------------------------------------------
@@ -27,44 +29,8 @@ const BASH_BLOCKLIST = new Set([
   'date', 'uname', 'env', 'set', 'export', 'alias', 'id', 'jq',
 ]);
 
-// マスキング規則 (順序重要: 長いものから先に)
-const MASK_RULES = [
-  [/sk-ant-[A-Za-z0-9\-_]{20,}/g, 'sk-ant-***'],
-  [/sk-proj-[A-Za-z0-9\-_]{20,}/g, 'sk-proj-***'],
-  [/sk-[A-Za-z0-9]{20,}/g, 'sk-***'],
-  [/ghp_[A-Za-z0-9]{20,}/g, 'ghp_***'],
-  [/github_pat_[A-Za-z0-9_]{20,}/g, 'github_pat_***'],
-  [/gho_[A-Za-z0-9]{20,}/g, 'gho_***'],
-  [/ghu_[A-Za-z0-9]{20,}/g, 'ghu_***'],
-  [/AIza[A-Za-z0-9\-_]{20,}/g, 'AIza***'],
-  [/AKIA[A-Z0-9]{16}/g, 'AKIA***'],
-  [/xox[baprs]-[A-Za-z0-9\-]{10,}/g, 'xox*-***'],
-  // Vercel token
-  [/vercel_[A-Za-z0-9\-_]{20,}/g, 'vercel_***'],
-  // npm token
-  [/npm_[A-Za-z0-9]{20,}/g, 'npm_***'],
-  // Stripe keys (sk_live_, pk_live_, rk_live_, sk_test_, pk_test_, rk_test_)
-  [/[spr]k_(live|test)_[A-Za-z0-9]{20,}/g, 'stripe_***'],
-  // Supabase (sbp_ for service role, eyJ for JWT anon/service keys)
-  [/sbp_[A-Za-z0-9]{20,}/g, 'sbp_***'],
-  // Firebase / GCP service account private key ID
-  [/private_key_id["']?\s*[:=]\s*["']?[a-f0-9]{40}/gi, 'private_key_id=***'],
-  // Azure (SharedAccessKey, AccountKey, client secret)
-  [/(?:SharedAccessKey|AccountKey)\s*=\s*[A-Za-z0-9+/=]{20,}/g, 'AzureKey=***'],
-  // Bearer / Basic / Digest authorization
-  [/Bearer\s+[A-Za-z0-9\-._~+/=]+/g, 'Bearer ***'],
-  [/(?:Basic|Digest)\s+[A-Za-z0-9+/=]{10,}/g, 'Authorization ***'],
-  // URL embedded credentials (https://user:password@host)
-  [/:\/\/[^:]+:[^@]+@/g, '://***:***@'],
-  [
-    /(password|passwd|secret|token|api[_\-]?key)\s*[:=]\s*["']?([^\s"'&]+)["']?/gi,
-    '$1=***',
-  ],
-  [
-    /-----BEGIN [A-Z ]+PRIVATE KEY-----[\s\S]+?-----END [A-Z ]+PRIVATE KEY-----/g,
-    '<PRIVATE KEY REDACTED>',
-  ],
-];
+// マスキング規則 (MASK_RULES) は ../scripts/lib/masking.mjs に集約した。
+// 新パターン追加時はそちらのコメント (同期対象 3 箇所) を参照すること。
 
 // -----------------------------------------------------------------------------
 // ユーティリティ

@@ -34,9 +34,15 @@ export const MASK_RULES = [
   ],
 ];
 
+// MASK_RULES 適用前に Unicode 不可視/書字方向制御文字を除去して NFC 正規化する。
+// ソフトハイフンや ZWSP がトークンプレフィックスを分断して ASCII パターンを
+// 素通りさせる攻撃を防ぐため。
+// 参照: security-review/meeting/2026-04-17_feature-2-red-blue.md (VULN-002/003/014)
+const INVISIBLE_CHARS_RE = /[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/gu;
+
 export function applyMasks(text) {
   if (typeof text !== 'string') return text;
-  let out = text;
+  let out = text.replace(INVISIBLE_CHARS_RE, '').normalize('NFC');
   for (const [re, repl] of MASK_RULES) {
     out = out.replace(re, repl);
   }

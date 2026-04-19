@@ -281,6 +281,325 @@ else
 fi
 
 # -----------------------------------------------------------------------------
+# Feature 2 (PDF ingest) 関連 — F6 / F7 / F8
+# -----------------------------------------------------------------------------
+
+# auto-ingest.sh の PDF pre-step は pdfinfo + pdftotext が PATH にないと
+# まるごとスキップされる。ここだけスキップではテストの意味が薄れるので、
+# poppler 不在環境では F6/F7/F8 を skip する。
+if ! command -v pdfinfo >/dev/null 2>&1 || ! command -v pdftotext >/dev/null 2>&1; then
+  echo ""
+  echo "SKIP F6/F7/F8: poppler (pdfinfo/pdftotext) not installed" >&2
+else
+  # ---------------------------------------------------------------------------
+  # Test F6: raw-sources/<subdir>/<name>.pdf 配置時に extract-pdf.sh が
+  #          正しい 3 引数で呼ばれる (stub で argv を記録し検証)
+  # ---------------------------------------------------------------------------
+  echo "test F6: PDF pre-step invokes extract-pdf.sh with correct args"
+  VAULT_F6="$(make_vault vault-f6)"
+  # raw-sources/papers/ を作り、ダミー PDF (サイズ 0 でも OK、stub が処理するため) を置く
+  mkdir -p "${VAULT_F6}/raw-sources/papers"
+  : > "${VAULT_F6}/raw-sources/papers/attention.pdf"
+  # セッションログも 1 件置いて claude 呼び出しまで到達させる
+  add_unprocessed_log "${VAULT_F6}" "20260417-100000-f6"
+
+  STUB_EXTRACT_F6="${TMPROOT}/stub-extract-f6.sh"
+  ARGS_FILE_F6="${TMPROOT}/extract-f6.args"
+  cat > "${STUB_EXTRACT_F6}" <<STUB
+#!/usr/bin/env bash
+# stub: record argv to a file and exit 0
+printf 'argv: %s\n' "\$*" > "${ARGS_FILE_F6}"
+exit 0
+STUB
+  chmod +x "${STUB_EXTRACT_F6}"
+
+  set +e
+  out_f6="$(
+    PATH="${STUB_DIR}:${PATH}" \
+    OBSIDIAN_VAULT="${VAULT_F6}" \
+    KIOKU_DRY_RUN=1 \
+    KIOKU_EXTRACT_PDF_SCRIPT="${STUB_EXTRACT_F6}" \
+    KIOKU_ALLOW_EXTRACT_PDF_OVERRIDE=1 \
+    bash "${AUTO_INGEST}" 2>&1
+  )"
+  rc=$?
+  set -e
+  assert_eq "0" "${rc}" "F6 exit code 0"
+  assert_file_exists() {
+    if [[ -f "$1" ]]; then pass "$2"; else fail "$2 (file missing: $1)"; fi
+  }
+  assert_file_exists "${ARGS_FILE_F6}" "F6 stub extract-pdf.sh was invoked"
+  if [[ -f "${ARGS_FILE_F6}" ]]; then
+    args_f6="$(cat "${ARGS_FILE_F6}")"
+    assert_contains "${args_f6}" "raw-sources/papers/attention.pdf" "F6 argv contains PDF path"
+    assert_contains "${args_f6}" ".cache/extracted" "F6 argv contains cache dir"
+    assert_contains "${args_f6}" "papers" "F6 argv contains subdir prefix"
+  fi
+
+  # ---------------------------------------------------------------------------
+  # Test F7: .cache/extracted/*.md で対応 summary 不在 → 未処理カウントに含まれる
+  # ---------------------------------------------------------------------------
+  echo "test F7: .cache/extracted/ MD without summary increases UNPROCESSED_SOURCES"
+  VAULT_F7="$(make_vault vault-f7)"
+  mkdir -p "${VAULT_F7}/.cache/extracted" "${VAULT_F7}/wiki/summaries"
+  # stem = papers-attention-pp001-008 (extract-pdf.sh の命名規則)
+  cat > "${VAULT_F7}/.cache/extracted/papers-attention-pp001-008.md" <<'EOF'
+---
+title: "Attention Is All You Need"
+source_type: "papers"
+page_range: "001-008"
+---
+dummy content
+EOF
+
+  # pre-step は本物の extract-pdf.sh が走らないよう stub に差し替え (PDF が存在しないので実質 no-op)
+  set +e
+  out_f7="$(
+    PATH="${STUB_DIR}:${PATH}" \
+    OBSIDIAN_VAULT="${VAULT_F7}" \
+    KIOKU_DRY_RUN=1 \
+    KIOKU_EXTRACT_PDF_SCRIPT="${STUB_EXTRACT_F6}" \
+    KIOKU_ALLOW_EXTRACT_PDF_OVERRIDE=1 \
+    bash "${AUTO_INGEST}" 2>&1
+  )"
+  rc=$?
+  set -e
+  assert_eq "0" "${rc}" "F7 exit code 0"
+  assert_contains "${out_f7}" "Found 0 unprocessed log(s) and 1 unprocessed raw-source" "F7 counted .cache/extracted MD"
+
+  # ---------------------------------------------------------------------------
+  # Test F8: KIOKU_INGEST_MAX_SECONDS=0 即時 timeout → PDF ループ break
+  # ---------------------------------------------------------------------------
+  echo "test F8: KIOKU_INGEST_MAX_SECONDS=0 aborts PDF loop before extraction"
+  VAULT_F8="$(make_vault vault-f8)"
+  mkdir -p "${VAULT_F8}/raw-sources/papers"
+  : > "${VAULT_F8}/raw-sources/papers/deferred.pdf"
+  add_unprocessed_log "${VAULT_F8}" "20260417-110000-f8"
+
+  STUB_EXTRACT_F8="${TMPROOT}/stub-extract-f8.sh"
+  INVOKED_FILE_F8="${TMPROOT}/extract-f8.invoked"
+  cat > "${STUB_EXTRACT_F8}" <<STUB
+#!/usr/bin/env bash
+# stub: mark invocation
+echo invoked > "${INVOKED_FILE_F8}"
+exit 0
+STUB
+  chmod +x "${STUB_EXTRACT_F8}"
+
+  set +e
+  out_f8="$(
+    PATH="${STUB_DIR}:${PATH}" \
+    OBSIDIAN_VAULT="${VAULT_F8}" \
+    KIOKU_DRY_RUN=1 \
+    KIOKU_INGEST_MAX_SECONDS=0 \
+    KIOKU_EXTRACT_PDF_SCRIPT="${STUB_EXTRACT_F8}" \
+    KIOKU_ALLOW_EXTRACT_PDF_OVERRIDE=1 \
+    bash "${AUTO_INGEST}" 2>&1
+  )"
+  rc=$?
+  set -e
+  assert_eq "0" "${rc}" "F8 exit code 0"
+  assert_contains "${out_f8}" "soft-timeout" "F8 soft-timeout message emitted"
+  if [[ -f "${INVOKED_FILE_F8}" ]]; then
+    fail "F8 stub extract-pdf.sh should NOT be invoked when timeout is 0"
+  else
+    pass "F8 stub extract-pdf.sh was not invoked (timeout triggered before extraction)"
+  fi
+
+  # ---------------------------------------------------------------------------
+  # Test F9: VULN-004 対策 — KIOKU_EXTRACT_PDF_SCRIPT が設定されていても
+  #          KIOKU_ALLOW_EXTRACT_PDF_OVERRIDE=1 が無ければ override を拒否する
+  # ---------------------------------------------------------------------------
+  echo "test F9: env override rejected without KIOKU_ALLOW_EXTRACT_PDF_OVERRIDE"
+  VAULT_F9="$(make_vault vault-f9)"
+  mkdir -p "${VAULT_F9}/raw-sources/papers"
+  : > "${VAULT_F9}/raw-sources/papers/fake.pdf"
+  add_unprocessed_log "${VAULT_F9}" "20260417-130000-f9"
+
+  STUB_EXTRACT_F9="${TMPROOT}/stub-extract-f9.sh"
+  INVOKED_FILE_F9="${TMPROOT}/extract-f9.invoked"
+  cat > "${STUB_EXTRACT_F9}" <<STUB
+#!/usr/bin/env bash
+# Evil stub: records invocation. It must NOT be called when gate is off.
+echo invoked > "${INVOKED_FILE_F9}"
+exit 0
+STUB
+  chmod +x "${STUB_EXTRACT_F9}"
+
+  set +e
+  out_f9="$(
+    PATH="${STUB_DIR}:${PATH}" \
+    OBSIDIAN_VAULT="${VAULT_F9}" \
+    KIOKU_DRY_RUN=1 \
+    KIOKU_EXTRACT_PDF_SCRIPT="${STUB_EXTRACT_F9}" \
+    bash "${AUTO_INGEST}" 2>&1
+  )"
+  rc=$?
+  set -e
+  assert_eq "0" "${rc}" "F9 exit code 0"
+  assert_contains "${out_f9}" "ignoring override" "F9 override rejection WARN emitted"
+  if [[ -f "${INVOKED_FILE_F9}" ]]; then
+    fail "F9 evil stub extract-pdf.sh should NOT be invoked when gate is off"
+  else
+    pass "F9 evil stub extract-pdf.sh was not invoked (override gated)"
+  fi
+fi
+
+# -----------------------------------------------------------------------------
+# 機能 2.1 (MCP trigger + ハードニング) — F10 / F11 / F12
+# -----------------------------------------------------------------------------
+# F10: chunk MD の source_sha256 が wiki/summaries/ の sha256 と不一致 → 再 Ingest 対象
+# F11: 別プロセスが .kioku-mcp.lock を保持 (TTL 内) → auto-ingest skip exit 0
+# F12: 旧命名 (`<subdir>-<stem>-pp*.md`、二重ハイフンなし) の既存 chunk が壊れず動作
+# -----------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Test F10: source_sha256 mismatch -> UNPROCESSED_SOURCES increases
+# ---------------------------------------------------------------------------
+echo "test F10: source_sha256 mismatch between chunk and summary re-ingests"
+VAULT_F10="$(make_vault vault-f10)"
+mkdir -p "${VAULT_F10}/.cache/extracted" "${VAULT_F10}/wiki/summaries"
+# chunk MD と同名 summary を用意し、sha256 が異なるようにする。
+cat > "${VAULT_F10}/.cache/extracted/papers--foo-pp001-015.md" <<'EOF'
+---
+title: "Foo"
+source_sha256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+page_range: "001-015"
+---
+chunk body
+EOF
+cat > "${VAULT_F10}/wiki/summaries/papers--foo-pp001-015.md" <<'EOF'
+---
+title: "Foo (old summary)"
+source_sha256: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+---
+old summary
+EOF
+set +e
+out_f10="$(
+  PATH="${STUB_DIR}:${PATH}" \
+  OBSIDIAN_VAULT="${VAULT_F10}" \
+  KIOKU_DRY_RUN=1 \
+  KIOKU_EXTRACT_PDF_SCRIPT="/nonexistent-ignored" \
+  bash "${AUTO_INGEST}" 2>&1
+)"
+rc=$?
+set -e
+assert_eq "0" "${rc}" "F10 exit code 0"
+assert_contains "${out_f10}" "Found 0 unprocessed log(s) and 1 unprocessed raw-source" "F10 mismatch counted as unprocessed"
+
+# F10b: sha256 一致なら未処理扱いしない
+VAULT_F10B="$(make_vault vault-f10b)"
+mkdir -p "${VAULT_F10B}/.cache/extracted" "${VAULT_F10B}/wiki/summaries"
+cat > "${VAULT_F10B}/.cache/extracted/papers--bar-pp001-010.md" <<'EOF'
+---
+title: "Bar"
+source_sha256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+---
+chunk
+EOF
+cat > "${VAULT_F10B}/wiki/summaries/papers--bar-pp001-010.md" <<'EOF'
+---
+title: "Bar summary"
+source_sha256: "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+---
+summary
+EOF
+set +e
+out_f10b="$(
+  PATH="${STUB_DIR}:${PATH}" \
+  OBSIDIAN_VAULT="${VAULT_F10B}" \
+  KIOKU_DRY_RUN=1 \
+  bash "${AUTO_INGEST}" 2>&1
+)"
+rc=$?
+set -e
+assert_eq "0" "${rc}" "F10b exit code 0"
+assert_contains "${out_f10b}" "No unprocessed logs or raw-sources" "F10b matching sha256 not re-ingested"
+
+# ---------------------------------------------------------------------------
+# Test F11: .kioku-mcp.lock held by another process -> skip exit 0
+# ---------------------------------------------------------------------------
+echo "test F11: lockfile held by another writer -> skip exit 0"
+VAULT_F11="$(make_vault vault-f11)"
+add_unprocessed_log "${VAULT_F11}" "20260417-200000-f11"
+# 別プロセスが保持中を模擬: 新鮮な lockfile を手で作る
+printf '%s %s\n' "99999" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "${VAULT_F11}/.kioku-mcp.lock"
+set +e
+out_f11="$(
+  PATH="${STUB_DIR}:${PATH}" \
+  OBSIDIAN_VAULT="${VAULT_F11}" \
+  KIOKU_DRY_RUN=1 \
+  KIOKU_LOCK_ACQUIRE_TIMEOUT=1 \
+  bash "${AUTO_INGEST}" 2>&1
+)"
+rc=$?
+set -e
+assert_eq "0" "${rc}" "F11 exit code 0 when lock held"
+assert_contains "${out_f11}" "another writer holds" "F11 lock-held message emitted"
+# stub claude が呼ばれていないこと (ingest 経路に入っていない)
+if printf '%s' "${out_f11}" | grep -q "DRY RUN: would call claude"; then
+  fail "F11 ingest should have been skipped by lock"
+else
+  pass "F11 ingest path was not entered"
+fi
+# lockfile を別プロセスのまま残しても、auto-ingest は自分のものでないので unlink しない
+if [[ -f "${VAULT_F11}/.kioku-mcp.lock" ]]; then
+  pass "F11 foreign lock preserved (not unlinked by failed acquire)"
+else
+  fail "F11 foreign lock was unexpectedly removed"
+fi
+
+# F11b: stale lockfile (TTL 超過) は自動回収される
+echo "test F11b: stale lockfile (past TTL) auto-recovered"
+VAULT_F11B="$(make_vault vault-f11b)"
+add_unprocessed_log "${VAULT_F11B}" "20260417-210000-f11b"
+touch "${VAULT_F11B}/.kioku-mcp.lock"
+# lockfile の mtime を過去にする (2 時間前)
+touch -t "$(date -v-2H +%Y%m%d%H%M 2>/dev/null || date -d '-2 hours' +%Y%m%d%H%M)" \
+  "${VAULT_F11B}/.kioku-mcp.lock"
+(cd "${VAULT_F11B}" && git init --quiet && git -c user.email=t@test -c user.name=t commit --allow-empty -m init --quiet)
+set +e
+out_f11b="$(
+  PATH="${STUB_DIR}:${PATH}" \
+  OBSIDIAN_VAULT="${VAULT_F11B}" \
+  KIOKU_DRY_RUN=1 \
+  KIOKU_LOCK_TTL_SECONDS=60 \
+  KIOKU_LOCK_ACQUIRE_TIMEOUT=2 \
+  bash "${AUTO_INGEST}" 2>&1
+)"
+rc=$?
+set -e
+assert_eq "0" "${rc}" "F11b exit code 0 (stale lock recovered)"
+assert_contains "${out_f11b}" "DRY RUN: would call claude" "F11b ingest path reached after stale lock recovery"
+
+# ---------------------------------------------------------------------------
+# Test F12: legacy single-hyphen chunk naming remains compatible
+# ---------------------------------------------------------------------------
+echo "test F12: legacy chunk naming (<subdir>-<stem>-pp*.md) still counted"
+VAULT_F12="$(make_vault vault-f12)"
+mkdir -p "${VAULT_F12}/.cache/extracted"
+# Legacy chunk without source_sha256 and without matching summary → unprocessed
+cat > "${VAULT_F12}/.cache/extracted/papers-legacy-pp001-008.md" <<'EOF'
+---
+title: "Legacy"
+page_range: "001-008"
+---
+legacy body
+EOF
+set +e
+out_f12="$(
+  PATH="${STUB_DIR}:${PATH}" \
+  OBSIDIAN_VAULT="${VAULT_F12}" \
+  KIOKU_DRY_RUN=1 \
+  bash "${AUTO_INGEST}" 2>&1
+)"
+rc=$?
+set -e
+assert_eq "0" "${rc}" "F12 exit code 0"
+assert_contains "${out_f12}" "Found 0 unprocessed log(s) and 1 unprocessed raw-source" "F12 legacy chunk counted as unprocessed"
+
+# -----------------------------------------------------------------------------
 # サマリ
 # -----------------------------------------------------------------------------
 echo

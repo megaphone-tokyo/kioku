@@ -102,6 +102,56 @@ cd "${OBSIDIAN_VAULT}"
 git pull --rebase --quiet 2>/dev/null || true
 
 # -----------------------------------------------------------------------------
+# R1 (機能 2.1 / VULN-014 監査層): Unicode 不可視文字の事前スキャン
+# -----------------------------------------------------------------------------
+# ZWSP / RTLO / SHY / BOM 等の非表示 Unicode が wiki/ の .md に混入していないかを
+# shell 側で検出し、結果を LINT_PROMPT に注入する。LLM は R1 セクションを lint-report.md
+# に書き、人間が prompt injection の疑いをレビューできるようにする。
+#
+# - 検知のみ、自動修正なし (誤修正事故を防ぐため)
+# - LC_ALL=C grep -P は BSD grep 非対応のため、Node 組み込み正規表現で実装
+# - node が PATH にない環境では R1 は WARN を出して skip (既存 rule は動作継続)
+R1_FINDINGS=""
+if command -v node >/dev/null 2>&1; then
+  # node -e はセッション環境の OBSIDIAN_VAULT に依存させないため、wiki ディレクトリを
+  # 第 1 引数で明示的に渡す。
+  R1_FINDINGS="$(
+    node -e '
+      const { readFileSync } = require("node:fs");
+      const { createInterface } = require("node:readline");
+      const wiki = process.argv[1];
+      // Unicode 不可視/制御文字: SHY, ZWSP 系, bidi override 系, word joiner 系, BOM
+      const RE = /[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/;
+      const rl = createInterface({ input: process.stdin });
+      rl.on("line", (abs) => {
+        if (!abs) return;
+        let content;
+        try { content = readFileSync(abs, "utf8"); } catch { return; }
+        const lines = content.split("\n");
+        const hits = [];
+        for (let i = 0; i < lines.length; i++) {
+          if (RE.test(lines[i])) hits.push(i + 1);
+        }
+        if (hits.length) {
+          const rel = abs.startsWith(wiki + "/") ? abs.slice(wiki.length + 1) : abs;
+          // LOW-1 対策 (機能 2.1 security review): rel はファイル名由来なので、
+          // バッククォート / 改行 / `$` / バックスラッシュ等が含まれると
+          // LINT_PROMPT 末尾の findings セクションを脱出して LLM prompt を汚染できる。
+          // これらの文字は "?" に置換して prompt injection 経路を塞ぐ。
+          const safeRel = rel.replace(/[`\n\r\\$]/g, "?");
+          process.stdout.write(`- \`wiki/${safeRel}\` (lines ${hits.join(",")})\n`);
+        }
+      });
+    ' "${WIKI_DIR}" < <(
+      find "${WIKI_DIR}" -type f -name '*.md' \
+        ! -name 'lint-report.md' 2>/dev/null
+    ) 2>/dev/null || true
+  )"
+else
+  echo "${LOG_PREFIX} WARN: node not in PATH; R1 (Unicode invisible char scan) skipped" >&2
+fi
+
+# -----------------------------------------------------------------------------
 # Lint プロンプト
 # -----------------------------------------------------------------------------
 
@@ -148,7 +198,27 @@ date: (今日の日付)
 
 ## フロントマター不備
 (不備のあるページ一覧)
+
+## R1: Unicode 不可視文字 (prompt injection 監査)
+(Shell 側 pre-scan の結果がプロンプト末尾で提供されるので、それをそのまま列挙する。
+該当ページが無ければ「検出なし」と記載。ZWSP / RTLO / SHY / BOM 等の不可視文字は
+PDF 由来のテキストに混入することがあり、LLM への指示埋め込みの手段になりうるため、
+ページ名と行番号を明示しておくと人間がレビューしやすい。自動修正はしないこと。)
 PROMPT
+
+# 動的 R1 findings を LINT_PROMPT 末尾に追加。findings が空の場合も明示セクションを
+# 作って LLM が「検出なし」を記載できるようにする。
+LINT_PROMPT+="
+
+---
+
+### R1 pre-scan findings (shell が計測した結果、LLM 側の再計測は不要)
+"
+if [[ -n "${R1_FINDINGS}" ]]; then
+  LINT_PROMPT+="${R1_FINDINGS}"
+else
+  LINT_PROMPT+="(該当なし — wiki/ 内のどの .md にも ZWSP / RTLO / SHY / BOM 等は検出されませんでした)"
+fi
 
 # -----------------------------------------------------------------------------
 # Lint 実行 (テストで mock 可能なように関数化)
