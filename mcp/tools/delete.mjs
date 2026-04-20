@@ -85,12 +85,12 @@ export async function handleDelete(vault, args) {
     // 残った状態で wiki ページを archive すると broken_links_detected が発火せず
     // silent orphan 化していた。
     const vaultAbs = await realpath(vault);
-    const brokenLinks = await scanReferences(vaultAbs, wikiAbs, abs, targets);
+    const { brokenLinks, skippedLargeFiles } = await scanReferences(vaultAbs, wikiAbs, abs, targets);
 
     if (brokenLinks.length > 0 && !force) {
       const e = new Error('broken links detected (use force=true to override)');
       e.code = 'broken_links_detected';
-      e.data = { brokenLinks };
+      e.data = { brokenLinks, skippedLargeFiles };
       throw e;
     }
 
@@ -113,6 +113,7 @@ export async function handleDelete(vault, args) {
     return {
       archivedPath: 'wiki/' + relative(wikiAbs, archiveAbs).split(sep).join('/'),
       brokenLinks,
+      skippedLargeFiles,
     };
   });
 }
@@ -130,10 +131,20 @@ function validate(args) {
   }
 }
 
+// 2026-04-20 NEW-M1 fix: scanReferences walker は wiki/ に加え raw-sources/ も
+// 舐めるようになった (HIGH-a1 fix) が、`raw-sources/<subdir>/fetched/*.md` は
+// attacker-controlled な HTML → Markdown 化 出力を含みうる。size cap なしで
+// readFile(..., 'utf8') を回すと、500 本の大きな fetched MD が仕込まれた場合に
+// kioku_delete が withLock を長時間掴んで他 MCP 操作をブロックする (DoS 表面拡大)。
+// 2MB 超のファイルは scan 対象から外す: wiki/ の通常運用では個別ページがこの
+// サイズを超えることはほぼなく、attacker-controlled な巨大 MD だけが弾かれる。
+const SCAN_MAX_BYTES = 2_000_000;
+
 async function scanReferences(vaultAbs, wikiAbs, targetAbs, targetSet) {
   // 2026-04-20 HIGH-a1 fix: vault ルートから走査して wiki/ + raw-sources/ の両方を
   // 対象に入れる。session-logs / .cache / .obsidian / node_modules 等は除外。
   const out = [];
+  const skipped = [];
   // ディレクトリ名除外 (トップレベルおよび任意階層)
   const excludeDirs = new Set([
     '.obsidian', '.archive', '.trash', 'templates',
@@ -154,6 +165,14 @@ async function scanReferences(vaultAbs, wikiAbs, targetAbs, targetSet) {
         await walk(childAbs);
       } else if (dirent.isFile() && dirent.name.endsWith('.md') && childAbs !== targetAbs) {
         try {
+          // NEW-M1 fix: size cap を先にチェックする。st.isFile() は readdir 側で
+          // 確認済。2MB 超は readFile せず skipped[] に記録して operator 視認性を残す。
+          const st = await stat(childAbs);
+          if (st.size > SCAN_MAX_BYTES) {
+            const relFromVault = relative(vaultAbs, childAbs).split(sep).join('/');
+            skipped.push({ sourcePath: relFromVault, size: st.size });
+            continue;
+          }
           const c = await readFile(childAbs, 'utf8');
           // 生 [[<target>]] の出現回数を数える (findWikilinks は dedupe するので別カウント)
           let occ = 0;
@@ -179,5 +198,5 @@ async function scanReferences(vaultAbs, wikiAbs, targetAbs, targetSet) {
     }
   }
   await walk(vaultAbs);
-  return out;
+  return { brokenLinks: out, skippedLargeFiles: skipped };
 }
