@@ -26,6 +26,18 @@
 set -euo pipefail
 LOG_PREFIX="[extract-url]"
 
+# 2026-04-20 LOW-d4 fix: cron / launchd 経由で呼ばれる際に operator が debug で
+# 残した `KIOKU_URL_ALLOW_LOOPBACK` / `KIOKU_URL_IGNORE_ROBOTS` が永続 bypass に
+# なる経路を塞ぐ。shell 側で明示的に unset することで node CLI に伝搬させない。
+# テスト目的で loopback fixture-server を許可したい場合は
+# `KIOKU_ALLOW_LOOPBACK_IN_CRON=1` を指定すること (最低限の allowlist flag)。
+if [[ "${KIOKU_ALLOW_LOOPBACK_IN_CRON:-0}" != "1" ]]; then
+  unset KIOKU_URL_ALLOW_LOOPBACK
+fi
+if [[ "${KIOKU_ALLOW_IGNORE_ROBOTS_IN_CRON:-0}" != "1" ]]; then
+  unset KIOKU_URL_IGNORE_ROBOTS
+fi
+
 usage() {
   cat <<EOF
 Usage: extract-url.sh --url <url> --vault <vault> [options]

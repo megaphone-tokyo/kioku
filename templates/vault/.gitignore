@@ -2,6 +2,13 @@
 # （配下の .claude-brain/ も同時に除外される）
 session-logs/
 
+# PDF 抽出の中間キャッシュ（マシンごとに再生成されるため Git 管理外）
+.cache/
+
+# URL pre-step が取得した raw HTML (gitignored、debug / 再抽出用、機能 2.2)
+# .cache/ で既に除外されるが、意図を明示するため個別エントリを残す
+.cache/html/
+
 # Obsidian の設定ファイル（マシンごとに異なるため）
 .obsidian/
 
@@ -11,3 +18,20 @@ session-logs/
 # 一時ファイル
 *.tmp
 *.swp
+
+# KIOKU MCP / auto-ingest の共有 lockfile (機能 2.1)
+# cron / MCP が掴んでいる瞬間を誤って commit すると stale 誤判定を誘発するため除外
+.kioku-mcp.lock
+
+# 機能 2.2 operator アラートフラグ (2026-04-20 MED-d3 fix)
+# KIOKU_URL_ALLOW_LOOPBACK / KIOKU_URL_IGNORE_ROBOTS が production に leak した
+# 際に MCP サーバーが timestamp を書き出すディレクトリ。auto-lint 自己診断が拾う。
+.kioku-alerts/
+
+# 機能 2.2 URL 取り込みの画像ローカル保存領域 (2026-04-20 security-review HIGH-c1 fix)
+# 攻撃者が制御する HTML が 20MB × N 枚の画像を仕込むと Vault の Git リポを
+# 膨張させる攻撃 (公開・同期 Mac への波及、履歴永久残留) を防ぐため、
+# 画像バイナリは "ローカル保持・Obsidian 表示のため" の用途に限定し Git からは除外。
+# 元の本文 Markdown (raw-sources/**/fetched/*.md) は引き続き Git 追跡する。
+# 既存ユーザーは `git rm -rf --cached raw-sources/**/fetched/media` で移行。
+raw-sources/**/fetched/media/

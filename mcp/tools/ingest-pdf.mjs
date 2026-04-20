@@ -25,6 +25,11 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { assertInsideRawSources } from '../lib/vault-path.mjs';
 import { withLock } from '../lib/lock.mjs';
+// 2026-04-20 HIGH-d1 fix: 子プロセスへの env allowlist は ../lib/child-env.mjs
+// で集約管理する。旧 `KIOKU_` プレフィックス一括許可は KIOKU_URL_ALLOW_LOOPBACK 等の
+// テスト用フラグを child に propagate させていたため exact-match に切替済。
+// (MED-d2 fix も兼ねる: llm-fallback.mjs との allowlist drift を解消)
+import { buildChildEnv } from '../lib/child-env.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_EXTRACT_PDF_SCRIPT = join(__dirname, '..', '..', 'scripts', 'extract-pdf.sh');
@@ -376,29 +381,6 @@ function buildIngestPrompt({ vault, chunkPages, subdirPrefix, stem, ext, needIng
   ]
     .filter(Boolean)
     .join('\n');
-}
-
-// LOW-4 対策 (機能 2.1 security review): 子プロセス (extract-pdf.sh / claude -p)
-// に渡す環境変数を allowlist 方式で制限する。全量 forward すると `GH_TOKEN`,
-// `AWS_SECRET_ACCESS_KEY`, `OPENAI_API_KEY` 等の無関係な secret が子 claude の
-// コンテキストに入り、prompt injection 経由で wiki/ に書き出される経路が残る。
-// `ANTHROPIC_*` / `CLAUDE_*` は claude CLI が認証・設定に使う可能性があるので通す。
-const ENV_ALLOW_EXACT = new Set([
-  'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TERM', 'TZ',
-  'LANG', 'LC_ALL', 'LC_CTYPE',
-  'TMPDIR', 'NODE_PATH', 'NODE_OPTIONS',
-  'OBSIDIAN_VAULT',
-]);
-const ENV_ALLOW_PREFIXES = ['KIOKU_', 'ANTHROPIC_', 'CLAUDE_', 'XDG_'];
-
-function buildChildEnv(extraEnv = {}) {
-  const out = {};
-  for (const [key, val] of Object.entries(process.env)) {
-    if (ENV_ALLOW_EXACT.has(key) || ENV_ALLOW_PREFIXES.some((p) => key.startsWith(p))) {
-      out[key] = val;
-    }
-  }
-  return { ...out, ...extraEnv };
 }
 
 function spawnSync(cmd, args, { timeoutMs = 180_000, extraEnv = {} } = {}) {

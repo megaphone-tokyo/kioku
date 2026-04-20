@@ -54,6 +54,14 @@ if [[ ! -d "${OBSIDIAN_VAULT}" ]]; then
   exit 1
 fi
 
+# 2026-04-20 HIGH-b2 fix (documentation): スキャン対象は session-logs/ 配下に限定する。
+# 将来 "Vault 全体を走査" するよう拡張する場合は必ず以下を除外すること:
+#   - .cache/html/   : 機能 2.2 が保存する attacker-controlled raw HTML (injection pattern
+#                      を意図的に埋められると偽陽性の洪水 / DoS 誘導される)
+#   - .cache/extracted/ : PDF 抽出 chunk。masking 済だが大量生成ノイズ源
+#   - .obsidian/     : Obsidian 設定 (機械生成、token シェイプのハッシュを含みうる)
+#   - raw-sources/<subdir>/fetched/media/ : 画像バイナリ (grep でも誤マッチの温床)
+# どう拡張するかは scripts/scan-secrets.sh の "Scope" セクションで議論する。
 LOGS_DIR="${OBSIDIAN_VAULT}/session-logs"
 if [[ ! -d "${LOGS_DIR}" ]]; then
   echo "${LOG_PREFIX} ERROR: session-logs/ not found under ${OBSIDIAN_VAULT}" >&2

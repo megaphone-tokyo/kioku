@@ -79,8 +79,13 @@ export async function handleDelete(vault, args) {
     const targets = new Set([stem]);
     if (title) targets.add(title);
 
-    // wiki/ 全走査で参照を集める
-    const brokenLinks = await scanReferences(wikiAbs, abs, targets);
+    // 2026-04-20 HIGH-a1 fix: wiki/ だけでなく raw-sources/ 配下も走査対象にする。
+    // 機能 2.2 で `raw-sources/<subdir>/fetched/*.md` が LLM 生成の [[...]] wikilink
+    // を持ちうるが、旧実装では wiki/ のみしか走査しないため、fetched 側からのリンクが
+    // 残った状態で wiki ページを archive すると broken_links_detected が発火せず
+    // silent orphan 化していた。
+    const vaultAbs = await realpath(vault);
+    const brokenLinks = await scanReferences(vaultAbs, wikiAbs, abs, targets);
 
     if (brokenLinks.length > 0 && !force) {
       const e = new Error('broken links detected (use force=true to override)');
@@ -125,9 +130,15 @@ function validate(args) {
   }
 }
 
-async function scanReferences(wikiAbs, targetAbs, targetSet) {
+async function scanReferences(vaultAbs, wikiAbs, targetAbs, targetSet) {
+  // 2026-04-20 HIGH-a1 fix: vault ルートから走査して wiki/ + raw-sources/ の両方を
+  // 対象に入れる。session-logs / .cache / .obsidian / node_modules 等は除外。
   const out = [];
-  const exclude = new Set(['.obsidian', '.archive', '.trash', 'templates']);
+  // ディレクトリ名除外 (トップレベルおよび任意階層)
+  const excludeDirs = new Set([
+    '.obsidian', '.archive', '.trash', 'templates',
+    '.cache', 'session-logs', 'node_modules', '.git',
+  ]);
   async function walk(dir) {
     let entries;
     try {
@@ -136,7 +147,7 @@ async function scanReferences(wikiAbs, targetAbs, targetSet) {
       return;
     }
     for (const dirent of entries) {
-      if (exclude.has(dirent.name)) continue;
+      if (excludeDirs.has(dirent.name)) continue;
       if (dirent.name.startsWith('.')) continue;
       const childAbs = join(dir, dirent.name);
       if (dirent.isDirectory()) {
@@ -151,9 +162,14 @@ async function scanReferences(wikiAbs, targetAbs, targetSet) {
             if (targetSet.has(target)) occ++;
           }
           if (occ > 0) {
+            // sourcePath は vault からの相対パス。wiki/ 以外の出所 (例: raw-sources/)
+            // は operator が「どこから参照されているか」で判断できるよう prefix を保持。
+            const relFromVault = relative(vaultAbs, childAbs).split(sep).join('/');
+            const inWiki = childAbs.startsWith(wikiAbs + sep) || childAbs === wikiAbs;
             out.push({
-              sourcePath: 'wiki/' + relative(wikiAbs, childAbs).split(sep).join('/'),
+              sourcePath: relFromVault,
               occurrences: occ,
+              inWiki,
             });
           }
         } catch {
@@ -162,6 +178,6 @@ async function scanReferences(wikiAbs, targetAbs, targetSet) {
       }
     }
   }
-  await walk(wikiAbs);
+  await walk(vaultAbs);
   return out;
 }

@@ -49,8 +49,21 @@ fi
 # -----------------------------------------------------------------------------
 
 cd "${APP_DIR}"
+
+# 2026-04-20 MED-f1 fix: 前回 crash 中に .git と .git-kioku が両方残ると、
+# 次回 `mv .git-kioku .git` が既存 .git を破壊的に上書きし kioku repo の
+# history が破損する。script 先頭で両立を detect して abort する。
+# 解消手順: rm -rf app/.git (kioku 側はリモートから再 clone で復旧可)
+if [[ -d .git && -d .git-kioku ]]; then
+  echo "ERROR: app/.git and app/.git-kioku both exist." >&2
+  echo "  This is a leftover from a crashed sync-to-app.sh run." >&2
+  echo "  Manual recovery required: 'rm -rf $(pwd)/.git' (re-clone kioku from remote if needed)." >&2
+  exit 1
+fi
+
+# trap を先に仕込んでから rename (rename 失敗時も .git-kioku 側を戻せるように)
+trap 'cd "${APP_DIR}" && [[ -d .git ]] && mv .git .git-kioku 2>/dev/null || true' EXIT INT TERM HUP
 mv .git-kioku .git
-trap 'cd "${APP_DIR}" && [[ -d .git ]] && mv .git .git-kioku 2>/dev/null || true' EXIT
 
 # 2026-04-20: リモート最新を fetch してから branch を切り替える。
 # これをしないとローカル main / next が origin に対して古い状態で rsync の
@@ -69,12 +82,20 @@ git fetch origin --quiet 2>/dev/null || true
 # 初回 push は通常 fast-forward、2 回目以降の rebase-merge 後は force-with-lease
 # が必要になる (後段の push ロジックでフォールバック)。
 if git show-ref --quiet refs/remotes/origin/main 2>/dev/null; then
+  # 2026-04-20 MED-f2 fix: dirty WT (kioku repo 側で未 commit の手編集) を検知
+  # したら `git stash push` で保険を作ってから force checkout する。
+  # git stash list で後から復旧可能。
+  if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+    local_dirty_stash=1
+    git stash push -u -m "sync-to-app auto-stash $(date +%Y%m%d-%H%M%S)" --quiet 2>/dev/null || true
+    echo "  [notice] dirty WT detected; uncommitted changes stashed. Recover with: cd $(pwd) && mv .git-kioku .git && git stash list" >&2
+  fi
   # -B: 既存なら reset、無ければ create。--force 相当で WT の untracked も排除しない
   # が、tracked conflict があっても origin/main の内容で上書きされる。
   git checkout -B next origin/main --quiet 2>/dev/null || {
     # WT に untracked + conflicting files がある場合の rescue path:
     # hard reset + clean で強制的にクリーン状態にする (sync の用途上、commit
-    # 前の手編集は想定外なので許容)。
+    # 前の手編集は stash 済なので安全に上書きされる)。
     git checkout --force -B next origin/main --quiet
   }
 else
@@ -100,8 +121,15 @@ echo "=== sync-to-app: copying from parent to app/ ==="
 # Phase N で追加した build/ と dist/ (MCPB バンドルのビルド成果物) も同様に除外。
 for dir in hooks scripts templates skills tests mcp; do
   if [[ -d "${BRAIN_DIR}/${dir}" ]]; then
+    # 2026-04-20 security-review HIGH-b1 fix:
+    # 旧コードは `--exclude='.git*'` だったため、glob が `.gitignore` まで誤爆し
+    # `templates/vault/.gitignore` が kioku に **一度も sync されていない**
+    # 状態だった (v0.3.0 配布 .mcpb に機能 2.1 / 2.2 で追加された
+    # `.cache/`, `.cache/html/`, `.kioku-mcp.lock` エントリが欠落)。
+    # 個別 exclude に分離して `.gitignore` は必ず sync 対象にする。
     rsync -a --delete \
-      --exclude='.git*' \
+      --exclude='.git' \
+      --exclude='.git-kioku' \
       --exclude='node_modules' \
       --exclude='build' \
       --exclude='dist' \
@@ -149,9 +177,14 @@ if [[ "${DRY_RUN}" == "1" ]]; then
   git reset HEAD --quiet
   git checkout -- .
   git clean -fd >/dev/null
-  # dry-run 側も main を ff-only で origin/main に揃えて WT drift を回避
-  git checkout main --quiet 2>/dev/null || true
-  git merge --ff-only origin/main --quiet 2>/dev/null || true
+  # 2026-04-20 LOW-f3 fix: DRY_RUN では next (= origin/main + 出発点) に留めて、
+  # `main` への切替を行わない。operator が「dry-run 後の branch 状態」から次に
+  # 期待する state を予測しやすくするため (旧実装では main checkout + ff merge
+  # で局所的な state 変更が意外な結果を招いた)。
+  echo "  [dry-run] local next points at origin/main (+ rsync reverted). local main untouched."
+  echo "  [dry-run] NOTE: parent repo's app/ working tree now reflects kioku origin/main state,"
+  echo "  [dry-run]       which may differ from parent's HEAD (tracked app/). To restore the"
+  echo "  [dry-run]       parent-clean view, run: cd $(dirname "${APP_DIR}") && git checkout HEAD -- app/"
   exit 0
 fi
 
@@ -161,9 +194,17 @@ git commit -m "sync: update from parent $(date +%Y%m%d-%H%M)" --quiet
 # origin/next は古い履歴を持つため fast-forward push は reject される。
 # --force-with-lease で "origin/next が想定どおりなら上書き" を明示 (他者の
 # 割り込みは検知して abort する安全版 force)。通常 sync では noop。
+# 2026-04-20 LOW-f1 fix: push の 3 段フォールバックが silent failure しないよう、
+# 最終段の --force-with-lease が失敗した場合は明示的に ERROR 出して exit 1。
 git push -u origin next --quiet 2>/dev/null \
   || git push --set-upstream origin next --quiet 2>/dev/null \
-  || git push --force-with-lease origin next --quiet
+  || {
+    echo "=== sync: fast-forward push failed; attempting force-with-lease ===" >&2
+    git push --force-with-lease origin next --quiet || {
+      echo "ERROR: sync push failed (origin/next may have diverged or network issue)" >&2
+      exit 1
+    }
+  }
 
 echo ""
 echo "=== sync-to-app: pushed to next branch ==="

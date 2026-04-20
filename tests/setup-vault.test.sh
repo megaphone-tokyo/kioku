@@ -155,6 +155,14 @@ else
   fail ".gitignore should exclude .cache/html/ (URL raw HTML cache)"
 fi
 
+# 機能 2.2 / v0.3.1 HIGH-c1 fix: fetched/ の画像ローカル保存領域を git から除外
+# (攻撃 HTML が仕込んだ多量画像で Vault repo が膨張する防御)
+if grep -q '^raw-sources/\*\*/fetched/media/' "${VAULT}/.gitignore"; then
+  pass ".gitignore excludes raw-sources/**/fetched/media/ (HIGH-c1)"
+else
+  fail ".gitignore should exclude raw-sources/**/fetched/media/ (attacker image DoS)"
+fi
+
 # -----------------------------------------------------------------------------
 # Test 5: 冪等性 — 2 回目の実行で既存ファイルを壊さない
 # -----------------------------------------------------------------------------

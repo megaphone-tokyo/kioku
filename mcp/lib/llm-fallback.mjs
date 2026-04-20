@@ -13,23 +13,13 @@ import { createHash, randomBytes } from 'node:crypto';
 import { mkdir, readFile, realpath, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { JSDOM } from 'jsdom';
+// 2026-04-20 HIGH-d1 fix: child env allowlist は child-env.mjs で集約管理。
+// 旧実装の `ENV_ALLOW_PREFIXES=['KIOKU_']` は KIOKU_URL_ALLOW_LOOPBACK などの
+// SSRF bypass フラグを child に propagate させていたため exact-match に切替済。
+// (MED-d2 fix: ingest-pdf.mjs との allowlist drift 解消)
+import { buildChildEnv } from './child-env.mjs';
 
-const ENV_ALLOW_EXACT = new Set([
-  'PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'TERM', 'TZ',
-  'LANG', 'LC_ALL', 'LC_CTYPE', 'TMPDIR', 'NODE_PATH',
-]);
-const ENV_ALLOW_PREFIXES = ['KIOKU_', 'ANTHROPIC_', 'CLAUDE_', 'XDG_'];
 const DEFAULT_TIMEOUT_MS = Number(process.env.KIOKU_URL_LLM_FB_TIMEOUT_MS ?? 60_000);
-
-function buildChildEnv(extraEnv = {}) {
-  const out = {};
-  for (const [k, v] of Object.entries(process.env)) {
-    if (ENV_ALLOW_EXACT.has(k) || ENV_ALLOW_PREFIXES.some((p) => k.startsWith(p))) {
-      out[k] = v;
-    }
-  }
-  return { ...out, ...extraEnv };
-}
 
 function stripChrome(html) {
   const dom = new JSDOM(html);
