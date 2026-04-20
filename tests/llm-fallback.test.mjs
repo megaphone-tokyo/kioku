@@ -82,4 +82,46 @@ describe('llm-fallback', () => {
     assert.doesNotMatch(log, /SHOULD_NOT_LEAK_AWS/);
     assert.doesNotMatch(log, /SHOULD_NOT_LEAK_GH/);
   });
+
+  test('UE9 KIOKU_URL_* security/config env must NOT propagate to child (HIGH-d1)', async () => {
+    // 2026-04-20 HIGH-d1 regression test: 旧実装は `ENV_ALLOW_PREFIXES=['KIOKU_']` で
+    // KIOKU_URL_ALLOW_LOOPBACK などの SSRF bypass フラグを child に propagate させていた。
+    // child-env.mjs 導入で exact-match allowlist に切替済。以下の env が child argv log に
+    // 現れないことを確認する。
+    const logPath = join(workspace, 'argv-env-urlsecurity.log');
+    process.env.KIOKU_LLM_FB_LOG = logPath;
+    process.env.KIOKU_URL_ALLOW_LOOPBACK = '1';
+    process.env.KIOKU_URL_IGNORE_ROBOTS = '1';
+    process.env.KIOKU_EXTRACT_URL_SCRIPT = '/tmp/evil.sh';
+    process.env.KIOKU_ALLOW_EXTRACT_URL_OVERRIDE = '1';
+    process.env.KIOKU_URL_MAX_PDF_BYTES = '1';
+    process.env.KIOKU_URL_USER_AGENT = 'pwned/1.0';
+    try {
+      await llmFallbackExtract({
+        html: '<html><body><p>x</p></body></html>',
+        url: 'https://example.com/',
+        cacheDir: workspace,
+        claudeBin: stubBin,
+      });
+    } finally {
+      delete process.env.KIOKU_LLM_FB_LOG;
+      delete process.env.KIOKU_URL_ALLOW_LOOPBACK;
+      delete process.env.KIOKU_URL_IGNORE_ROBOTS;
+      delete process.env.KIOKU_EXTRACT_URL_SCRIPT;
+      delete process.env.KIOKU_ALLOW_EXTRACT_URL_OVERRIDE;
+      delete process.env.KIOKU_URL_MAX_PDF_BYTES;
+      delete process.env.KIOKU_URL_USER_AGENT;
+    }
+    const log = await readFile(logPath, 'utf8');
+    // SSRF の最終防衛線である KIOKU_URL_ALLOW_LOOPBACK が child に漏れないこと
+    assert.doesNotMatch(log, /KIOKU_URL_ALLOW_LOOPBACK/, 'KIOKU_URL_ALLOW_LOOPBACK must not leak to child');
+    assert.doesNotMatch(log, /KIOKU_URL_IGNORE_ROBOTS/, 'KIOKU_URL_IGNORE_ROBOTS must not leak to child');
+    assert.doesNotMatch(log, /KIOKU_EXTRACT_URL_SCRIPT/, 'KIOKU_EXTRACT_URL_SCRIPT must not leak to child');
+    assert.doesNotMatch(log, /KIOKU_ALLOW_EXTRACT_URL_OVERRIDE/, 'override flag must not leak to child');
+    assert.doesNotMatch(log, /KIOKU_URL_MAX_PDF_BYTES/, 'cap setting must not leak to child');
+    assert.doesNotMatch(log, /KIOKU_URL_USER_AGENT/, 'UA override must not leak to child');
+    // 内部通信フラグは引き続き propagate される (regression なし)
+    assert.match(log, /KIOKU_NO_LOG=1/, 'KIOKU_NO_LOG is still propagated (internal flag)');
+    assert.match(log, /KIOKU_MCP_CHILD=1/, 'KIOKU_MCP_CHILD is still propagated (internal flag)');
+  });
 });

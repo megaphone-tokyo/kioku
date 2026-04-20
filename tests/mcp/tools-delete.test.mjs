@@ -94,6 +94,66 @@ describe('kioku_delete', () => {
     } finally { await cleanup(); }
   });
 
+  test('MCP26b detects wikilink references from raw-sources/fetched/ (HIGH-a1)', async () => {
+    // 2026-04-20 HIGH-a1 regression test: kioku_delete の broken-link scan は
+    // wiki/ のみを走査していたため、`raw-sources/<subdir>/fetched/*.md` から
+    // wiki ページへの wikilink が silent orphan 化する経路があった。
+    // 本テストは fetched/ 配下の MD に [[Foo]] があれば検知されることを確認する。
+    try {
+      await writeFile(join(vault, 'wiki', 'foo.md'),
+        '---\ntitle: Foo\n---\n\n# Foo\n');
+      const fetchedDir = join(vault, 'raw-sources', 'articles', 'fetched');
+      await mkdir(fetchedDir, { recursive: true });
+      await writeFile(join(fetchedDir, 'evil.com-article.md'),
+        '---\nsource_url: "https://evil.com/"\n---\n\n# evil article\n\nsee [[Foo]]\n');
+      await assert.rejects(
+        handleDelete(vault, { path: 'foo.md' }),
+        (err) => {
+          if (err.code !== 'broken_links_detected') return false;
+          const links = err.data?.brokenLinks ?? [];
+          const fetchedLink = links.find(
+            (x) => x.sourcePath === 'raw-sources/articles/fetched/evil.com-article.md'
+          );
+          if (!fetchedLink) return false;
+          assert.equal(fetchedLink.occurrences, 1);
+          assert.equal(fetchedLink.inWiki, false, 'fetched/ は inWiki: false で区別される');
+          return true;
+        },
+      );
+    } finally { await cleanup(); }
+  });
+
+  test('MCP26c excludes .cache / session-logs / .git from scanReferences', async () => {
+    // 2026-04-20: HIGH-a1 fix で scanReferences を vault ルートに広げたので、
+    // 除外ディレクトリ (.cache / session-logs / .git / node_modules) が誤って
+    // 走査対象に入らないことを確認する (attacker-controlled cache HTML が
+    // broken-link スキャンに乗ると DoS / 誤動作の原因になる)。
+    try {
+      await writeFile(join(vault, 'wiki', 'foo.md'),
+        '---\ntitle: Foo\n---\n\n# Foo\n');
+      const cacheDir = join(vault, '.cache', 'html');
+      await mkdir(cacheDir, { recursive: true });
+      // .cache/html/ に [[Foo]] を含む HTML-like MD を置いても検知されないこと
+      await writeFile(join(cacheDir, 'noise.md'), 'cache [[Foo]] noise\n');
+      const logsDir = join(vault, 'session-logs');
+      await mkdir(logsDir, { recursive: true });
+      await writeFile(join(logsDir, '2026-04-20.md'), 'log [[Foo]]\n');
+      // wiki/ 内の既存 index.md の [[Foo]] があるので broken_links_detected は発火する想定
+      await assert.rejects(
+        handleDelete(vault, { path: 'foo.md' }),
+        (err) => {
+          if (err.code !== 'broken_links_detected') return false;
+          const links = err.data?.brokenLinks ?? [];
+          // .cache / session-logs 由来の link は含まれていない
+          const bogus = links.find(
+            (x) => x.sourcePath.startsWith('.cache/') || x.sourcePath.startsWith('session-logs/')
+          );
+          return bogus === undefined;
+        },
+      );
+    } finally { await cleanup(); }
+  });
+
   test('rejects non-existent file', async () => {
     try {
       await assert.rejects(

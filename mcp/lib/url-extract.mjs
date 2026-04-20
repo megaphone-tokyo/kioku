@@ -13,7 +13,7 @@
 //   H5. not_html error に pdfCandidate + fetchResult を付与して Phase 7 に橋渡し。
 
 import { createHash } from 'node:crypto';
-import { mkdir, open, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, open, readdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { JSDOM } from 'jsdom';
 import { fetchUrl } from './url-fetch.mjs';
@@ -24,7 +24,7 @@ import { downloadImages, rewriteImageSrc } from './url-image.mjs';
 import { llmFallbackExtract } from './llm-fallback.mjs';
 import { urlToFilename } from './url-filename.mjs';
 import { applyMasks } from './masking.mjs';
-import { assertInsideRawSourcesSubdir } from './vault-path.mjs';
+import { assertInsideBase, assertInsideRawSourcesSubdir } from './vault-path.mjs';
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter.mjs';
 
 function envRefreshDaysDefault() {
@@ -199,17 +199,19 @@ export async function extractAndSaveUrl(opts) {
   await atomicWrite(finalAbs, content);
 
   // 12. raw HTML を .cache/html/ に保存 (Phase 8 で再抽出・debug 用途)
-  // NOTE (code-quality MEDIUM-1): assertInsideRawSourcesSubdir は raw-sources/ 境界のみを
-  // 保証するので .cache/html/ には使えない。代わりに htmlFilename の安全性は
-  // urlToFilename (url-filename.mjs) の sanitizer に依存している:
+  //
+  // 2026-04-20 MED-b1 fix: urlToFilename の sanitizer 単点に依存していたところへ
+  // `assertInsideBase` による realpath containment check を二重で掛ける。将来
+  // urlToFilename が緩和 (例: `/` 許容) されても、`.cache/html/` 境界はここで強制される。
+  // urlToFilename は以下を保証している:
   //   - path 区切り (/, ..) は全て `-` に置換、SAFE_PATH_RE (\p{L}\p{N}/._ -) 互換
   //   - 先頭 `-` 除去、80 文字超過で truncate + sha8 suffix
-  // urlToFilename を変更する際は、この write path も boundary-check (例: assertInsideVault) を
-  // 導入するか、ここで同等の regex-validate を加える必要がある。
   const htmlCacheDir = join(vault, '.cache', 'html');
   await mkdir(htmlCacheDir, { recursive: true, mode: 0o700 });
   const htmlFilename = filename.replace(/\.md$/, '.html');
-  await atomicWrite(join(htmlCacheDir, htmlFilename), fetchResult.body);
+  // MED-b1: assertInsideBase で realpath containment を検証してから write する
+  const htmlAbs = await assertInsideBase(vault, '.cache/html', htmlFilename);
+  await atomicWrite(htmlAbs, fetchResult.body);
 
   return {
     status: 'fetched_and_summarized_pending',
@@ -276,8 +278,17 @@ async function bumpFetchedAt(absPath) {
     data.fetched_at = new Date().toISOString();
     const next = serializeWithQuotedStrings(data, body);
     await atomicWrite(absPath, next);
-  } catch {
-    // best effort — idempotency は sha で保証されているので fetched_at 更新失敗は致命ではない
+  } catch (err) {
+    // 2026-04-20 LOW-c3 fix: 旧実装は全 error を silent catch。ENOENT は想定内
+    // (削除されたファイルに bump しようとした) だが、EACCES/EIO 等は read-only
+    // mount / disk full のサインなので operator 視認性のため stderr WARN を出す。
+    // fetched_at 更新失敗は idempotency を sha256 で保証しているため致命ではないが、
+    // 長期的に refresh_days の timing がずれ続ける経路は事前通知する価値がある。
+    if (err && err.code && err.code !== 'ENOENT') {
+      process.stderr.write(
+        `[kioku-mcp] WARNING: bumpFetchedAt failed on ${absPath}: ${err.code}\n`,
+      );
+    }
   }
 }
 
@@ -367,9 +378,16 @@ function serializeWithQuotedStrings(data, body = '') {
 }
 
 // H3: tmpfile は最終ディレクトリと同じ場所に作る (境界を跨がない)。
+//
+// 2026-04-20 LOW-c1 fix: SIGKILL / ディスク full 中断後に残った
+// `.<basename>.tmp.<pid>.<ts>` turd を書き込み前に掃除する。該当 pid が
+// 自分以外 かつ 60s 以上前の tmp だけ unlink する (同時書き込み中の他 writer を
+// 安全に見逃す)。失敗は silent pass。
 async function atomicWrite(absPath, content) {
   const dir = dirname(absPath);
-  const tmp = join(dir, `.${basename(absPath)}.tmp.${process.pid}.${Date.now()}`);
+  const bname = basename(absPath);
+  await garbageCollectStaleTmp(dir, bname);
+  const tmp = join(dir, `.${bname}.tmp.${process.pid}.${Date.now()}`);
   const handle = await open(tmp, 'wx', 0o600);
   try {
     await handle.writeFile(content, 'utf8');
@@ -377,4 +395,27 @@ async function atomicWrite(absPath, content) {
     await handle.close();
   }
   await rename(tmp, absPath);
+}
+
+async function garbageCollectStaleTmp(dir, bname) {
+  try {
+    const entries = await readdir(dir);
+    const prefix = `.${bname}.tmp.`;
+    const nowMs = Date.now();
+    const selfPid = String(process.pid);
+    for (const name of entries) {
+      if (!name.startsWith(prefix)) continue;
+      const tail = name.slice(prefix.length); // "<pid>.<ts>"
+      const dot = tail.indexOf('.');
+      if (dot < 1) continue;
+      const pid = tail.slice(0, dot);
+      const ts = tail.slice(dot + 1);
+      if (!/^\d+$/.test(pid) || !/^\d+$/.test(ts)) continue;
+      if (pid === selfPid) continue;
+      if (nowMs - Number(ts) < 60_000) continue;
+      try { await unlink(join(dir, name)); } catch { /* gone */ }
+    }
+  } catch {
+    /* best effort */
+  }
 }

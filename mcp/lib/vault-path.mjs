@@ -116,3 +116,29 @@ export async function assertInsideRawSourcesSubdir(vault, subdir, rel) {
   }
   return resolveWithinBase(vault, `raw-sources/${subdir}`, rel);
 }
+
+// 2026-04-20 MED-b1 fix: 汎用的な vault-relative base に対する境界 realpath ガード。
+// `.cache/html/` など、url-extract.mjs が urlToFilename sanitizer に依存していた
+// 書き込み先に対して detective control (realpath containment check) を追加する。
+// urlToFilename の sanitizer が将来緩和されても、このガードで vault 内境界を強制する。
+//
+// 典型的な呼び出し例:
+//   await assertInsideBase(vault, '.cache/html', htmlFilename);
+//
+// 単一階層の相対基底 (dot-prefix 可) を受け付ける。subdir を '.' や path traversal 要素で
+// 開始させる誤用は弾く。
+export async function assertInsideBase(vault, relBase, rel) {
+  if (typeof relBase !== 'string' || !relBase) {
+    throw new PathBoundaryError('relBase required', 'invalid_path');
+  }
+  // 相対 base は絶対パスや null byte を拒否。"/" / "\\" / ".." セグメントは許容 (例:
+  // ".cache/html", "wiki/.archive")。segment level で ".." 禁止を確認する。
+  if (relBase.includes('\0') || isAbsolute(relBase)) {
+    throw new PathBoundaryError('invalid relBase', 'invalid_path');
+  }
+  const segs = relBase.split('/').filter(Boolean);
+  if (segs.length === 0 || segs.some((s) => s === '..')) {
+    throw new PathBoundaryError('invalid relBase', 'invalid_path');
+  }
+  return resolveWithinBase(vault, relBase, rel);
+}

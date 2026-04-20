@@ -71,6 +71,13 @@ done
 
 # -----------------------------------------------------------------------------
 # Wiki ページ数の確認 (index.md / log.md / lint-report.md は対象外)
+#
+# 2026-04-20 HIGH-b2 fix (documentation): lint の走査対象は wiki/ のみに限定。
+# 将来 R1 (Unicode 不可視文字検出) を Vault ルートに拡張する場合は必ず以下を除外:
+#   - .cache/html/     : 機能 2.2 が保存する attacker-controlled raw HTML
+#                        (invisible-char 偽陽性 / DoS 誘導を防ぐ)
+#   - .cache/extracted/: PDF chunk (masking 済だが大量生成)
+#   - raw-sources/**/fetched/media/ : 画像バイナリ
 # -----------------------------------------------------------------------------
 
 WIKI_DIR="${OBSIDIAN_VAULT}/wiki"
@@ -360,6 +367,32 @@ run_self_diagnostics() {
     esac
   else
     echo "${LOG_PREFIX} [#6] SKIP: scan-secrets.sh not found at ${scan_script}"
+  fi
+
+  # (4) 機能 2.2 operator アラートフラグ (MED-d3 fix, 2026-04-20)
+  #
+  # kioku_ingest_url が KIOKU_URL_ALLOW_LOOPBACK=1 / KIOKU_URL_IGNORE_ROBOTS=1 を
+  # production (非テスト / 非 MCP child) で検知した場合、$VAULT/.kioku-alerts/
+  # に timestamp flag を書く。stderr WARN は cron / launchd ログに埋没するので、
+  # ここで lint ログ経由で operator の視認性を上げる。
+  local alerts_dir="${OBSIDIAN_VAULT}/.kioku-alerts"
+  if [[ -d "${alerts_dir}" ]]; then
+    local flag_count
+    flag_count=$(find "${alerts_dir}" -type f -name '*.flag' 2>/dev/null | wc -l | tr -d ' ')
+    if [[ "${flag_count}" -gt 0 ]]; then
+      echo "${LOG_PREFIX} [#7] WARNING: ${flag_count} operator alert flag(s) in ${alerts_dir}"
+      while IFS= read -r flag; do
+        local name ts
+        name="$(basename "${flag}" .flag)"
+        ts="$(head -n1 "${flag}" 2>/dev/null || echo '?')"
+        echo "${LOG_PREFIX} [#7]   ${name}: ${ts}"
+      done < <(find "${alerts_dir}" -type f -name '*.flag' 2>/dev/null)
+      echo "${LOG_PREFIX} [#7] Review test flags leaked to production (SSRF / robots bypass). Clear with: rm ${alerts_dir}/*.flag"
+    else
+      echo "${LOG_PREFIX} [#7] OK: no operator alert flags."
+    fi
+  else
+    echo "${LOG_PREFIX} [#7] SKIP: no .kioku-alerts/ directory (never alerted)."
   fi
 
   echo "${LOG_PREFIX} --- end diagnostics ---"

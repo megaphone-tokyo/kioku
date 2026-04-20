@@ -26,6 +26,7 @@
 //     (HIGH-2: prompt-injection / SSRF info leak 対策)。code-only で MCP 境界を渡す。
 
 import { mkdir, open, rename } from 'node:fs/promises';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { withLock } from '../lib/lock.mjs';
@@ -43,17 +44,40 @@ const LOCK_ACQUIRE_TIMEOUT_MS = 60_000;
 const DEFAULT_PDF_BYTES_FALLBACK = 50_000_000;
 const DEFAULT_REFRESH_DAYS_FALLBACK = 30;
 
-// HIGH-1 fix: KIOKU_URL_ALLOW_LOOPBACK=1 が production に leak した場合の早期警告。
-// MCP child 経由 (KIOKU_MCP_CHILD=1) または NODE_ENV=test では抑制する。
-// best-effort: 起動時 stderr 1 行のみ。CI / launchd / cron からは見えなくても
-// インタラクティブ起動なら気付ける。
-if (
-  process.env.KIOKU_URL_ALLOW_LOOPBACK === '1'
-  && process.env.KIOKU_MCP_CHILD !== '1'
-  && process.env.NODE_ENV !== 'test'
-) {
-  process.stderr.write(
-    '[kioku-mcp] WARNING: KIOKU_URL_ALLOW_LOOPBACK=1 detected outside test/MCP-child context — SSRF IP-range checks are bypassed.\n',
+// HIGH-1 fix (2026-04-19): KIOKU_URL_ALLOW_LOOPBACK=1 が production に leak した
+// 場合の早期警告。MCP child 経由 (KIOKU_MCP_CHILD=1) または NODE_ENV=test では抑制。
+// MED-d1 fix (2026-04-20): KIOKU_URL_IGNORE_ROBOTS にも同等の WARN を追加
+//   (旧実装では silent だったため production leak に気付けなかった)。
+// MED-d3 fix (2026-04-20): stderr は MCP stdio や cron ログに埋没しがちなので、
+//   検知時に `$VAULT/.kioku-alerts/<flag>.flag` に timestamp ファイルを置き、
+//   auto-lint.sh の自己診断 / スモーク手順がこれを拾えるようにする。
+function warnAndFlag(envVar, message) {
+  if (process.env.KIOKU_MCP_CHILD === '1' || process.env.NODE_ENV === 'test') return;
+  process.stderr.write(`[kioku-mcp] WARNING: ${message}\n`);
+  // best-effort flag file. OBSIDIAN_VAULT 未設定や write 失敗は silent pass
+  // (起動経路で失敗しても MCP 本体は動く前提を崩さない)。
+  try {
+    const vault = process.env.OBSIDIAN_VAULT;
+    if (!vault) return;
+    const dir = join(vault, '.kioku-alerts');
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const flagPath = join(dir, `${envVar.toLowerCase()}.flag`);
+    writeFileSync(flagPath, `${new Date().toISOString()}\n`, { mode: 0o600 });
+  } catch {
+    /* best-effort */
+  }
+}
+
+if (process.env.KIOKU_URL_ALLOW_LOOPBACK === '1') {
+  warnAndFlag(
+    'KIOKU_URL_ALLOW_LOOPBACK',
+    'KIOKU_URL_ALLOW_LOOPBACK=1 detected outside test/MCP-child context — SSRF IP-range checks are bypassed.',
+  );
+}
+if (process.env.KIOKU_URL_IGNORE_ROBOTS === '1') {
+  warnAndFlag(
+    'KIOKU_URL_IGNORE_ROBOTS',
+    'KIOKU_URL_IGNORE_ROBOTS=1 detected outside test/MCP-child context — robots.txt is ignored.',
   );
 }
 
