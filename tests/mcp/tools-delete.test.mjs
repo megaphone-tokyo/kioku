@@ -123,6 +123,52 @@ describe('kioku_delete', () => {
     } finally { await cleanup(); }
   });
 
+  test('MCP26d scanReferences skips files > 2MB and records them (NEW-M1)', async () => {
+    // 2026-04-20 NEW-M1 regression test: HIGH-a1 fix で vault 全体 walk に
+    // 拡張した scanReferences が attacker-controlled な巨大 fetched MD を
+    // size cap なしで readFile すると DoS になる経路を塞ぐ。
+    // 2MB 超のファイルは skip して skippedLargeFiles[] に記録される。
+    try {
+      await writeFile(join(vault, 'wiki', 'foo.md'),
+        '---\ntitle: Foo\n---\n\n# Foo\n');
+      const fetchedDir = join(vault, 'raw-sources', 'articles', 'fetched');
+      await mkdir(fetchedDir, { recursive: true });
+      // 2.5MB の MD を作成 (中には [[Foo]] を含むが size cap で検知されない)
+      const bigPath = join(fetchedDir, 'evil.com-huge.md');
+      const marker = '\n\nsee [[Foo]]\n';
+      // 2.5MB の padding + wikilink marker
+      await writeFile(bigPath, 'x'.repeat(2_500_000) + marker);
+      // 通常 size の MD にも wikilink を持たせて, こちらは検知される
+      await writeFile(join(fetchedDir, 'normal.com-small.md'),
+        '---\nsource_url: "https://normal.com/"\n---\n\nsee [[Foo]]\n');
+      await assert.rejects(
+        handleDelete(vault, { path: 'foo.md' }),
+        (err) => {
+          if (err.code !== 'broken_links_detected') return false;
+          const links = err.data?.brokenLinks ?? [];
+          const skipped = err.data?.skippedLargeFiles ?? [];
+          // 2.5MB の MD は brokenLinks に載らない
+          const bigInLinks = links.find((x) =>
+            x.sourcePath === 'raw-sources/articles/fetched/evil.com-huge.md'
+          );
+          if (bigInLinks) return false;
+          // 代わりに skippedLargeFiles に記録される
+          const bigInSkipped = skipped.find((x) =>
+            x.sourcePath === 'raw-sources/articles/fetched/evil.com-huge.md'
+          );
+          if (!bigInSkipped) return false;
+          assert.ok(bigInSkipped.size > 2_000_000,
+            'skippedLargeFiles[].size must reflect actual file size');
+          // 通常 size の MD は引き続き検知される
+          const smallInLinks = links.find((x) =>
+            x.sourcePath === 'raw-sources/articles/fetched/normal.com-small.md'
+          );
+          return smallInLinks !== undefined;
+        },
+      );
+    } finally { await cleanup(); }
+  });
+
   test('MCP26c excludes .cache / session-logs / .git from scanReferences', async () => {
     // 2026-04-20: HIGH-a1 fix で scanReferences を vault ルートに広げたので、
     // 除外ディレクトリ (.cache / session-logs / .git / node_modules) が誤って
