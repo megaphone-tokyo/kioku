@@ -18,6 +18,7 @@
 // MCP44   PDF body > 50MB → invalid_request
 // MCP45   dispatch では skipLock=true で内側 withLock を跨がず即進行する
 // MCP46   CRIT-1: late-PDF discovery で binary 再 fetch して PDF magic bytes が保持される
+// MCP46b  v0.3.5 Option B: 長い PDF dispatch → status: dispatched_to_pdf_queued
 // MCP47   HIGH-2: fetch エラーメッセージに credentials / 内部 IP / raw URL を含めない
 // MCP48   MED-1: subdir に空白等の不正文字 → silent mangle ではなく invalid_params で reject
 //
@@ -331,12 +332,38 @@ describe('kioku_ingest_url', () => {
         { url: `${server.url}/pdf?name=sample-8p.pdf` },
         { claudeBin: stubBin, robotsUrlOverride: `${server.url}/robots.txt?variant=allow` },
       );
+      // 8p PDF = 1 chunk なので size-gate 下限側 (sync 継続)
       assert.equal(r.status, 'dispatched_to_pdf');
       assert.ok(
         r.path.startsWith('raw-sources/papers/'),
         `expected raw-sources/papers/ prefix, got: ${r.path}`,
       );
       assert.ok(r.pdf_result, 'pdf_result wrapper present');
+      assert.equal(r.pdf_result.status, 'extracted_and_summarized',
+        'short PDF should be summarized synchronously');
+    });
+
+    test('MCP42b v0.3.5: long PDF (42p = 3 chunks) → dispatched_to_pdf_queued', async () => {
+      // handleIngestPdf が `queued_for_summary` を返す分岐が URL 経路でも
+      // `dispatched_to_pdf_queued` に正しく伝搬すること。
+      const v = await makeVault('mcp42b');
+      const r = await handleIngestUrl(
+        v,
+        { url: `${server.url}/pdf?name=sample-42p.pdf` },
+        { claudeBin: stubBin, robotsUrlOverride: `${server.url}/robots.txt?variant=allow` },
+      );
+      assert.equal(r.status, 'dispatched_to_pdf_queued',
+        `long PDF should surface queued status, got: ${JSON.stringify(r).slice(0, 300)}`);
+      assert.ok(r.path.startsWith('raw-sources/papers/'), `path: ${r.path}`);
+      assert.ok(r.pdf_result, 'pdf_result wrapper present');
+      assert.equal(r.pdf_result.status, 'queued_for_summary',
+        'inner pdf_result should mirror the queued status');
+      assert.ok(
+        Array.isArray(r.pdf_result.expected_summaries)
+          && r.pdf_result.expected_summaries.length >= 2,
+        'expected_summaries must guide client to poll wiki/summaries/',
+      );
+      assert.equal(typeof r.pdf_result.detached_pid, 'number', 'detached_pid surfaced');
     });
 
     test('MCP43 octet-stream + URL .pdf → dispatch', async () => {

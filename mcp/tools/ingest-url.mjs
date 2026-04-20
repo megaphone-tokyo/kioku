@@ -102,13 +102,15 @@ function getDefaultRefreshDays() {
 
 export const INGEST_URL_TOOL_DEF = {
   name: 'kioku_ingest_url',
-  title: 'Fetch a URL and ingest into KIOKU Wiki (synchronous)',
+  title: 'Fetch a URL and ingest into KIOKU Wiki',
   description:
     'Fetch an HTTP/HTTPS URL, extract the article body (Mozilla Readability; LLM fallback for hard layouts), '
     + 'save the Markdown under raw-sources/<subdir>/fetched/, download inline images to '
     + 'raw-sources/<subdir>/fetched/media/, and let the next auto-ingest cycle produce a wiki summary. '
     + 'If the URL serves a PDF (Content-Type: application/pdf or URL ending in .pdf), the tool '
-    + 'dispatches to kioku_ingest_pdf automatically. '
+    + 'dispatches to kioku_ingest_pdf automatically — short PDFs return status: dispatched_to_pdf '
+    + 'synchronously, longer PDFs return status: dispatched_to_pdf_queued and produce summaries in '
+    + 'the background (poll pdf_result.expected_summaries under wiki/summaries/). '
     + 'Use when the user asks to "read this URL", "save this article", or pastes a link to remember.',
   inputShape: {
     url: z.string().min(1).max(2048),
@@ -377,13 +379,16 @@ async function dispatchToPdf({ vault, subdir, url, body, claudeBin, sendProgress
 
   // 内側 handleIngestPdf に dispatch — 外側で withLock を保持済みなので skipLock=true。
   // v0.3.4: sendProgress も伝搬して PDF 処理中も heartbeat が流れ続けるようにする。
+  // v0.3.5 Option B: 長い PDF は handleIngestPdf が `queued_for_summary` で早期 return
+  // する。その場合 dispatchToPdf 側の status も `dispatched_to_pdf_queued` に昇格させ、
+  // client が "summary は数分後に wiki/summaries/ に出現する" 旨を明示的に知れるようにする。
   const pdfResult = await handleIngestPdf(
     vault,
     { path: `raw-sources/${subdir}/${name}` },
     { claudeBin, skipLock: true, sendProgress },
   );
   return {
-    status: 'dispatched_to_pdf',
+    status: pdfResult.status === 'queued_for_summary' ? 'dispatched_to_pdf_queued' : 'dispatched_to_pdf',
     url,
     path: `raw-sources/${subdir}/${name}`,
     pdf_result: pdfResult,

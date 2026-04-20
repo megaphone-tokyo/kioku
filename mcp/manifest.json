@@ -3,7 +3,7 @@
   "manifest_version": "0.4",
   "name": "kioku-wiki",
   "display_name": "KIOKU Wiki",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Read, search, and write your KIOKU Obsidian Wiki from Claude Desktop or Claude Code.",
   "long_description": "KIOKU is a personal knowledge base ('second brain') built on top of an Obsidian Vault. This MCP server exposes eight tools (kioku_search, kioku_read, kioku_list, kioku_write_note, kioku_write_wiki, kioku_delete, kioku_ingest_pdf, kioku_ingest_url) so that Claude Desktop and Claude Code can browse and update the Wiki without leaving the chat. All operations are local stdio — nothing leaves your machine. See https://github.com/megaphone-tokyo/kioku for the full project.",
   "author": {
@@ -72,11 +72,11 @@
     },
     {
       "name": "kioku_ingest_pdf",
-      "description": "Trigger immediate ingest for a PDF or markdown file under raw-sources/. Synchronously extracts chunks and writes wiki/summaries/ without waiting for the next auto-ingest cron."
+      "description": "Trigger immediate ingest for a PDF or markdown file under raw-sources/. Short PDFs (<=15 pages) block until summaries are produced (status: extracted_and_summarized). Longer PDFs return status: queued_for_summary and produce summaries in the background (1-3 min); poll wiki/summaries/ (expected_summaries) to retrieve them."
     },
     {
       "name": "kioku_ingest_url",
-      "description": "Fetch an HTTP/HTTPS URL, extract article body (Mozilla Readability with LLM fallback), save Markdown + images under raw-sources/<subdir>/fetched/. PDF URLs auto-dispatch to kioku_ingest_pdf. Synchronous blocking (~30s-3min)."
+      "description": "Fetch an HTTP/HTTPS URL, extract article body (Mozilla Readability with LLM fallback), save Markdown + images under raw-sources/<subdir>/fetched/. PDF URLs auto-dispatch to kioku_ingest_pdf. Long PDFs return status: dispatched_to_pdf_queued while summary is produced in the background."
     }
   ]
 }

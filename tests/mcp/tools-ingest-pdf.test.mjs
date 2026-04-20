@@ -1,13 +1,15 @@
 // tools-ingest-pdf.test.mjs — kioku_ingest_pdf ハンドラ (機能 2.1) のユニット/結合テスト
 //
-// MCP23  path が Vault 外 → invalid_params
-// MCP24  暗号化 PDF → invalid_request
-// MCP25  正常実行 → status: "extracted_and_summarized"
-// MCP26  冪等呼び出し → status: "skipped"
-// MCP27  非 .pdf/.md 拡張子 → invalid_params
-// MCP28  lockfile 競合 (別プロセスが保持) → LockTimeoutError
-// MCP29  --allowedTools Write,Read,Edit + KIOKU_NO_LOG=1 + KIOKU_MCP_CHILD=1 が子 claude に渡る
-// MCP30  相対パスと絶対パス両方が受理される
+// MCP23   path が Vault 外 → invalid_params
+// MCP24   暗号化 PDF → invalid_request
+// MCP25   正常実行 (1 chunk) → status: "extracted_and_summarized" (sample-8p.pdf)
+// MCP25b  v0.3.5 Option B size-gate: 15p 以下 = 1 chunk は同期継続 (sample-15p.pdf)
+// MCP25c  v0.3.5 Option B size-gate: 16p 以上 = 2+ chunks は detached (sample-42p.pdf)
+// MCP26   冪等呼び出し → status: "skipped"
+// MCP27   非 .pdf/.md 拡張子 → invalid_params
+// MCP28   lockfile 競合 (別プロセスが保持) → LockTimeoutError
+// MCP29   --allowedTools Write,Read,Edit + KIOKU_NO_LOG=1 + KIOKU_MCP_CHILD=1 が子 claude に渡る
+// MCP30   相対パスと絶対パス両方が受理される
 //
 // ポイント: 本物の extract-pdf.sh + fixture PDF を使うので poppler (pdfinfo/pdftotext) が
 // 必要。ない環境では describe.skip で SKIP する。
@@ -106,7 +108,7 @@ describe('kioku_ingest_pdf', { skip: !HAS_POPPLER ? 'poppler not installed' : fa
     );
   });
 
-  test('MCP25 normal execution -> extracted_and_summarized', async () => {
+  test('MCP25 normal execution (1 chunk) -> extracted_and_summarized', async () => {
     const vault = await makeVault('mcp25');
     await cp(join(FIXTURES, 'sample-8p.pdf'), join(vault, 'raw-sources', 'papers', 'attention.pdf'));
     const result = await handleIngestPdf(
@@ -114,9 +116,11 @@ describe('kioku_ingest_pdf', { skip: !HAS_POPPLER ? 'poppler not installed' : fa
       { path: 'raw-sources/papers/attention.pdf' },
       { claudeBin: claudeBin() },
     );
+    // 8p は 1 chunk に収まるので従来通り同期継続 (v0.3.5 size-gate 下限)
     assert.equal(result.status, 'extracted_and_summarized');
     assert.ok(result.pdf_path.endsWith('attention.pdf'), 'pdf_path returned');
-    assert.ok(Array.isArray(result.chunks) && result.chunks.length >= 1, 'chunks list non-empty');
+    assert.ok(Array.isArray(result.chunks) && result.chunks.length === 1,
+      `1 chunk expected for 8p PDF, got ${result.chunks.length}`);
     // chunk MD が実際に作られている + 新命名を使っている
     const cacheEntries = await readdir(join(vault, '.cache', 'extracted'));
     assert.ok(
@@ -126,6 +130,97 @@ describe('kioku_ingest_pdf', { skip: !HAS_POPPLER ? 'poppler not installed' : fa
     // stub claude が呼ばれている
     const log = await readFile(stubClaudeLog, 'utf8');
     assert.match(log, /ARGV: -p/, 'stub claude was invoked with -p');
+  });
+
+  test('MCP25b v0.3.5 size-gate: 15p = 1 chunk still synchronous (extracted_and_summarized)', async () => {
+    // v0.3.5 Option B の size-gate 境界テスト。KIOKU_PDF_CHUNK_PAGES=15 (既定) 以下の
+    // PDF は single chunk になり、従来通り sync で claude -p を回して extracted_and_summarized
+    // を返す (短時間で完了する見込み、UX 変更なし)。
+    const vault = await makeVault('mcp25b');
+    await cp(join(FIXTURES, 'sample-15p.pdf'), join(vault, 'raw-sources', 'papers', 'short.pdf'));
+    const result = await handleIngestPdf(
+      vault,
+      { path: 'raw-sources/papers/short.pdf' },
+      { claudeBin: claudeBin() },
+    );
+    assert.equal(result.status, 'extracted_and_summarized',
+      `15p (1 chunk) should stay synchronous, got: ${JSON.stringify(result)}`);
+    assert.equal(result.chunks.length, 1,
+      `15p PDF should be exactly 1 chunk, got ${result.chunks.length}`);
+    assert.ok(Array.isArray(result.summaries), 'summaries array present');
+    // queued 経路のフィールドは無いこと
+    assert.equal(result.expected_summaries, undefined,
+      'sync path must not include expected_summaries');
+    assert.equal(result.detached_pid, undefined,
+      'sync path must not include detached_pid');
+  });
+
+  test('MCP25c v0.3.5 size-gate: 42p = 3 chunks dispatches detached (queued_for_summary)', async () => {
+    // v0.3.5 Option B: chunks >= 2 (sample-42p.pdf は KIOKU_PDF_CHUNK_PAGES=15 + 1 page
+    // overlap で 3 chunks になる想定) は detached claude -p を spawn し、queued_for_summary
+    // で早期 return する。stub claude が spawn されたことを shared stub log で確認。
+    //
+    // 注意: stub claude スクリプトは `{ ... } >> ${stubClaudeLog}` で出力を共有ログに
+    // redirect するので、spawnDetached 側の per-vault log file (stdio redirect 先) は
+    // 空のまま。shared stub log をクリアしてから invocation 記録の増加を観測する。
+    await writeFile(stubClaudeLog, '');
+    const vault = await makeVault('mcp25c');
+    await cp(join(FIXTURES, 'sample-42p.pdf'), join(vault, 'raw-sources', 'papers', 'long.pdf'));
+    const result = await handleIngestPdf(
+      vault,
+      { path: 'raw-sources/papers/long.pdf' },
+      { claudeBin: claudeBin() },
+    );
+    assert.equal(result.status, 'queued_for_summary',
+      `42p PDF should queue for detached summary, got: ${JSON.stringify(result)}`);
+    assert.ok(Array.isArray(result.chunks) && result.chunks.length >= 2,
+      `expected >=2 chunks for 42p PDF, got: ${result.chunks?.length}`);
+    assert.ok(Array.isArray(result.expected_summaries) && result.expected_summaries.length >= 2,
+      'expected_summaries must be populated on queued path');
+    // detached_pid と log_file が返る
+    assert.equal(typeof result.detached_pid, 'number', 'detached_pid is a PID');
+    assert.ok(result.detached_pid > 0, 'detached_pid positive');
+    assert.match(result.log_file ?? '', /^\.cache\/claude-summary-papers--long\.log$/,
+      `log_file relative path expected, got: ${result.log_file}`);
+    assert.match(result.message ?? '', /chunks extracted/i, 'message contains guidance');
+
+    // chunks[] は即時確認可能 (raw-sources 配下ではなく .cache/extracted/ 配下)
+    const cacheEntries = await readdir(join(vault, '.cache', 'extracted'));
+    assert.ok(
+      cacheEntries.some((n) => n.startsWith('papers--long-pp')),
+      `chunk MDs should be present immediately, got: ${cacheEntries.join(',')}`,
+    );
+
+    // 観測用 summary lockfile が作られている
+    const vaultEntries = await readdir(vault);
+    assert.ok(
+      vaultEntries.some((n) => n === '.kioku-summary-papers--long.lock'),
+      `summary lockfile expected, got: ${vaultEntries.filter((n) => n.startsWith('.kioku-')).join(',')}`,
+    );
+
+    // Phase A で取った .kioku-mcp.lock は解放されていること (auto-ingest が進める)
+    const mcpLockExists = vaultEntries.some((n) => n === '.kioku-mcp.lock');
+    assert.equal(mcpLockExists, false, '.kioku-mcp.lock must be released before detached spawn');
+
+    // per-vault の detached log file も touch (open + close) だけはされていること
+    // (child stub が `>>` で shared log に redirect しているので内容は空だが、ファイル
+    // 自体は spawnDetached の open() で作られる)
+    const perVaultLogPath = join(vault, result.log_file);
+    const logStat = await stat(perVaultLogPath);
+    assert.ok(logStat.isFile(), 'per-vault detached log file should exist');
+
+    // detached stub claude は shared stubClaudeLog に追記する。polling で確認。
+    let sharedLog = '';
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 25));
+      sharedLog = await readFile(stubClaudeLog, 'utf8');
+      if (sharedLog.includes('ARGV: -p')) break;
+    }
+    assert.match(sharedLog, /ARGV: -p/,
+      `detached claude stub should log its invocation, got: ${sharedLog.slice(0, 200)}`);
+    assert.match(sharedLog, /KIOKU_NO_LOG=1/, 'KIOKU_NO_LOG propagated to detached child');
+    assert.match(sharedLog, /KIOKU_MCP_CHILD=1/, 'KIOKU_MCP_CHILD propagated to detached child');
+    assert.match(sharedLog, /OBSIDIAN_VAULT=/, 'OBSIDIAN_VAULT propagated to detached child');
   });
 
   test('MCP26 second call is idempotent -> skipped', async () => {

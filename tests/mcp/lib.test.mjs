@@ -18,7 +18,7 @@ const { parseFrontmatter, serializeFrontmatter, mergeFrontmatter } =
   await import(join(MCP_DIR, 'lib', 'frontmatter.mjs'));
 const { findWikilinks, hasWikilink, appendRelatedLink } =
   await import(join(MCP_DIR, 'lib', 'wikilinks.mjs'));
-const { withLock, LockTimeoutError } =
+const { withLock, LockTimeoutError, writeSummaryLock, summaryLockPath } =
   await import(join(MCP_DIR, 'lib', 'lock.mjs'));
 const { applyMasks, MASK_RULES } =
   await import(join(MCP_DIR, 'lib', 'masking.mjs'));
@@ -271,6 +271,32 @@ describe('lock', () => {
       /boom/,
     );
     await assert.rejects(stat(join(vault, '.kioku-mcp.lock')));
+  });
+
+  test('LIB33 writeSummaryLock writes `.kioku-summary-<key>.lock` with pid+timestamp', async () => {
+    // v0.3.5 Option B: detached claude -p の観測用 lockfile
+    const key = 'papers--test-pdf';
+    const lockPath = await writeSummaryLock(vault, key, 12345);
+    assert.equal(lockPath, join(vault, '.kioku-summary-papers--test-pdf.lock'));
+    const body = await readFile(lockPath, 'utf8');
+    assert.match(body, /^12345\n/, `first line should be pid, got: ${JSON.stringify(body)}`);
+    assert.match(body, /\d{4}-\d{2}-\d{2}T/, 'second line should be ISO8601 timestamp');
+    // cleanup
+    await rm(lockPath, { force: true });
+  });
+
+  test('LIB34 summaryLockPath rejects empty key', () => {
+    assert.throws(() => summaryLockPath(vault, ''), /key required/);
+    assert.throws(() => summaryLockPath(vault, null), /key required/);
+  });
+
+  test('LIB35 writeSummaryLock is idempotent (overwrite OK)', async () => {
+    const key = 'papers--overwrite-test';
+    await writeSummaryLock(vault, key, 111);
+    const lockPath = await writeSummaryLock(vault, key, 222);
+    const body = await readFile(lockPath, 'utf8');
+    assert.match(body, /^222\n/, 'second write should overwrite pid');
+    await rm(lockPath, { force: true });
   });
 });
 

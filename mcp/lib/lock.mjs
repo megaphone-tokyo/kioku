@@ -1,8 +1,13 @@
 // lock.mjs — Vault 書き込み用 advisory lockfile。
 // fs.open(.., 'wx') を使った排他作成 + TTL stale 検知。
 // auto-ingest.sh / write_wiki / delete が同時に Vault を触っても破損しない。
+//
+// v0.3.5 追加:
+//   `.kioku-summary-<key>.lock` — detached claude -p の tracking 用 (排他ではなく観測用)。
+//   auto-ingest.sh は `.kioku-summary-*.lock` を無視するため、`.kioku-mcp.lock` とは
+//   別経路で運用される。詳細: plan/claude/26042004_feature-v0-3-5-early-return-design.md
 
-import { open, stat, unlink } from 'node:fs/promises';
+import { open, stat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const DEFAULT_TTL_MS = 30_000;
@@ -62,4 +67,43 @@ export async function withLock(vault, fn, opts = {}) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ---------------------------------------------------------------------------
+// Summary-specific lockfile (v0.3.5 Option B)
+// ---------------------------------------------------------------------------
+// detached claude -p の PID と開始時刻を記録するための観測用ファイル。
+// 排他目的ではない (auto-ingest.sh は `.kioku-summary-*.lock` を無視する)。
+// 目的:
+//   - どの PDF が現在背景で要約中かを運用者が確認できる (cron ログ / ls)
+//   - 次回 MCP 呼び出しで同じ PDF に対して重複 spawn を避ける判定材料
+//   - claude -p が異常終了した際の forensic 情報
+// キー規則: `<subdirPrefix>--<stem>` (ingest-pdf.mjs の chunk 命名と整合)
+// TTL: 30 分 (claude -p の最大実行時間想定)。auto-ingest が stale を拾って掃除する.
+
+const SUMMARY_LOCK_PREFIX = '.kioku-summary-';
+const SUMMARY_LOCK_SUFFIX = '.lock';
+
+export function summaryLockPath(vault, key) {
+  if (typeof key !== 'string' || !key.length) {
+    throw new Error('summaryLockPath: key required');
+  }
+  return join(vault, `${SUMMARY_LOCK_PREFIX}${key}${SUMMARY_LOCK_SUFFIX}`);
+}
+
+/**
+ * detached claude の PID を記録する。同じ key に対して複数回呼ばれた場合は
+ * 最新の PID / timestamp で上書きする (次回 read 時に古い情報を返さないため)。
+ *
+ * @param {string} vault - Vault root (絶対パス)
+ * @param {string} key - `<subdirPrefix>--<stem>` 形式の識別子
+ * @param {number} pid - detached 子プロセスの PID
+ * @returns {Promise<string>} 書き出した lockfile の絶対パス
+ */
+export async function writeSummaryLock(vault, key, pid) {
+  const lockPath = summaryLockPath(vault, key);
+  const body = `${pid}\n${new Date().toISOString()}\n`;
+  // mode 0o600 (owner r/w) — lockfile は secret を含まないが Vault 既定に合わせる
+  await writeFile(lockPath, body, { mode: 0o600 });
+  return lockPath;
 }
