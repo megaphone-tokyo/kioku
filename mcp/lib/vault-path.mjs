@@ -106,3 +106,13 @@ export async function assertInsideRawSources(vault, rel) {
   const stripped = rel.startsWith('raw-sources/') ? rel.slice('raw-sources/'.length) : rel;
   return resolveWithinBase(vault, 'raw-sources', stripped);
 }
+
+// 機能 2.2: url-extract orchestrator 用の raw-sources/<subdir>/ 境界ガード。
+// subdir は固定の安全なディレクトリ名 (articles/papers 等) を期待する。
+// path 区切り・先頭ドット・空文字を弾き、残りは resolveWithinBase の SAFE_PATH_RE に任せる。
+export async function assertInsideRawSourcesSubdir(vault, subdir, rel) {
+  if (typeof subdir !== 'string' || !subdir || subdir.includes('/') || subdir.includes(sep) || subdir.startsWith('.') || subdir.includes('\0')) {
+    throw new PathBoundaryError('invalid subdir', 'invalid_path');
+  }
+  return resolveWithinBase(vault, `raw-sources/${subdir}`, rel);
+}

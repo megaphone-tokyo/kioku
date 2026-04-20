@@ -79,9 +79,10 @@ export async function handleIngestPdf(vault, args, injections = {}) {
   const subdirPrefix = relFromRaw.includes('/') ? relFromRaw.split('/')[0] : 'root';
   const stem = basename(absPath, ext);
 
-  return withLock(
-    vault,
-    async () => {
+  // skipLock: 機能 2.2 kioku_ingest_url が PDF URL を dispatch するとき、外側で既に
+  // withLock を取得済みなので二重取得 (deadlock or 60s timeout) を避けるための injection。
+  // 通常呼び出しでは undefined → withLock で囲む。
+  const inner = async () => {
       const warnings = [];
       let pages = 0;
       let truncated = false;
@@ -183,9 +184,12 @@ export async function handleIngestPdf(vault, args, injections = {}) {
         truncated,
         warnings,
       };
-    },
-    { ttlMs: LOCK_TTL_MS, timeoutMs: LOCK_ACQUIRE_TIMEOUT_MS },
-  );
+  };
+
+  if (injections.skipLock) {
+    return await inner();
+  }
+  return withLock(vault, inner, { ttlMs: LOCK_TTL_MS, timeoutMs: LOCK_ACQUIRE_TIMEOUT_MS });
 }
 
 function validate(args) {

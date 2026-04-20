@@ -600,6 +600,222 @@ assert_eq "0" "${rc}" "F12 exit code 0"
 assert_contains "${out_f12}" "Found 0 unprocessed log(s) and 1 unprocessed raw-source" "F12 legacy chunk counted as unprocessed"
 
 # -----------------------------------------------------------------------------
+# 機能 2.2 (HTML/URL ingest) — F13 / F14 / F15 / F16 / F17 / F18
+# -----------------------------------------------------------------------------
+# F13: urls.txt が 1 行 URL → extract-url.sh が argv で urls-file 指定で呼ばれる
+# F14: コメント / 空行混じりの urls.txt → cron は 1 ファイル = 1 invocation で渡す
+#      (実際の "1 URL のみ実行" 判定は extract-url.sh / urls-txt-parser 側のため
+#      ここでは extract-url.sh が **ちょうど 1 回** 呼ばれることだけ assert する)
+# F15: DSL 行 (url ; tags=foo,bar) を含む urls.txt → cron は file をそのまま渡す。
+#      stub の argv に urls.txt のパスが渡ることだけ assert する (DSL parsing は downstream)
+# F16: 既に fetched/<slug>.md + sha 一致 → cron は extract-url.sh を呼ぶ (skip 判定は CLI 側)
+# F17: REFRESH_DAYS 経過 → CLI 側で re-fetch、cron 層では関与しないため MCP unit に委譲 (pass)
+# F18: KIOKU_INGEST_MAX_SECONDS=0 → URL pre-step 即時 break、stub 未呼び出し
+# -----------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Test F13: urls.txt 1 行 URL → extract-url.sh が urls-file argv 付きで呼ばれる
+# ---------------------------------------------------------------------------
+echo "test F13: urls.txt -> extract-url.sh invoked with --urls-file"
+VAULT_F13="$(make_vault vault-f13)"
+mkdir -p "${VAULT_F13}/raw-sources/articles"
+cat > "${VAULT_F13}/raw-sources/articles/urls.txt" <<'EOF'
+https://example.com/a
+EOF
+add_unprocessed_log "${VAULT_F13}" "20260419-100000-f13"
+
+STUB_EXTRACT_URL_F13="${TMPROOT}/stub-extract-url-f13.sh"
+ARGS_FILE_F13="${TMPROOT}/extract-url-f13.args"
+cat > "${STUB_EXTRACT_URL_F13}" <<STUB
+#!/usr/bin/env bash
+printf 'argv: %s\n' "\$*" >> "${ARGS_FILE_F13}"
+exit 0
+STUB
+chmod +x "${STUB_EXTRACT_URL_F13}"
+
+set +e
+out_f13="$(
+  PATH="${STUB_DIR}:${PATH}" \
+  OBSIDIAN_VAULT="${VAULT_F13}" \
+  KIOKU_DRY_RUN=1 \
+  KIOKU_EXTRACT_URL_SCRIPT="${STUB_EXTRACT_URL_F13}" \
+  KIOKU_ALLOW_EXTRACT_URL_OVERRIDE=1 \
+  bash "${AUTO_INGEST}" 2>&1
+)"
+rc=$?
+set -e
+assert_eq "0" "${rc}" "F13 exit 0"
+if [[ -f "${ARGS_FILE_F13}" ]]; then
+  pass "F13 extract-url stub invoked"
+  args_f13="$(cat "${ARGS_FILE_F13}")"
+  assert_contains "${args_f13}" "--urls-file" "F13 --urls-file flag passed"
+  assert_contains "${args_f13}" "raw-sources/articles/urls.txt" "F13 urls.txt path passed"
+  assert_contains "${args_f13}" "--vault" "F13 --vault flag passed"
+  assert_contains "${args_f13}" "--subdir" "F13 --subdir flag passed"
+  assert_contains "${args_f13}" "articles" "F13 subdir name (articles) passed"
+else
+  fail "F13 extract-url stub not invoked"
+fi
+
+# ---------------------------------------------------------------------------
+# Test F14: コメント / 空行を含む urls.txt → cron は 1 file = 1 call で渡す
+# (DSL parsing / コメント skip は extract-url.sh 側、urls-txt-parser.test.mjs で担保)
+# ---------------------------------------------------------------------------
+echo "test F14: urls.txt with comments -> 1 call to extract-url.sh (parsing is downstream)"
+VAULT_F14="$(make_vault vault-f14)"
+mkdir -p "${VAULT_F14}/raw-sources/articles"
+cat > "${VAULT_F14}/raw-sources/articles/urls.txt" <<'EOF'
+# this is a comment
+
+https://example.com/real
+# another comment
+EOF
+add_unprocessed_log "${VAULT_F14}" "20260419-110000-f14"
+
+STUB_EXTRACT_URL_F14="${TMPROOT}/stub-extract-url-f14.sh"
+ARGS_FILE_F14="${TMPROOT}/extract-url-f14.args"
+cat > "${STUB_EXTRACT_URL_F14}" <<STUB
+#!/usr/bin/env bash
+printf 'argv: %s\n' "\$*" >> "${ARGS_FILE_F14}"
+exit 0
+STUB
+chmod +x "${STUB_EXTRACT_URL_F14}"
+
+set +e
+PATH="${STUB_DIR}:${PATH}" \
+  OBSIDIAN_VAULT="${VAULT_F14}" \
+  KIOKU_DRY_RUN=1 \
+  KIOKU_EXTRACT_URL_SCRIPT="${STUB_EXTRACT_URL_F14}" \
+  KIOKU_ALLOW_EXTRACT_URL_OVERRIDE=1 \
+  bash "${AUTO_INGEST}" >/dev/null 2>&1
+rc=$?
+set -e
+assert_eq "0" "${rc}" "F14 exit 0"
+# extract-url.sh は 1 urls.txt あたり 1 回しか呼ばれない (file 自体の comment skip は downstream)
+# set +e は grep が 0 ヒット (= rc 1) のとき pipeline が trip しないように一時退避
+set +e
+n_calls_f14=$(grep -c "argv:" "${ARGS_FILE_F14}" 2>/dev/null)
+set -e
+n_calls_f14="${n_calls_f14:-0}"
+assert_eq "1" "${n_calls_f14}" "F14 extract-url.sh invoked exactly 1 time per urls.txt"
+
+# ---------------------------------------------------------------------------
+# Test F15: DSL 行 (url ; tags=foo,bar) を含む urls.txt → cron は file path だけを渡す
+# (DSL → --tags 変換は extract-url.sh 内、urls-txt-parser.test.mjs で担保)
+# ここでは cron 層が urls.txt の path を正しく渡せることだけ assert
+# ---------------------------------------------------------------------------
+echo "test F15: urls.txt with DSL row -> file path passed (DSL parsing is downstream)"
+VAULT_F15="$(make_vault vault-f15)"
+mkdir -p "${VAULT_F15}/raw-sources/articles"
+cat > "${VAULT_F15}/raw-sources/articles/urls.txt" <<'EOF'
+https://example.com/tagged ; tags=foo,bar
+EOF
+add_unprocessed_log "${VAULT_F15}" "20260419-120000-f15"
+
+STUB_EXTRACT_URL_F15="${TMPROOT}/stub-extract-url-f15.sh"
+ARGS_FILE_F15="${TMPROOT}/extract-url-f15.args"
+cat > "${STUB_EXTRACT_URL_F15}" <<STUB
+#!/usr/bin/env bash
+printf 'argv: %s\n' "\$*" >> "${ARGS_FILE_F15}"
+exit 0
+STUB
+chmod +x "${STUB_EXTRACT_URL_F15}"
+
+set +e
+PATH="${STUB_DIR}:${PATH}" \
+  OBSIDIAN_VAULT="${VAULT_F15}" \
+  KIOKU_DRY_RUN=1 \
+  KIOKU_EXTRACT_URL_SCRIPT="${STUB_EXTRACT_URL_F15}" \
+  KIOKU_ALLOW_EXTRACT_URL_OVERRIDE=1 \
+  bash "${AUTO_INGEST}" >/dev/null 2>&1
+rc=$?
+set -e
+assert_eq "0" "${rc}" "F15 exit 0"
+args_f15="$(cat "${ARGS_FILE_F15}" 2>/dev/null || echo '')"
+assert_contains "${args_f15}" "raw-sources/articles/urls.txt" "F15 urls.txt path passed (DSL parsing downstream)"
+
+# ---------------------------------------------------------------------------
+# Test F16: fetched/<slug>.md が既存 + sha 一致 → cron は extract-url.sh を呼ぶ
+# (re-fetch skip 判定は CLI 側; ここでは cron が呼び出すことだけ確認)
+# ---------------------------------------------------------------------------
+echo "test F16: existing fetched MD + sha match → extract-url.sh still invoked by cron"
+VAULT_F16="$(make_vault vault-f16)"
+mkdir -p "${VAULT_F16}/raw-sources/articles/fetched"
+cat > "${VAULT_F16}/raw-sources/articles/fetched/example.com-done.md" <<'EOF'
+---
+source_url: "https://example.com/done"
+source_sha256: "aaa"
+fetched_at: "2026-04-19T00:00:00Z"
+refresh_days: 30
+---
+body
+EOF
+cat > "${VAULT_F16}/raw-sources/articles/urls.txt" <<'EOF'
+https://example.com/done
+EOF
+STUB_EXTRACT_URL_F16="${TMPROOT}/stub-extract-url-f16.sh"
+CALL_LOG_F16="${TMPROOT}/extract-url-f16.called"
+cat > "${STUB_EXTRACT_URL_F16}" <<STUB
+#!/usr/bin/env bash
+echo called >> "${CALL_LOG_F16}"
+exit 0
+STUB
+chmod +x "${STUB_EXTRACT_URL_F16}"
+set +e
+PATH="${STUB_DIR}:${PATH}" \
+  OBSIDIAN_VAULT="${VAULT_F16}" \
+  KIOKU_DRY_RUN=1 \
+  KIOKU_EXTRACT_URL_SCRIPT="${STUB_EXTRACT_URL_F16}" \
+  KIOKU_ALLOW_EXTRACT_URL_OVERRIDE=1 \
+  bash "${AUTO_INGEST}" >/dev/null 2>&1
+set -e
+# cron 側では skip 判定をしないので、extract-url.sh は呼ばれる (skip 判定は CLI 内)
+assert_contains "$(cat ${CALL_LOG_F16} 2>/dev/null || echo '')" "called" "F16 URL pre-step attempted (CLI handles re-fetch skip)"
+
+# ---------------------------------------------------------------------------
+# Test F17: REFRESH_DAYS 経過時の re-fetch は CLI 側担当 → MCP unit test に委譲
+# ---------------------------------------------------------------------------
+echo "test F17: skipped — see MCP40 in tools-ingest-url.test.mjs (CLI-level concern)"
+pass "F17 see MCP unit tests"
+
+# ---------------------------------------------------------------------------
+# Test F18: KIOKU_INGEST_MAX_SECONDS=0 → URL pre-step 即 break、stub 未呼び出し
+# ---------------------------------------------------------------------------
+echo "test F18: KIOKU_INGEST_MAX_SECONDS=0 → URL loop breaks before stub invocation"
+VAULT_F18="$(make_vault vault-f18)"
+mkdir -p "${VAULT_F18}/raw-sources/articles"
+cat > "${VAULT_F18}/raw-sources/articles/urls.txt" <<'EOF'
+https://example.com/should-not-be-fetched
+EOF
+add_unprocessed_log "${VAULT_F18}" "20260419-130000-f18"
+
+STUB_EXTRACT_URL_F18="${TMPROOT}/stub-extract-url-f18.sh"
+INVOKED_F18="${TMPROOT}/extract-url-f18.invoked"
+cat > "${STUB_EXTRACT_URL_F18}" <<STUB
+#!/usr/bin/env bash
+echo called > "${INVOKED_F18}"
+exit 0
+STUB
+chmod +x "${STUB_EXTRACT_URL_F18}"
+
+set +e
+out_f18="$(
+  PATH="${STUB_DIR}:${PATH}" \
+  OBSIDIAN_VAULT="${VAULT_F18}" \
+  KIOKU_DRY_RUN=1 \
+  KIOKU_INGEST_MAX_SECONDS=0 \
+  KIOKU_EXTRACT_URL_SCRIPT="${STUB_EXTRACT_URL_F18}" \
+  KIOKU_ALLOW_EXTRACT_URL_OVERRIDE=1 \
+  bash "${AUTO_INGEST}" 2>&1
+)"
+set -e
+if [[ -f "${INVOKED_F18}" ]]; then
+  fail "F18 extract-url should NOT be invoked when soft-timeout is 0"
+else
+  pass "F18 soft-timeout prevents URL fetch"
+fi
+
+# -----------------------------------------------------------------------------
 # サマリ
 # -----------------------------------------------------------------------------
 echo
