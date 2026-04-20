@@ -36,10 +36,49 @@ const server = new McpServer(
   { capabilities: { tools: {} } },
 );
 
-function wrap(handler) {
-  return async (args) => {
+// 2026-04-20 v0.3.4 MCP progress heartbeat (long-running tool timeout 対策):
+//   Claude Desktop 等の MCP client は tool call に対して既定 60 秒で
+//   timeout を切るが、kioku_ingest_pdf / kioku_ingest_url は PDF fetch +
+//   extract-pdf.sh + claude -p summarize の合計で 3-5 分かかりうる。
+//   client が send した _meta.progressToken があれば、handler に
+//   `sendProgress(message?)` を injection で渡して定期的に
+//   `notifications/progress` を送れるようにする。client 側の idle timeout が
+//   progress 受信でリセットされ、内部処理が完走するまで待機される。
+//
+//   progressToken が無い client (旧プロトコル等) は sendProgress を呼ぶと
+//   silent no-op するヘルパを返すので、handler 側で分岐不要。
+function buildSendProgress(extra) {
+  const token = extra?._meta?.progressToken;
+  if (token === undefined || token === null || extra?.sendNotification == null) {
+    // progressToken が無い = client が progress を要求していない → no-op
+    return null;
+  }
+  let counter = 0;
+  return async (message) => {
+    counter += 1;
     try {
-      const result = await handler(VAULT, args ?? {});
+      await extra.sendNotification({
+        method: 'notifications/progress',
+        params: {
+          progressToken: token,
+          progress: counter,
+          message: typeof message === 'string' && message.length > 0
+            ? message.slice(0, 200) // 長文は 200 char で truncate (誤送防止)
+            : undefined,
+        },
+      });
+    } catch {
+      // progress 送信失敗は致命ではない (client 側切断等) — silent pass
+    }
+  };
+}
+
+function wrap(handler) {
+  return async (args, extra) => {
+    const sendProgress = buildSendProgress(extra);
+    const injections = sendProgress ? { sendProgress } : {};
+    try {
+      const result = await handler(VAULT, args ?? {}, injections);
       return {
         content: [
           { type: 'text', text: JSON.stringify(result, null, 2) },
@@ -68,7 +107,7 @@ function register(toolDef, handler) {
       description: toolDef.description,
       inputSchema: toolDef.inputShape,
     },
-    (args) => wrap(handler)(args),
+    (args, extra) => wrap(handler)(args, extra),
   );
 }
 

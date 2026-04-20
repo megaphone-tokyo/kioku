@@ -38,6 +38,8 @@ import { urlToFilename } from '../lib/url-filename.mjs';
 import { UrlSecurityError, validateUrl } from '../lib/url-security.mjs';
 import { assertInsideRawSourcesSubdir } from '../lib/vault-path.mjs';
 import { handleIngestPdf } from './ingest-pdf.mjs';
+// 2026-04-20 v0.3.4: MCP progress heartbeat (client 60s timeout 回避)。
+import { startHeartbeat } from '../lib/progress-heartbeat.mjs';
 
 const LOCK_TTL_MS = 1_800_000; // 30 分 (auto-ingest.sh と整合)
 const LOCK_ACQUIRE_TIMEOUT_MS = 60_000;
@@ -146,6 +148,16 @@ export async function handleIngestUrl(vault, args, injections = {}) {
   }
   const subdir = subdirRaw;
 
+  // v0.3.4: heartbeat を開始。Desktop の 60s MCP request timeout を回避するため、
+  // 内部処理 (fetch + extract + LLM summary + PDF dispatch) の間 15s ごとに
+  // progress notification を送り続ける。progressToken が無い client (旧プロトコル
+  // 等) では no-op。PDF dispatch に進む場合、handleIngestPdf 側でも同じ
+  // injections.sendProgress を使うので、単一 token で継続カウントされる。
+  const stopHeartbeat = startHeartbeat(
+    injections.sendProgress,
+    `kioku_ingest_url: processing ${url.slice(0, 80)}`,
+  );
+
   const inner = async () => {
     // 2. fetch (binary 必須 — body を PDF として保存する可能性がある)。
     //    maxBytes は PDF cap と最低 5MB の大きい方。HTML はこれより遥かに小さいので影響なし。
@@ -204,6 +216,7 @@ export async function handleIngestUrl(vault, args, injections = {}) {
         url,
         body: fetchResult.body,
         claudeBin: injections.claudeBin,
+        sendProgress: injections.sendProgress,
       });
     }
 
@@ -253,6 +266,7 @@ export async function handleIngestUrl(vault, args, injections = {}) {
           url,
           body: refetch.body,
           claudeBin: injections.claudeBin,
+          sendProgress: injections.sendProgress,
         });
       }
       // HIGH-2: extractAndSaveUrl 由来のエラーも raw message を漏らさず code only で返す
@@ -262,10 +276,14 @@ export async function handleIngestUrl(vault, args, injections = {}) {
     }
   };
 
-  if (injections.skipLock) {
-    return await inner();
+  try {
+    if (injections.skipLock) {
+      return await inner();
+    }
+    return await withLock(vault, inner, { ttlMs: LOCK_TTL_MS, timeoutMs: LOCK_ACQUIRE_TIMEOUT_MS });
+  } finally {
+    await stopHeartbeat('kioku_ingest_url: done');
   }
-  return withLock(vault, inner, { ttlMs: LOCK_TTL_MS, timeoutMs: LOCK_ACQUIRE_TIMEOUT_MS });
 }
 
 // ----- helpers ---------------------------------------------------------------
@@ -336,7 +354,7 @@ function sanitizeForError(s) {
   return cleaned.length > 100 ? `${cleaned.slice(0, 100)}…` : cleaned;
 }
 
-async function dispatchToPdf({ vault, subdir, url, body, claudeBin }) {
+async function dispatchToPdf({ vault, subdir, url, body, claudeBin, sendProgress }) {
   if (!body) throwInternal('PDF body missing for dispatch');
   // urlToFilename は <host>-<slug>.md を返すので拡張子だけ差し替える。
   const name = urlToFilename(url).replace(/\.md$/, '.pdf');
@@ -358,10 +376,11 @@ async function dispatchToPdf({ vault, subdir, url, body, claudeBin }) {
   await rename(tmp, absPath);
 
   // 内側 handleIngestPdf に dispatch — 外側で withLock を保持済みなので skipLock=true。
+  // v0.3.4: sendProgress も伝搬して PDF 処理中も heartbeat が流れ続けるようにする。
   const pdfResult = await handleIngestPdf(
     vault,
     { path: `raw-sources/${subdir}/${name}` },
-    { claudeBin, skipLock: true },
+    { claudeBin, skipLock: true, sendProgress },
   );
   return {
     status: 'dispatched_to_pdf',
