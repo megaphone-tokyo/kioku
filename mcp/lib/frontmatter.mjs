@@ -106,8 +106,15 @@ function splitYamlList(inner) {
 
 function stripQuotes(s) {
   if (s.length >= 2) {
-    if ((s[0] === '"' && s[s.length - 1] === '"') || (s[0] === "'" && s[s.length - 1] === "'")) {
-      return s.slice(1, -1);
+    // Double-quoted: JSON.parse で \uXXXX / \n / \" 等のエスケープを復号する。
+    // 復号に失敗する場合 (ill-formed JSON) は安全側で raw slice を返す。
+    // JSON double-quoted は YAML double-quoted の厳密なサブセットなので安全。
+    if (s[0] === '"' && s[s.length - 1] === '"') {
+      try { return JSON.parse(s); } catch { return s.slice(1, -1); }
+    }
+    // Single-quoted: YAML 単一引用符は単純 (唯一のエスケープは '' → ')。
+    if (s[0] === "'" && s[s.length - 1] === "'") {
+      return s.slice(1, -1).replace(/''/g, "'");
     }
   }
   return s;

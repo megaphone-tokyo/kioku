@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MCP_DIR = join(__dirname, '..', '..', 'mcp');
 
-const { assertInsideWiki, assertInsideSessionLogs, PathBoundaryError } =
+const { assertInsideWiki, assertInsideSessionLogs, assertInsideRawSourcesSubdir, PathBoundaryError } =
   await import(join(MCP_DIR, 'lib', 'vault-path.mjs'));
 const { parseFrontmatter, serializeFrontmatter, mergeFrontmatter } =
   await import(join(MCP_DIR, 'lib', 'frontmatter.mjs'));
@@ -171,6 +171,23 @@ body text
     assert.equal(parsed.data.n, 1);
   });
 
+  test('LIB12b double-quoted JSON escapes round-trip (Unicode preserved)', () => {
+    // Regression for code-quality HIGH-1 (2026-04-19): stripQuotes previously did
+    // `s.slice(1, -1)` on double-quoted values, returning the literal escape
+    // sequence instead of the decoded character. Now uses JSON.parse.
+    const raw = '---\ntitle: "café"\nkey: "caf\\u00e9"\nnl: "line1\\nline2"\n---\n\nbody\n';
+    const { data } = parseFrontmatter(raw);
+    assert.equal(data.title, 'café');
+    assert.equal(data.key, 'café');
+    assert.equal(data.nl, 'line1\nline2');
+  });
+
+  test('LIB12c single-quoted handles doubled apostrophe escape', () => {
+    const raw = "---\nq: 'it''s fine'\n---\n\nbody\n";
+    const { data } = parseFrontmatter(raw);
+    assert.equal(data.q, "it's fine");
+  });
+
   test('LIB13 mergeFrontmatter unions array values', () => {
     const merged = mergeFrontmatter(
       { tags: ['a', 'b'], title: 'old' },
@@ -279,6 +296,43 @@ describe('masking', () => {
       assert.ok(rule[0] instanceof RegExp);
       assert.equal(typeof rule[1], 'string');
     }
+  });
+});
+
+describe('assertInsideRawSourcesSubdir', () => {
+  let vault, root;
+  before(async () => {
+    const v = await makeVault();
+    vault = v.vault;
+    root = v.root;
+    await mkdir(join(vault, 'raw-sources', 'articles', 'fetched'), { recursive: true });
+  });
+  after(() => rm(root, { recursive: true, force: true }));
+
+  test('LIB53 accepts articles/fetched path (does not need to exist yet)', async () => {
+    const abs = await assertInsideRawSourcesSubdir(vault, 'articles', 'fetched/foo.md');
+    assert.match(abs, /raw-sources\/articles\/fetched\/foo\.md$/);
+  });
+
+  test('LIB54 rejects traversal out of subdir', async () => {
+    await assert.rejects(
+      () => assertInsideRawSourcesSubdir(vault, 'articles', '../other/foo.md'),
+      (e) => e instanceof PathBoundaryError && e.code === 'path_traversal',
+    );
+  });
+
+  test('LIB55 rejects subdir containing path separator', async () => {
+    await assert.rejects(
+      () => assertInsideRawSourcesSubdir(vault, 'articles/fetched', 'foo.md'),
+      (e) => e instanceof PathBoundaryError && e.code === 'invalid_path',
+    );
+  });
+
+  test('LIB56 rejects subdir starting with dot', async () => {
+    await assert.rejects(
+      () => assertInsideRawSourcesSubdir(vault, '.hidden', 'foo.md'),
+      (e) => e instanceof PathBoundaryError && e.code === 'invalid_path',
+    );
   });
 });
 

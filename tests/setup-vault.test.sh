@@ -148,6 +148,13 @@ else
   fail ".gitignore should exclude .kioku-mcp.lock (cron/MCP shared lockfile)"
 fi
 
+# 機能 2.2: URL pre-step が取得した raw HTML cache (debug / 再抽出用) を git に含めない
+if grep -q '^\.cache/html/' "${VAULT}/.gitignore"; then
+  pass ".gitignore excludes .cache/html/ (feature 2.2)"
+else
+  fail ".gitignore should exclude .cache/html/ (URL raw HTML cache)"
+fi
+
 # -----------------------------------------------------------------------------
 # Test 5: 冪等性 — 2 回目の実行で既存ファイルを壊さない
 # -----------------------------------------------------------------------------
