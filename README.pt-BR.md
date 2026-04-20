@@ -37,8 +37,9 @@ Registre automaticamente sessoes do Claude Code e construa uma base de conhecime
 4. **Sincronizacao (L3)**: O proprio Vault e um repositorio Git. `SessionStart` executa `git pull`, `SessionEnd` executa `git commit && git push`, sincronizando entre maquinas via repositorio privado no GitHub
 5. **Injecao de contexto da wiki**: No `SessionStart`, `wiki/index.md` e injetado no prompt do sistema para que o Claude aproveite conhecimento anterior
 6. **Busca full-text via qmd**: Pesquise na wiki via MCP com BM25 + busca semantica
-7. **Skills de Wiki Ingest**: Comandos slash `/wiki-ingest-all` e `/wiki-ingest` importam conhecimento existente de projetos para a Wiki
-8. **Isolamento de segredos**: `session-logs/` permanece local por maquina (`.gitignore`). Apenas `wiki/` / `raw-sources/` / `templates/` / `CLAUDE.md` sao gerenciados pelo Git
+7. **Ingestao de fontes externas (PDF / URL)**: `kioku_ingest_pdf` extrai e resume PDFs locais colocados em `raw-sources/`; `kioku_ingest_url` busca artigos HTTP(S) com Mozilla Readability, salva Markdown + imagens em `raw-sources/<dir>/fetched/` e despacha automaticamente URLs de PDF para o pipeline de PDF. PDFs grandes (>= 2 chunks) usam um processo de resumo em modo detached para retornar em <= 5 s (seguro contra o timeout de 60 s do Claude Desktop)
+8. **Skills de Wiki Ingest**: Comandos slash `/wiki-ingest-all` e `/wiki-ingest` importam conhecimento existente de projetos para a Wiki
+9. **Isolamento de segredos**: `session-logs/` permanece local por maquina (`.gitignore`). Apenas `wiki/` / `raw-sources/` / `templates/` / `CLAUDE.md` sao gerenciados pelo Git
 
 <br>
 

@@ -44,8 +44,9 @@ Combina el patron LLM Wiki de Andrej Karpathy con la recoleccion automatica de l
 4. **Sincronizacion (L3)**: El Vault en si es un repositorio Git. `SessionStart` ejecuta `git pull`, `SessionEnd` ejecuta `git commit && git push`, sincronizando entre maquinas a traves de un repositorio privado en GitHub
 5. **Inyeccion de contexto del wiki**: En `SessionStart`, `wiki/index.md` se inyecta en el prompt del sistema para que Claude pueda aprovechar el conocimiento previo
 6. **Busqueda de texto completo qmd**: Busca en el wiki a traves de MCP con BM25 + busqueda semantica
-7. **Skills de Wiki Ingest**: Los comandos slash `/wiki-ingest-all` y `/wiki-ingest` importan conocimiento existente del proyecto al Wiki
-8. **Aislamiento de secretos**: `session-logs/` permanece local en cada maquina (`.gitignore`). Solo `wiki/` / `raw-sources/` / `templates/` / `CLAUDE.md` se gestionan con Git
+7. **Ingesta de fuentes externas (PDF / URL)**: `kioku_ingest_pdf` extrae y resume PDFs locales colocados en `raw-sources/`; `kioku_ingest_url` descarga articulos HTTP(S) con Mozilla Readability, guarda Markdown + imagenes en `raw-sources/<dir>/fetched/`, y redirige automaticamente las URLs de PDF al pipeline de PDF. Los PDFs grandes (≥ 2 chunks) utilizan un proceso de resumen `detached` para retornar en ≤ 5 s (seguro frente al timeout de 60 s de Claude Desktop)
+8. **Skills de Wiki Ingest**: Los comandos slash `/wiki-ingest-all` y `/wiki-ingest` importan conocimiento existente del proyecto al Wiki
+9. **Aislamiento de secretos**: `session-logs/` permanece local en cada maquina (`.gitignore`). Solo `wiki/` / `raw-sources/` / `templates/` / `CLAUDE.md` se gestionan con Git
 
 <br>
 

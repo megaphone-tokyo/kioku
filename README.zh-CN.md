@@ -42,8 +42,9 @@ kioku **自动将您的对话累积成 Wiki**，并在**下一次会话中回忆
 4. **同步 (L3)**: Vault 本身是一个 Git 仓库。`SessionStart` 执行 `git pull`，`SessionEnd` 执行 `git commit && git push`，通过 GitHub Private 仓库在多台机器间同步
 5. **Wiki 上下文注入**: 在 `SessionStart` 时，将 `wiki/index.md` 注入系统提示，使 Claude 能够利用过往知识
 6. **qmd 全文搜索**: 通过 MCP 使用 BM25 + 语义搜索来搜索 Wiki
-7. **Wiki Ingest 技能**: `/wiki-ingest-all` 和 `/wiki-ingest` 斜杠命令可将已有项目知识导入 Wiki
-8. **密钥隔离**: `session-logs/` 按机器保留在本地（`.gitignore`）。仅 `wiki/` / `raw-sources/` / `templates/` / `CLAUDE.md` 纳入 Git 管理
+7. **外部资源 Ingest (PDF / URL)**: `kioku_ingest_pdf` 可对放置在 `raw-sources/` 下的本地 PDF 执行分块抽取与摘要；`kioku_ingest_url` 可抓取 HTTP(S) 文章，使用 Mozilla Readability 提取正文（失败时回退到 LLM），将 Markdown + 图片保存至 `raw-sources/<subdir>/fetched/`，PDF URL 会自动分派给 PDF 管线。大型 PDF（≥ 2 个分块）使用 detached 摘要进程以在 ≤ 5 秒内返回（对 Claude Desktop 60 秒超时安全）
+8. **Wiki Ingest 技能**: `/wiki-ingest-all` 和 `/wiki-ingest` 斜杠命令可将已有项目知识导入 Wiki
+9. **密钥隔离**: `session-logs/` 按机器保留在本地（`.gitignore`）。仅 `wiki/` / `raw-sources/` / `templates/` / `CLAUDE.md` 纳入 Git 管理
 
 <br>
 

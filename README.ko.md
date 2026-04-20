@@ -37,8 +37,9 @@ Claude Code 세션을 자동으로 기록하고, Obsidian Vault 위에 구조화
 4. **동기화 (L3)**: Vault 자체가 Git 리포지토리. `SessionStart`에서 `git pull`, `SessionEnd`에서 `git commit && git push`를 실행하여 GitHub Private 리포지토리를 통해 머신 간 동기화
 5. **Wiki 컨텍스트 주입**: `SessionStart` 시 `wiki/index.md`를 시스템 프롬프트에 주입하여 Claude가 과거 지식을 활용할 수 있도록 지원
 6. **qmd 전문 검색**: MCP를 통해 BM25 + 시맨틱 검색으로 Wiki 검색
-7. **Wiki Ingest 스킬**: `/wiki-ingest-all` 및 `/wiki-ingest` 슬래시 커맨드로 기존 프로젝트 지식을 Wiki에 가져오기
-8. **비밀 정보 격리**: `session-logs/`는 머신별 로컬 유지(`.gitignore`). `wiki/` / `raw-sources/` / `templates/` / `CLAUDE.md`만 Git으로 관리
+7. **외부 소스 Ingest (PDF / URL)**: `kioku_ingest_pdf`는 `raw-sources/` 아래에 배치된 로컬 PDF를 추출하고 요약합니다. `kioku_ingest_url`은 Mozilla Readability로 HTTP(S) 기사를 가져와 Markdown + 이미지를 `raw-sources/<dir>/fetched/`에 저장하고, PDF URL은 자동으로 PDF 파이프라인으로 디스패치합니다. 큰 PDF(2 chunk 이상)는 detached 요약 프로세스를 사용해 5초 이내에 반환(Claude Desktop 60초 타임아웃 안전)
+8. **Wiki Ingest 스킬**: `/wiki-ingest-all` 및 `/wiki-ingest` 슬래시 커맨드로 기존 프로젝트 지식을 Wiki에 가져오기
+9. **비밀 정보 격리**: `session-logs/`는 머신별 로컬 유지(`.gitignore`). `wiki/` / `raw-sources/` / `templates/` / `CLAUDE.md`만 Git으로 관리
 
 <br>
 
