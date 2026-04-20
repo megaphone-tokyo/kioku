@@ -3,7 +3,7 @@
   "manifest_version": "0.4",
   "name": "kioku-wiki",
   "display_name": "KIOKU Wiki",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Read, search, and write your KIOKU Obsidian Wiki from Claude Desktop or Claude Code.",
   "long_description": "KIOKU is a personal knowledge base ('second brain') built on top of an Obsidian Vault. This MCP server exposes eight tools (kioku_search, kioku_read, kioku_list, kioku_write_note, kioku_write_wiki, kioku_delete, kioku_ingest_pdf, kioku_ingest_url) so that Claude Desktop and Claude Code can browse and update the Wiki without leaving the chat. All operations are local stdio — nothing leaves your machine. See https://github.com/megaphone-tokyo/kioku for the full project.",
   "author": {

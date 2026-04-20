@@ -30,6 +30,9 @@ import { withLock } from '../lib/lock.mjs';
 // テスト用フラグを child に propagate させていたため exact-match に切替済。
 // (MED-d2 fix も兼ねる: llm-fallback.mjs との allowlist drift を解消)
 import { buildChildEnv } from '../lib/child-env.mjs';
+// 2026-04-20 v0.3.4: 長時間 tool call で MCP client が 60s request timeout で
+// 切れる問題への対応 (progress heartbeat)。
+import { startHeartbeat } from '../lib/progress-heartbeat.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_EXTRACT_PDF_SCRIPT = join(__dirname, '..', '..', 'scripts', 'extract-pdf.sh');
@@ -83,6 +86,15 @@ export async function handleIngestPdf(vault, args, injections = {}) {
   const relFromRaw = relative(rawRootReal, absPath);
   const subdirPrefix = relFromRaw.includes('/') ? relFromRaw.split('/')[0] : 'root';
   const stem = basename(absPath, ext);
+
+  // v0.3.4: 15s heartbeat を仕込む。ingest-url からの skipLock 経由呼び出しでも
+  // sendProgress は外側 (kioku_ingest_url 側) から injection で渡ってくるので、
+  // 同じ progressToken で継続的に notification が流れる (client は単一 token を
+  // 追うので、handler 境界を跨いでも timeout リセットが一貫)。
+  const stopHeartbeat = startHeartbeat(
+    injections.sendProgress,
+    `kioku_ingest_pdf: processing ${pathArg}`,
+  );
 
   // skipLock: 機能 2.2 kioku_ingest_url が PDF URL を dispatch するとき、外側で既に
   // withLock を取得済みなので二重取得 (deadlock or 60s timeout) を避けるための injection。
@@ -191,10 +203,15 @@ export async function handleIngestPdf(vault, args, injections = {}) {
       };
   };
 
-  if (injections.skipLock) {
-    return await inner();
+  try {
+    if (injections.skipLock) {
+      return await inner();
+    }
+    return await withLock(vault, inner, { ttlMs: LOCK_TTL_MS, timeoutMs: LOCK_ACQUIRE_TIMEOUT_MS });
+  } finally {
+    // heartbeat を停止。throw 経路でも stop は呼ばれる (progress interval leak 防止)。
+    await stopHeartbeat('kioku_ingest_pdf: done');
   }
-  return withLock(vault, inner, { ttlMs: LOCK_TTL_MS, timeoutMs: LOCK_ACQUIRE_TIMEOUT_MS });
 }
 
 function validate(args) {
