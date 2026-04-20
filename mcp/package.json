@@ -1,6 +1,6 @@
 {
   "name": "kioku-mcp",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "type": "module",
   "description": "KIOKU local MCP server (Wiki read/list/search/write_note/write_wiki/delete) for Claude Desktop and Claude Code.",
