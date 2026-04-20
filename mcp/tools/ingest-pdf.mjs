@@ -24,7 +24,7 @@ import { extname, dirname, join, basename, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { assertInsideRawSources } from '../lib/vault-path.mjs';
-import { withLock } from '../lib/lock.mjs';
+import { withLock, writeSummaryLock } from '../lib/lock.mjs';
 // 2026-04-20 HIGH-d1 fix: 子プロセスへの env allowlist は ../lib/child-env.mjs
 // で集約管理する。旧 `KIOKU_` プレフィックス一括許可は KIOKU_URL_ALLOW_LOOPBACK 等の
 // テスト用フラグを child に propagate させていたため exact-match に切替済。
@@ -33,6 +33,12 @@ import { buildChildEnv } from '../lib/child-env.mjs';
 // 2026-04-20 v0.3.4: 長時間 tool call で MCP client が 60s request timeout で
 // 切れる問題への対応 (progress heartbeat)。
 import { startHeartbeat } from '../lib/progress-heartbeat.mjs';
+// 2026-04-21 v0.3.5 Option B: Claude Desktop の MCPB 呼び出しが MCP SDK の 60s
+// hardcoded timeout (LocalMcpManager.callTool が timeout option を渡さない) で
+// 切断される問題への対応。長い PDF (chunks >= 2) は detached claude -p で背景化し、
+// MCP handler は `queued_for_summary` で早期 return する。詳細:
+// plan/claude/26042004_feature-v0-3-5-early-return-design.md
+import { spawnDetached } from '../lib/detached-spawn.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_EXTRACT_PDF_SCRIPT = join(__dirname, '..', '..', 'scripts', 'extract-pdf.sh');
@@ -40,14 +46,20 @@ const DEFAULT_INGEST_TIMEOUT_SECONDS = 180;
 const DEFAULT_MAX_TURNS = 60;
 const LOCK_TTL_MS = 1_800_000; // 30 分 (auto-ingest.sh の KIOKU_LOCK_TTL_SECONDS と整合)
 const LOCK_ACQUIRE_TIMEOUT_MS = 60_000; // 60 秒
+// v0.3.5 Option B: size-gate. chunks.length がこの閾値以上なら detached (非同期) に倒す。
+// 15p PDF は 1 chunk (15p 以下が 1 chunk 以下)。16p 以上は 2 chunks に割れるので detached.
+const DETACHED_CHUNK_THRESHOLD = 2;
 
 export const INGEST_PDF_TOOL_DEF = {
   name: 'kioku_ingest_pdf',
-  title: 'Ingest a PDF or markdown source into KIOKU Wiki (synchronous)',
+  title: 'Ingest a PDF or markdown source into KIOKU Wiki',
   description:
     'Extract a PDF/MD under raw-sources/ into wiki/summaries/ immediately, without waiting for the next auto-ingest cron. ' +
     'Path must be relative to Vault root (e.g. "raw-sources/papers/foo.pdf") or an absolute path resolving inside $OBSIDIAN_VAULT/raw-sources/. ' +
-    'Extensions .pdf and .md are accepted. Blocks until chunks and summaries are produced (~30s-3min for typical papers).',
+    'Extensions .pdf and .md are accepted. ' +
+    'Short PDFs (<=15 pages, 1 chunk) block until summaries are produced (status: extracted_and_summarized). ' +
+    'Longer PDFs (>=2 chunks) return immediately with status: queued_for_summary while a background claude -p produces the summary in 1-3 minutes — ' +
+    'poll wiki/summaries/ (listed in expected_summaries) to retrieve them.',
   inputShape: {
     path: z
       .string()
@@ -99,7 +111,12 @@ export async function handleIngestPdf(vault, args, injections = {}) {
   // skipLock: 機能 2.2 kioku_ingest_url が PDF URL を dispatch するとき、外側で既に
   // withLock を取得済みなので二重取得 (deadlock or 60s timeout) を避けるための injection。
   // 通常呼び出しでは undefined → withLock で囲む。
-  const inner = async () => {
+  //
+  // v0.3.5 Option B: Phase 1 (extract + analyze + decide) は従来通り lock 下で
+  // 実行する。chunks >= DETACHED_CHUNK_THRESHOLD なら `{ __queued }` を返し、
+  // lock 解放後に Phase 2 (spawnDetached) を回す。short PDF (1 chunk) は従来通り
+  // lock 下で sync に claude -p を回して `extracted_and_summarized` を返す。
+  const phase1 = async () => {
       const warnings = [];
       let pages = 0;
       let truncated = false;
@@ -121,13 +138,16 @@ export async function handleIngestPdf(vault, args, injections = {}) {
           case 3:
             warnings.push('PDF appears to be scanned (no extractable text)');
             return {
-              status: 'skipped',
-              pdf_path: absPath,
-              chunks: [],
-              summaries: [],
-              pages: 0,
-              truncated: false,
-              warnings,
+              kind: 'done',
+              result: {
+                status: 'skipped',
+                pdf_path: absPath,
+                chunks: [],
+                summaries: [],
+                pages: 0,
+                truncated: false,
+                warnings,
+              },
             };
           case 4:
             throwInvalidRequest('PDF exceeds hard page limit');
@@ -158,17 +178,20 @@ export async function handleIngestPdf(vault, args, injections = {}) {
       // 7. 全 chunk が一致していれば skipped
       if (analysis.needIngest.length === 0) {
         return {
-          status: 'skipped',
-          pdf_path: absPath,
-          chunks: chunkPaths.map((p) => relative(vault, p)),
-          summaries: analysis.existingSummaries.map((p) => relative(vault, p)),
-          pages,
-          truncated,
-          warnings,
+          kind: 'done',
+          result: {
+            status: 'skipped',
+            pdf_path: absPath,
+            chunks: chunkPaths.map((p) => relative(vault, p)),
+            summaries: analysis.existingSummaries.map((p) => relative(vault, p)),
+            pages,
+            truncated,
+            warnings,
+          },
         };
       }
 
-      // 8. 子 claude を spawn して未処理 chunk を要約
+      // 8. 未処理 chunk を要約。prompt は size-gate 両経路で共通。
       const prompt = buildIngestPrompt({
         vault,
         chunkPages,
@@ -177,6 +200,27 @@ export async function handleIngestPdf(vault, args, injections = {}) {
         ext,
         needIngest: analysis.needIngest.map((p) => relative(vault, p)),
       });
+
+      // 8a. v0.3.5 Option B size-gate: PDF かつ chunks >= 2 なら detached に倒す。
+      //     lock を保持したまま spawnDetached すると child が親 lock fd を継承しうる
+      //     (Node は O_CLOEXEC を付けるが念のため) ため、`__queued` を返して lock 解放を
+      //     呼び出し側に委ね、その後に背景 spawn する設計。
+      if (ext === '.pdf' && chunkPaths.length >= DETACHED_CHUNK_THRESHOLD) {
+        return {
+          kind: 'queued',
+          payload: {
+            prompt,
+            chunkPaths,
+            pages,
+            truncated,
+            warnings,
+            subdirPrefix,
+            stem,
+          },
+        };
+      }
+
+      // 8b. 短い PDF (1 chunk) と .md は従来通り lock 下で sync 実行。
       const claudeRc = await spawnSync(
         claudeBin,
         ['-p', prompt, '--allowedTools', 'Write,Read,Edit', '--max-turns', String(maxTurns)],
@@ -191,23 +235,76 @@ export async function handleIngestPdf(vault, args, injections = {}) {
 
       // 9. summary を再列挙して返却
       const finalSummaries = await listSummariesFor(summariesDir, subdirPrefix, stem);
-
       return {
-        status: 'extracted_and_summarized',
-        pdf_path: absPath,
-        chunks: chunkPaths.map((p) => relative(vault, p)),
-        summaries: finalSummaries.map((p) => relative(vault, p)),
-        pages,
-        truncated,
-        warnings,
+        kind: 'done',
+        result: {
+          status: 'extracted_and_summarized',
+          pdf_path: absPath,
+          chunks: chunkPaths.map((p) => relative(vault, p)),
+          summaries: finalSummaries.map((p) => relative(vault, p)),
+          pages,
+          truncated,
+          warnings,
+        },
       };
   };
 
   try {
+    // Phase 1 — lock 下 (or skipLock 時は素通し) で extract + decide
+    let phase1Result;
     if (injections.skipLock) {
-      return await inner();
+      phase1Result = await phase1();
+    } else {
+      phase1Result = await withLock(vault, phase1, {
+        ttlMs: LOCK_TTL_MS,
+        timeoutMs: LOCK_ACQUIRE_TIMEOUT_MS,
+      });
     }
-    return await withLock(vault, inner, { ttlMs: LOCK_TTL_MS, timeoutMs: LOCK_ACQUIRE_TIMEOUT_MS });
+
+    if (phase1Result.kind === 'done') {
+      return phase1Result.result;
+    }
+
+    // Phase 2 — lock 解放後に detached claude -p を背景起動し、即 return する。
+    // ここに到達するのは PDF + chunks >= DETACHED_CHUNK_THRESHOLD のみ。
+    const { prompt, chunkPaths, pages, truncated, warnings, subdirPrefix: sdp, stem: s } = phase1Result.payload;
+    const summaryKey = `${sdp}--${s}`;
+    const logFile = join(vault, '.cache', `claude-summary-${summaryKey}.log`);
+
+    const detachedPid = await spawnDetached(
+      claudeBin,
+      ['-p', prompt, '--allowedTools', 'Write,Read,Edit', '--max-turns', String(maxTurns)],
+      {
+        logFile,
+        env: buildChildEnv({ KIOKU_NO_LOG: '1', KIOKU_MCP_CHILD: '1', OBSIDIAN_VAULT: vault }),
+        cwd: vault,
+      },
+    );
+    // 観測用 lockfile を書く (排他ではない、auto-ingest は無視する)。
+    // 失敗しても本体の動作は止めない (best-effort)。
+    try {
+      await writeSummaryLock(vault, summaryKey, detachedPid);
+    } catch {
+      /* best-effort: lockfile 書き込み失敗は運用情報の欠落のみで障害にしない */
+    }
+
+    const summariesRel = chunkPaths.map((p) => join('wiki', 'summaries', basename(p)));
+    if (chunkPaths.length >= 2) {
+      summariesRel.push(join('wiki', 'summaries', `${summaryKey}-index.md`));
+    }
+
+    return {
+      status: 'queued_for_summary',
+      pdf_path: absPath,
+      chunks: chunkPaths.map((p) => relative(vault, p)),
+      expected_summaries: summariesRel,
+      pages,
+      truncated,
+      warnings,
+      detached_pid: detachedPid,
+      log_file: relative(vault, logFile),
+      message: `${chunkPaths.length} chunks extracted. Summary will appear in wiki/summaries/ within 1-3 minutes.`,
+    };
   } finally {
     // heartbeat を停止。throw 経路でも stop は呼ばれる (progress interval leak 防止)。
     await stopHeartbeat('kioku_ingest_pdf: done');

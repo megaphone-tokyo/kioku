@@ -23,6 +23,11 @@ session-logs/
 # cron / MCP が掴んでいる瞬間を誤って commit すると stale 誤判定を誘発するため除外
 .kioku-mcp.lock
 
+# KIOKU v0.3.5 Option B: detached claude -p の PID tracking ファイル
+# 排他ではなく観測用 (auto-ingest は無視する). background の要約中のみ存在し、
+# commit 対象にすると stale な PID を永続化してしまうため除外.
+.kioku-summary-*.lock
+
 # 機能 2.2 operator アラートフラグ (2026-04-20 MED-d3 fix)
 # KIOKU_URL_ALLOW_LOOPBACK / KIOKU_URL_IGNORE_ROBOTS が production に leak した
 # 際に MCP サーバーが timestamp を書き出すディレクトリ。auto-lint 自己診断が拾う。
