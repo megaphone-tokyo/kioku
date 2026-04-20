@@ -138,6 +138,32 @@ cp -R "${MCP_DIR}/tools" "${STAGING_DIR}/server/tools"
 # .mjs ファイル以外を staging から落とす。
 find "${STAGING_DIR}/server/tools" -mindepth 1 -type d -empty -delete 2>/dev/null || true
 
+# 2026-04-20 v0.3.3 fix (機能 2.1 以降の長期バグ): MCP tool `kioku_ingest_pdf` は
+# `scripts/extract-pdf.sh` を spawn するが (ingest-pdf.mjs 内で
+# `join(__dirname, '..', '..', 'scripts', 'extract-pdf.sh')` に resolve)、
+# v0.2.0/v0.3.0/v0.3.1/v0.3.2 の .mcpb bundle にこの shell script が含まれて
+# いなかったため、Claude Desktop 経由で kioku_ingest_pdf を叩くと rc=127 で
+# 失敗していた (dev 時は parent repo 直パスで解決するので dogfooding でも
+# 検出できなかった)。staging のルートに scripts/ を配置することで
+# server/tools/ingest-pdf.mjs から `../../scripts/extract-pdf.sh` が正しく解決する。
+#
+# 同梱対象:
+#   - extract-pdf.sh        : kioku_ingest_pdf が spawn (必須)
+#   - mask-text.mjs         : extract-pdf.sh が Node CLI として呼ぶ (必須)
+#   - lib/masking.mjs       : mask-text.mjs が import (必須)
+#   - extract-url.sh        : 将来 MCP-side から spawn する可能性あり (現状 cron 専用だが念のため)
+#   - auto-ingest.sh / auto-lint.sh / setup-*.sh / install-*.sh 等の cron/setup 系:
+#     MCP から spawn されない → 除外する (余計な配布物を減らす)
+echo "build-mcpb: [stage] copying MCP-invoked scripts (extract-pdf.sh + deps)"
+mkdir -p "${STAGING_DIR}/scripts"
+cp "${SCRIPT_DIR}/extract-pdf.sh" "${STAGING_DIR}/scripts/extract-pdf.sh"
+cp "${SCRIPT_DIR}/mask-text.mjs" "${STAGING_DIR}/scripts/mask-text.mjs"
+cp "${SCRIPT_DIR}/extract-url.sh" "${STAGING_DIR}/scripts/extract-url.sh"
+cp -R "${SCRIPT_DIR}/lib" "${STAGING_DIR}/scripts/lib"
+# 実行権限を明示 (cp -p だとテスト環境の uid 違いで失敗しうるので chmod で確定)
+chmod 0755 "${STAGING_DIR}/scripts/extract-pdf.sh"
+chmod 0755 "${STAGING_DIR}/scripts/extract-url.sh"
+
 # -----------------------------------------------------------------------------
 # staging で本番依存を install (lock ファイルが揃っていれば npm ci、無ければ npm install)
 # -----------------------------------------------------------------------------

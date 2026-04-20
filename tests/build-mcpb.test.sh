@@ -119,6 +119,43 @@ STAGING="${REPO_ROOT}/tools/claude-brain/mcp/build/staging"
   || fail "MCPB4 staging missing @modelcontextprotocol/sdk"
 
 # -----------------------------------------------------------------------------
+# MCPB4b (v0.3.3 regression test): staging に MCP-invoked shell scripts が含まれる
+#
+# v0.2.0-v0.3.2 の .mcpb bundle は scripts/ を staging に入れていなかったため、
+# Claude Desktop 経由で kioku_ingest_pdf を叩くと `extract-pdf.sh: No such file or
+# directory` (rc=127) で失敗していた。v0.3.3 で scripts/ staging コピーを追加。
+# 本テストは regression 防止 (手元 build でなく .mcpb 経由で tool が動く前提を固定)。
+# -----------------------------------------------------------------------------
+[[ -f "${STAGING}/scripts/extract-pdf.sh" ]] \
+  && pass "MCPB4b staging includes scripts/extract-pdf.sh (kioku_ingest_pdf 依存)" \
+  || fail "MCPB4b staging missing scripts/extract-pdf.sh — kioku_ingest_pdf will fail at runtime"
+[[ -x "${STAGING}/scripts/extract-pdf.sh" ]] \
+  && pass "MCPB4b extract-pdf.sh is executable (0o755)" \
+  || fail "MCPB4b extract-pdf.sh lacks execute permission"
+[[ -f "${STAGING}/scripts/mask-text.mjs" ]] \
+  && pass "MCPB4b staging includes scripts/mask-text.mjs (extract-pdf.sh 依存)" \
+  || fail "MCPB4b staging missing scripts/mask-text.mjs"
+[[ -f "${STAGING}/scripts/lib/masking.mjs" ]] \
+  && pass "MCPB4b staging includes scripts/lib/masking.mjs (mask-text.mjs 依存)" \
+  || fail "MCPB4b staging missing scripts/lib/masking.mjs"
+[[ -f "${STAGING}/scripts/extract-url.sh" ]] \
+  && pass "MCPB4b staging includes scripts/extract-url.sh (将来の MCP spawn 用)" \
+  || fail "MCPB4b staging missing scripts/extract-url.sh"
+# auto-ingest.sh / install-*.sh / setup-*.sh は MCP から spawn されないため staging に入らない
+[[ ! -f "${STAGING}/scripts/auto-ingest.sh" ]] \
+  && pass "MCPB4b staging excludes cron-only scripts/auto-ingest.sh (最小配布)" \
+  || fail "MCPB4b staging includes scripts/auto-ingest.sh (不要に同梱されている)"
+
+# ingest-pdf.mjs の path 解決整合確認:
+# `join(__dirname, '..', '..', 'scripts', 'extract-pdf.sh')` は
+# staging では `server/tools/../../scripts/extract-pdf.sh` = staging ルート直下 scripts/
+# parent repo でも `mcp/tools/../../scripts/extract-pdf.sh` = tools/claude-brain/scripts/
+# この契約が壊れていないことを確認 (ingest-pdf.mjs にパス文字列が残っている)
+grep -q "'..', '..', 'scripts', 'extract-pdf.sh'" "${REPO_ROOT}/tools/claude-brain/mcp/tools/ingest-pdf.mjs" \
+  && pass "MCPB4b ingest-pdf.mjs の path resolve が scripts/ staging 配置と整合" \
+  || fail "MCPB4b ingest-pdf.mjs の path 文字列が変更された — build-mcpb.sh の staging 位置と再整合すること"
+
+# -----------------------------------------------------------------------------
 # MCPB5: --clean removes build/ and dist/
 # -----------------------------------------------------------------------------
 echo "== MCPB5: --clean =="
