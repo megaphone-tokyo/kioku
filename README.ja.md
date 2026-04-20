@@ -45,8 +45,9 @@ Andrej Karpathy の LLM Wiki パターン に、自動ログ収集と Git 同期
 4. **同期 (L3)**: Vault 自体を Git リポジトリにし、`SessionStart` で `git pull`、`SessionEnd` で `git commit && git push` することで、複数 Mac 間を GitHub Private リポジトリ経由で共有します
 5. **Wiki コンテキスト注入**: `SessionStart` 時に `wiki/index.md` をシステムプロンプトに注入し、過去の知識を活用できます
 6. **qmd 全文検索**: MCP 経由で wiki を全文検索・セマンティック検索できます
-7. **Wiki Ingest スキル**: `/wiki-ingest-all` / `/wiki-ingest` スラッシュコマンドで、既存プロジェクトの知識を Wiki に取り込めます
-8. **機密の隔離**: `session-logs/` はマシンごとにローカル保持（`.gitignore` 対象）。`wiki/` / `raw-sources/` / `templates/` / `CLAUDE.md` のみが Git 管理対象になります
+7. **外部ソース取り込み (PDF / URL)**: `kioku_ingest_pdf` は `raw-sources/` に配置した PDF を chunk 抽出 + 要約して `wiki/summaries/` に保存します。`kioku_ingest_url` は HTTP(S) の URL を Mozilla Readability で本文抽出し、Markdown + 画像 (sha256 dedupe) を `raw-sources/<subdir>/fetched/` に保存、PDF URL は自動で `kioku_ingest_pdf` にディスパッチされます。大型 PDF (≥ 2 chunks) は detached 要約プロセスを使い ≤ 5 秒で応答 (Claude Desktop の 60 秒タイムアウト対策)
+8. **Wiki Ingest スキル**: `/wiki-ingest-all` / `/wiki-ingest` スラッシュコマンドで、既存プロジェクトの知識を Wiki に取り込めます
+9. **機密の隔離**: `session-logs/` はマシンごとにローカル保持（`.gitignore` 対象）。`wiki/` / `raw-sources/` / `templates/` / `CLAUDE.md` のみが Git 管理対象になります
 
 <br>
 
@@ -212,7 +213,7 @@ claude mcp add --scope user --transport stdio kioku \
   "$(command -v node)" "$(pwd)/mcp/server.mjs"
 ```
 
-提供される 6 ツール:
+提供される 8 ツール:
 
 | ツール | 用途 |
 |---|---|
@@ -222,6 +223,8 @@ claude mcp add --scope user --transport stdio kioku \
 | `kioku_write_note` (推奨) | session-logs/ にメモを書き出し、次回 auto-ingest が wiki/ に構造化 |
 | `kioku_write_wiki` (上級) | wiki/ への即時直書き (テンプレ準拠、frontmatter 自動付与) |
 | `kioku_delete` | wiki/.archive/ への移動 (復元可能、index.md 不可) |
+| `kioku_ingest_pdf` | `raw-sources/` 配下の PDF / MD を即時取り込み。chunk 抽出 + `wiki/summaries/` 書き込みを同期実行し、cron 待ちを回避。複数 chunk の PDF は `queued_for_summary` として handle を返し、detached `claude -p` がバックグラウンドで要約を書く |
+| `kioku_ingest_url` | HTTP/HTTPS URL を取得し、Mozilla Readability で本文抽出 (失敗時は LLM フォールバック)。Markdown + 画像 (sha256 dedupe) を `raw-sources/<subdir>/fetched/` に保存。Content-Type が `application/pdf` の URL は `kioku_ingest_pdf` に自動ディスパッチ |
 
 **ポイント**:
 - 完全ローカル (stdio、ネットワーク非露出、`@modelcontextprotocol/sdk` のみ依存)
@@ -311,6 +314,9 @@ Claude Code は Hook システム (`session-logger.mjs`) で**毎セッション
 |---|---|---|
 | 「メモして」「保存して」「Wiki に追加して」 | `kioku_write_note` | `session-logs/` → 次回 auto-ingest で `wiki/` に構造化 |
 | 「今すぐ Wiki に作って」「即時に反映して」 | `kioku_write_wiki` | `wiki/` に直書き (即時、テンプレ準拠、wikilink 整合は best-effort) |
+| 「この記事読んで」+ URL / "read this article" (HTML) | `kioku_ingest_url` | 本文 → `raw-sources/<dir>/fetched/<host>-<slug>.md`、画像 → `media/<host>/<sha256>.<ext>`、要約 → `wiki/summaries/` |
+| 「この論文読んで」+ PDF URL / "read this paper" (PDF) | `kioku_ingest_url` → `kioku_ingest_pdf` (自動ディスパッチ) | PDF → `raw-sources/<dir>/<name>.pdf`、chunk → `.cache/extracted/`、要約 → `wiki/summaries/` |
+| 「この PDF 取り込んで」(ローカルパス指定) | `kioku_ingest_pdf` | `raw-sources/` 配下のパスを渡すと即時 chunk 抽出 + 要約 |
 
 実践的な習慣: 会話の区切りで **「今の話をまとめてメモしておいて」** **「この設計判断を記録して」** と一言お願いするのがおすすめ。これをやらないと、Desktop での会話は Claude のチャット履歴にしか残らず、Obsidian Vault には反映されません。
 
@@ -472,6 +478,23 @@ KIOKU は Claude Code の**全セッション入出力にアクセスする Hook
 <br>
 
 ## 更新履歴
+
+### 2026-04-20 — v0.3.5: Claude Desktop 60 秒タイムアウト対応 (Option B detached spawn)
+- `kioku_ingest_url` / `kioku_ingest_pdf` が大型 PDF を 2 段階化: Phase 1 (同期、≤ 5 秒) が `status: "queued_for_summary"` + `detached_pid` + `log_file` + `expected_summaries[]` を返し、Phase 2 (detached `claude -p`、fire-and-forget) が MCP tool 応答後に `wiki/summaries/` を書き出す
+- チャンク数しきい値: 2 chunk 以上の PDF で detached path 使用。短い PDF は従来の同期挙動 (`status: "completed"`)
+- Claude Desktop にハードコードされている 60 秒 `callTool` タイムアウトを回避 (app.asar 解析で発覚 — SDK の `DEFAULT_REQUEST_TIMEOUT_MSEC` は Desktop config から上書きできないため、早期 return が唯一の解)
+
+### 2026-04-19 — v0.3.0: HTTP/HTTPS URL 取り込み (機能 2.2)
+- 新 `kioku_ingest_url` ツール: URL を取得し Mozilla Readability で本文抽出 (失敗時は LLM フォールバック)、Markdown + sha256 dedupe 画像を `raw-sources/<subdir>/fetched/` に保存
+- PDF URL (Content-Type `application/pdf`) は `kioku_ingest_pdf` に自動ディスパッチ
+- SSRF ガード: `localhost` / link-local / loopback / `file://` / URL 埋込クレデンシャルを拒否。robots.txt は既定で尊重
+- cron pre-step での `urls.txt` サポート: `raw-sources/<subdir>/urls.txt` に URL を列挙すると次回 cycle で自動取り込み
+
+### 2026-04-18 — v0.2.0: PDF / Markdown 取り込み (機能 2 + 2.1)
+- 新 `kioku_ingest_pdf` ツール: `raw-sources/` 配下の PDF を poppler ベースで chunk 抽出し、`wiki/summaries/` を同期書き込み
+- chunk + index summary モデル: 大型 PDF は overlapping chunk に分割 (既定 15 ページ + 1 ページ overlap) し、親 `*-index.md` でナビゲーション可能に
+- `source_sha256` による冪等性: 同じ PDF の再取り込みはスキップ
+- MCP tool 数: 6 → 7
 
 ### 2026-04-17 — Phase N: Claude Desktop 向け MCPB バンドル
 - `mcp/manifest.json` (MCPB v0.4) と `scripts/build-mcpb.sh` を追加し、`kioku-wiki-<version>.mcpb` (約 3.2 MB) を生成可能に

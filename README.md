@@ -45,8 +45,9 @@ Combines Andrej Karpathy's LLM Wiki pattern with auto-logging and Git sync acros
 4. **Sync (L3)**: The Vault itself is a Git repo. `SessionStart` runs `git pull`, `SessionEnd` runs `git commit && git push`, syncing across machines via a GitHub Private repository
 5. **Wiki context injection**: At `SessionStart`, `wiki/index.md` is injected into the system prompt so Claude can leverage past knowledge
 6. **qmd full-text search**: Search wiki via MCP with BM25 + semantic search
-7. **Wiki Ingest skills**: `/wiki-ingest-all` and `/wiki-ingest` slash commands import existing project knowledge into the Wiki
-8. **Secret isolation**: `session-logs/` stays local per machine (`.gitignore`). Only `wiki/` / `raw-sources/` / `templates/` / `CLAUDE.md` are Git-managed
+7. **External source ingest (PDF / URL)**: `kioku_ingest_pdf` extracts and summarizes local PDFs placed under `raw-sources/`; `kioku_ingest_url` fetches HTTP(S) articles with Mozilla Readability, saves Markdown + images to `raw-sources/<dir>/fetched/`, and auto-dispatches PDF URLs to the PDF pipeline. Large PDFs (≥ 2 chunks) use a detached summary process to return in ≤ 5 s (Claude Desktop 60 s timeout safe)
+8. **Wiki Ingest skills**: `/wiki-ingest-all` and `/wiki-ingest` slash commands import existing project knowledge into the Wiki
+9. **Secret isolation**: `session-logs/` stays local per machine (`.gitignore`). Only `wiki/` / `raw-sources/` / `templates/` / `CLAUDE.md` are Git-managed
 
 <br>
 
@@ -203,7 +204,7 @@ claude mcp add --scope user --transport stdio kioku \
   "$(command -v node)" "$(pwd)/mcp/server.mjs"
 ```
 
-Six tools provided:
+Eight tools provided:
 
 | Tool | Purpose |
 |---|---|
@@ -213,6 +214,8 @@ Six tools provided:
 | `kioku_write_note` (recommended) | Append a memo to `session-logs/`; the next auto-ingest cycle structures it into `wiki/` |
 | `kioku_write_wiki` (advanced) | Write directly into `wiki/` with template + frontmatter auto-injection |
 | `kioku_delete` | Move a page to `wiki/.archive/` (recoverable; `wiki/index.md` cannot be deleted) |
+| `kioku_ingest_pdf` | Trigger immediate ingest for a PDF / MD file already placed under `raw-sources/`. Synchronously extracts chunks + writes `wiki/summaries/` without waiting for the cron cycle. Multi-chunk PDFs return a `queued_for_summary` handle while a detached `claude -p` writes the summary in the background |
+| `kioku_ingest_url` | Fetch an HTTP/HTTPS URL and extract the article body via Mozilla Readability (LLM fallback on failure). Saves Markdown + sha256-deduped images to `raw-sources/<subdir>/fetched/`. Content-Type `application/pdf` auto-dispatches to `kioku_ingest_pdf` |
 
 **Notes**:
 - Fully local (stdio transport, no network exposure, single dep `@modelcontextprotocol/sdk`)
@@ -302,6 +305,9 @@ Phrases that trigger saves (Claude picks the right tool from the tool descriptio
 |---|---|---|
 | "save this to my wiki" / "remember this" / "メモして" | `kioku_write_note` | `session-logs/` → structured into `wiki/` by the next auto-ingest cycle |
 | "create this wiki page now" / "immediately reflect this" / "すぐ Wiki に作って" | `kioku_write_wiki` | `wiki/` directly (immediate, template applied, best-effort wikilink integrity) |
+| "read this article" + URL / "この記事読んで" (HTML URL) | `kioku_ingest_url` | Article body → `raw-sources/<dir>/fetched/<host>-<slug>.md`; images → `media/<host>/<sha256>.<ext>`; summary → `wiki/summaries/` |
+| "read this paper" + PDF URL / "この論文読んで" (PDF URL) | `kioku_ingest_url` → `kioku_ingest_pdf` (auto-dispatch) | PDF → `raw-sources/<dir>/<name>.pdf`; chunks → `.cache/extracted/`; summary → `wiki/summaries/` |
+| "ingest this PDF I already saved" (local path) | `kioku_ingest_pdf` | Given a path under `raw-sources/`, extracts + summarizes immediately |
 
 Practical habit: at the end of a meaningful conversation segment, ask Claude something like **"今の話をまとめてメモしておいて"** or **"この設計判断を記録して"**. Without this nudge, your Desktop conversation stays only in Claude's chat history — not in your Obsidian Vault.
 
@@ -455,6 +461,23 @@ If you find a security issue, please report it via [SECURITY.md](SECURITY.md) �
 <br>
 
 ## Changelog
+
+### 2026-04-20 — v0.3.5: Claude Desktop 60s timeout safe (Option B detached spawn)
+- `kioku_ingest_url` / `kioku_ingest_pdf` now split large PDFs into two phases: Phase 1 (synchronous, ≤ 5 s) returns `status: "queued_for_summary"` + `detached_pid` + `log_file` + `expected_summaries[]`; Phase 2 (detached `claude -p`, fire-and-forget) writes `wiki/summaries/` after the MCP tool has returned
+- Multi-chunk threshold: PDFs that produce ≥ 2 chunks use the detached path; short PDFs keep the synchronous behaviour (`status: "completed"`)
+- Fixes Claude Desktop's hardcoded 60 s `callTool` timeout (discovered via `app.asar` analysis — the SDK's `DEFAULT_REQUEST_TIMEOUT_MSEC` is not overridable by Desktop config; only early return works)
+
+### 2026-04-19 — v0.3.0: HTTP/HTTPS URL ingest (Feature 2.2)
+- New `kioku_ingest_url` tool: fetches a URL, extracts the article body via Mozilla Readability (LLM fallback when Readability fails), saves Markdown + sha256-deduped images under `raw-sources/<subdir>/fetched/`
+- PDF URLs (Content-Type `application/pdf`) auto-dispatch to `kioku_ingest_pdf`
+- SSRF guards: rejects `localhost` / link-local / loopback / `file://` / URL-embedded credentials; robots.txt respected by default
+- `urls.txt` support in cron pre-step: enumerate URLs in `raw-sources/<subdir>/urls.txt` and the scheduler auto-ingests on next cycle
+
+### 2026-04-18 — v0.2.0: PDF / Markdown ingest (Feature 2 + 2.1)
+- New `kioku_ingest_pdf` tool: poppler-based chunk extraction from PDFs placed under `raw-sources/`, writes `wiki/summaries/` synchronously
+- Chunk + index summary model: large PDFs split into overlapping chunks (default 15 pages, 1-page overlap) with a parent `*-index.md` navigating them
+- `source_sha256` for idempotency: re-ingest of the same PDF is skipped
+- MCP tool count: 6 → 7
 
 ### 2026-04-17 — Phase N: MCPB bundle for Claude Desktop
 - New `mcp/manifest.json` (MCPB v0.4) and `scripts/build-mcpb.sh` produce `kioku-wiki-<version>.mcpb` (~3.2 MB)
