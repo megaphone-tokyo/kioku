@@ -52,12 +52,39 @@ cd "${APP_DIR}"
 mv .git-kioku .git
 trap 'cd "${APP_DIR}" && [[ -d .git ]] && mv .git .git-kioku 2>/dev/null || true' EXIT
 
-# next ブランチに切り替え (なければ作成)
-if git show-ref --quiet refs/heads/next 2>/dev/null; then
-  git checkout next --quiet
+# 2026-04-20: リモート最新を fetch してから branch を切り替える。
+# これをしないとローカル main / next が origin に対して古い状態で rsync の
+# 差分が出たり、最後の `git checkout main` で古い commit に戻って WT が
+# 散らかる (feature 2.2 リリース時の WT drift 問題)。fetch 失敗は許容。
+git fetch origin --quiet 2>/dev/null || true
+
+# 2026-04-20: rebase-merge 運用で origin/next の履歴が rewrite される
+# (kioku main へ rebase-merge 済の commit が origin/main に存在し、ローカル
+# next に残る pre-rebase commit と diverge して PR が CONFLICT) ケース + WT が
+# parent repo のファイル状態 (feature files を保持) で checkout next が
+# untracked conflict で abort するケースの両方を一度に解決するため、
+# 「次回 sync の出発点は常に origin/main」という ephemeral next 運用に統一する。
+# この後すぐ rsync が WT を親 repo の最新状態で上書きするので、branch reset
+# で WT が失われても損失はない (commit 前の未保存変更があった場合を除く)。
+# 初回 push は通常 fast-forward、2 回目以降の rebase-merge 後は force-with-lease
+# が必要になる (後段の push ロジックでフォールバック)。
+if git show-ref --quiet refs/remotes/origin/main 2>/dev/null; then
+  # -B: 既存なら reset、無ければ create。--force 相当で WT の untracked も排除しない
+  # が、tracked conflict があっても origin/main の内容で上書きされる。
+  git checkout -B next origin/main --quiet 2>/dev/null || {
+    # WT に untracked + conflicting files がある場合の rescue path:
+    # hard reset + clean で強制的にクリーン状態にする (sync の用途上、commit
+    # 前の手編集は想定外なので許容)。
+    git checkout --force -B next origin/main --quiet
+  }
 else
-  git checkout -b next --quiet
-  echo "  [created] next branch"
+  # origin/main が取れない (初回 clone 前 / fetch 失敗) 時は従来挙動に fallback
+  if git show-ref --quiet refs/heads/next 2>/dev/null; then
+    git checkout next --quiet
+  else
+    git checkout -b next --quiet
+    echo "  [created] next branch"
+  fi
 fi
 
 # -----------------------------------------------------------------------------
@@ -108,6 +135,7 @@ git add -A
 if git diff --cached --quiet; then
   echo "=== sync-to-app: no changes to sync ==="
   git checkout main --quiet 2>/dev/null || true
+  git merge --ff-only origin/main --quiet 2>/dev/null || true
   exit 0
 fi
 
@@ -121,13 +149,21 @@ if [[ "${DRY_RUN}" == "1" ]]; then
   git reset HEAD --quiet
   git checkout -- .
   git clean -fd >/dev/null
+  # dry-run 側も main を ff-only で origin/main に揃えて WT drift を回避
   git checkout main --quiet 2>/dev/null || true
+  git merge --ff-only origin/main --quiet 2>/dev/null || true
   exit 0
 fi
 
 # コミット + push
 git commit -m "sync: update from parent $(date +%Y%m%d-%H%M)" --quiet
-git push -u origin next --quiet 2>/dev/null || git push --set-upstream origin next --quiet
+# 2026-04-20: 上の reset --hard で local next を origin/main に巻き戻した場合、
+# origin/next は古い履歴を持つため fast-forward push は reject される。
+# --force-with-lease で "origin/next が想定どおりなら上書き" を明示 (他者の
+# 割り込みは検知して abort する安全版 force)。通常 sync では noop。
+git push -u origin next --quiet 2>/dev/null \
+  || git push --set-upstream origin next --quiet 2>/dev/null \
+  || git push --force-with-lease origin next --quiet
 
 echo ""
 echo "=== sync-to-app: pushed to next branch ==="
@@ -138,5 +174,11 @@ echo "  2. Merge:  gh pr create --base main --head next --title 'Sync from paren
 echo "  3. Or:     git checkout main && git merge next && git push"
 echo ""
 
-# main に戻す
+# main に戻す (ローカル main を origin/main に fast-forward して WT drift を回避)
+#
+# 2026-04-20: ローカル main が origin/main より古いと、ここでの checkout 後に
+# kioku の古い commit ツリーが app/ WT に重ねられ、親リポから見ると app/ が
+# 「feature ファイルが大量に deleted」の状態になる (v0.3.0 リリース時の実害)。
+# fetch は先頭で済ませているので、ff-only merge で安全に追従する。
 git checkout main --quiet 2>/dev/null || true
+git merge --ff-only origin/main --quiet 2>/dev/null || true
