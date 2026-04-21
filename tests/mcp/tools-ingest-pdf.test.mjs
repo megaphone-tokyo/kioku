@@ -363,24 +363,9 @@ describe('kioku_ingest_pdf', { skip: !HAS_POPPLER ? 'poppler not installed' : fa
     assert.equal(result2.status, 'extracted_and_summarized');
   });
 
-  test('MCP30c skipLock injection bypasses withLock (機能 2.2 PDF dispatch 用)', async () => {
-    // 機能 2.2 kioku_ingest_url が PDF URL を内部 dispatch するとき、外側で
-    // withLock を保持済みなので handleIngestPdf 側は再取得をスキップする必要がある。
-    // skipLock=true なら、外部で lockfile が握られていてもタイムアウトせず即進行する。
-    const vault = await makeVault('mcp30c-skiplock');
-    await cp(join(FIXTURES, 'sample-8p.pdf'), join(vault, 'raw-sources', 'papers', 'noloc.pdf'));
-    // 別 PID の lockfile を擬似的に置く (TTL 内で生きている扱い)
-    const lockPath = join(vault, '.kioku-mcp.lock');
-    await writeFile(lockPath, '99999\n');
-    try {
-      const result = await handleIngestPdf(
-        vault,
-        { path: 'raw-sources/papers/noloc.pdf' },
-        { claudeBin: claudeBin(), skipLock: true },
-      );
-      assert.equal(result.status, 'extracted_and_summarized');
-    } finally {
-      await rm(lockPath, { force: true });
-    }
-  });
+  // 2026-04-21 v0.4.0 Tier A#3 M-a4: skipLock injection を削除したため、
+  // 旧 MCP30c (skipLock bypass 動作テスト) は API ごと消滅。
+  // 新しい invariant は MCP45 (tools-ingest-url.test.mjs) 側で検証する:
+  // - kioku_ingest_url → PDF dispatch 経路で handleIngestPdf が自前の withLock を
+  //   取得する (outer withLock は dispatch 前に release される) ことが整合性の要。
 });

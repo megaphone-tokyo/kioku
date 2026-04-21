@@ -85,12 +85,13 @@ export async function handleDelete(vault, args) {
     // 残った状態で wiki ページを archive すると broken_links_detected が発火せず
     // silent orphan 化していた。
     const vaultAbs = await realpath(vault);
-    const { brokenLinks, skippedLargeFiles } = await scanReferences(vaultAbs, wikiAbs, abs, targets);
+    const { brokenLinks, skippedLargeFiles, skippedUnreadable } =
+      await scanReferences(vaultAbs, wikiAbs, abs, targets);
 
     if (brokenLinks.length > 0 && !force) {
       const e = new Error('broken links detected (use force=true to override)');
       e.code = 'broken_links_detected';
-      e.data = { brokenLinks, skippedLargeFiles };
+      e.data = { brokenLinks, skippedLargeFiles, skippedUnreadable };
       throw e;
     }
 
@@ -114,6 +115,7 @@ export async function handleDelete(vault, args) {
       archivedPath: 'wiki/' + relative(wikiAbs, archiveAbs).split(sep).join('/'),
       brokenLinks,
       skippedLargeFiles,
+      skippedUnreadable,
     };
   });
 }
@@ -145,6 +147,10 @@ async function scanReferences(vaultAbs, wikiAbs, targetAbs, targetSet) {
   // 対象に入れる。session-logs / .cache / .obsidian / node_modules 等は除外。
   const out = [];
   const skipped = [];
+  // 2026-04-21 L-2 fix: readFile 失敗を silent catch せず operator 視認性を残す。
+  // SCAN_MAX_BYTES (size cap) の先を抜けて readFile が EACCES / EIO / ENOENT
+  // (symlink 切れ 等) で落ちたときは skippedUnreadable[] に記録して caller に返す。
+  const unreadable = [];
   // ディレクトリ名除外 (トップレベルおよび任意階層)
   const excludeDirs = new Set([
     '.obsidian', '.archive', '.trash', 'templates',
@@ -191,12 +197,20 @@ async function scanReferences(vaultAbs, wikiAbs, targetAbs, targetSet) {
               inWiki,
             });
           }
-        } catch {
-          // skip unreadable
+        } catch (err) {
+          // L-2 fix: silent skip せず skippedUnreadable[] に記録。
+          // error フィールドは運用側で EACCES / EIO / ENOENT 等を区別できるよう
+          // code を優先し、無ければ message 先頭 200 char に truncate する
+          // (攻撃者制御の長大 error メッセージで operator 視認性を損なわないため)。
+          const relFromVault = relative(vaultAbs, childAbs).split(sep).join('/');
+          const errStr = typeof err?.code === 'string' && err.code
+            ? err.code
+            : String(err?.message ?? 'unknown').slice(0, 200);
+          unreadable.push({ sourcePath: relFromVault, error: errStr });
         }
       }
     }
   }
   await walk(vaultAbs);
-  return { brokenLinks: out, skippedLargeFiles: skipped };
+  return { brokenLinks: out, skippedLargeFiles: skipped, skippedUnreadable: unreadable };
 }

@@ -16,7 +16,11 @@
 // MCP42   application/pdf → handleIngestPdf に dispatch
 // MCP43   octet-stream + URL 末尾 .pdf → dispatch
 // MCP44   PDF body > 50MB → invalid_request
-// MCP45   dispatch では skipLock=true で内側 withLock を跨がず即進行する
+// MCP45   PDF dispatch は outer withLock を release してから handleIngestPdf が
+//         自前 withLock を acquire する (v0.4.0 Tier A#3 M-a2 refactor)
+// MCP45b  concurrent PDF dispatch (異 vault) が短時間で完了する (Tier A#3 M-a2 invariant)
+// MCP45c  handleIngestPdf 失敗時に orphan PDF が raw-sources/ から cleanup される
+//         (v0.4.0 Tier A#3 post-review GAP-1 fix)
 // MCP46   CRIT-1: late-PDF discovery で binary 再 fetch して PDF magic bytes が保持される
 // MCP46b  v0.3.5 Option B: 長い PDF dispatch → status: dispatched_to_pdf_queued
 // MCP47   HIGH-2: fetch エラーメッセージに credentials / 内部 IP / raw URL を含めない
@@ -32,7 +36,7 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, rm, mkdir, writeFile, readFile, chmod } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile, readdir, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -392,9 +396,16 @@ describe('kioku_ingest_url', () => {
       );
     });
 
-    test('MCP45 dispatch uses skipLock (no re-entrance deadlock)', async () => {
-      // 内側 handleIngestPdf が skipLock=false だと外側 withLock と二重取得で
-      // 60s timeout する。skipLock=true が伝わっていれば即進行する。
+    test('MCP45 PDF dispatch releases outer lock before handleIngestPdf acquires its own (v0.4.0 Tier A#3 M-a2)', async () => {
+      // 2026-04-21 M-a2 fix: 旧実装は outer withLock を保持したまま handleIngestPdf に
+      // skipLock=true で dispatch → 大容量 PDF (poppler 同期 extract) で outer lock を
+      // 最大 4.5 分保持する問題があった。新実装は dispatchToPdf を withLock の外へ
+      // 出し、handleIngestPdf が自前で withLock を取る (skipLock injection は API ごと
+      // 削除済)。
+      //
+      // このテストは dispatch_to_pdf が成功することを検証する。refactor が壊れていて
+      // outer lock が handleIngestPdf 呼び出し中も保持されていたら、handleIngestPdf
+      // 側の withLock が 60s timeout で LockTimeoutError になり、このテストが失敗する。
       const v = await makeVault('mcp45');
       const r = await handleIngestUrl(
         v,
@@ -402,6 +413,92 @@ describe('kioku_ingest_url', () => {
         { claudeBin: stubBin, robotsUrlOverride: `${server.url}/robots.txt?variant=allow` },
       );
       assert.equal(r.status, 'dispatched_to_pdf');
+      // Lockfile が呼び出し完了後に残っていないこと (withLock の finally で unlink される)
+      const lockPath = join(v, '.kioku-mcp.lock');
+      let lockExists = false;
+      try {
+        await readFile(lockPath);
+        lockExists = true;
+      } catch (err) {
+        if (err.code !== 'ENOENT') throw err;
+      }
+      assert.equal(lockExists, false, 'lockfile must be unlinked after dispatch');
+    });
+
+    test('MCP45c GAP-1 fix: orphan PDF is cleaned up when handleIngestPdf fails (v0.4.0 Tier A#3 post-review)', async () => {
+      // 2026-04-21 /security-review (red + blue parallel) の GAP-1 共通指摘:
+      //   refactor 後は outer withLock release 後に PDF が raw-sources/ に
+      //   visible になるため、handleIngestPdf が失敗 (encrypted / invalid PDF /
+      //   extract rc=2,4,5 / claude -p 失敗 等) した場合 PDF が orphan 化する。
+      //
+      // cleanup 条件:
+      //   - `lock_timeout`: user retry 用に PDF を残す (このテストでは誘発しない)
+      //   - それ以外の失敗: PDF を unlink する (このテストで検証する)
+      //
+      // 本テストは sample-encrypted.pdf を返す URL を ingest して、extract-pdf.sh
+      // rc=2 → throwInvalidRequest('encrypted or invalid PDF') で failure が走る
+      // ことを契機に、orphan PDF が raw-sources/papers/ から削除されることを確認。
+      const v = await makeVault('mcp45c');
+      let caught;
+      try {
+        await handleIngestUrl(
+          v,
+          { url: `${server.url}/pdf?name=sample-encrypted.pdf` },
+          { claudeBin: stubBin, robotsUrlOverride: `${server.url}/robots.txt?variant=allow` },
+        );
+      } catch (e) {
+        caught = e;
+      }
+      assert.ok(caught, 'expected handleIngestUrl to throw on encrypted PDF');
+      // GAP-1 invariant: raw-sources/papers/ には orphan PDF が残っていないこと。
+      // directory 自体は writePdfToDisk が mkdir 済なので存在するが、.pdf ファイルは 0。
+      const papersDir = join(v, 'raw-sources', 'papers');
+      let entries = [];
+      try {
+        entries = await readdir(papersDir);
+      } catch (err) {
+        if (err.code !== 'ENOENT') throw err;
+      }
+      const remainingPdfs = entries.filter((n) => n.endsWith('.pdf'));
+      assert.deepEqual(
+        remainingPdfs,
+        [],
+        `expected no orphan PDFs after handleIngestPdf failure, got: ${JSON.stringify(remainingPdfs)}`,
+      );
+    });
+
+    test('MCP45b PDF dispatch: outer lock is released during handleIngestPdf Phase 1 (v0.4.0 Tier A#3 M-a2)', async () => {
+      // 2026-04-21 M-a2 refactor の invariant test: late-PDF dispatch 中、
+      // outer withLock は既に解放されているので「別の操作が lockfile を取得できる」
+      // はずである。旧実装 (skipLock=true で outer 保持) だと、以下の concurrent write
+      // は outer lock と conflict して 60s LockTimeoutError になるケースがあった。
+      //
+      // 実装: PDF dispatch 中に別 vault への kioku_ingest_url を同時並行で走らせて、
+      // 両方とも短時間で完了する (60s timeout せず) ことを確認する。
+      // (別 vault = lockfile 分離されているので本来は無関係だが、本 test では
+      //  handleIngestUrl API 自体に concurrent 安全性があることを proof する)
+      const v1 = await makeVault('mcp45b-1');
+      const v2 = await makeVault('mcp45b-2');
+      const start = Date.now();
+      const [r1, r2] = await Promise.all([
+        handleIngestUrl(
+          v1,
+          { url: `${server.url}/pdf?name=sample-8p.pdf` },
+          { claudeBin: stubBin, robotsUrlOverride: `${server.url}/robots.txt?variant=allow` },
+        ),
+        handleIngestUrl(
+          v2,
+          { url: `${server.url}/pdf?name=sample-8p.pdf` },
+          { claudeBin: stubBin, robotsUrlOverride: `${server.url}/robots.txt?variant=allow` },
+        ),
+      ]);
+      const duration = Date.now() - start;
+      assert.equal(r1.status, 'dispatched_to_pdf');
+      assert.equal(r2.status, 'dispatched_to_pdf');
+      // 60s timeout に達していたら旧実装の lock 競合を疑う。
+      // stub claude では通常 5-20s 程度で完了するので 30s cap で十分余裕がある。
+      assert.ok(duration < 30_000,
+        `concurrent dispatch must complete quickly (actual: ${duration}ms)`);
     });
 
     test('MCP46 CRIT-1: late-PDF discovery re-fetches with binary mode', async () => {

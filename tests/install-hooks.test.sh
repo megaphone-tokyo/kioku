@@ -128,6 +128,15 @@ else
   fail "SessionStart should include both git pull and wiki-context-injector.mjs"
 fi
 
+# v0.4.0 Tier A#2 (2026-04-21): SessionEnd の git one-liner に detached HEAD ガード
+# (git symbolic-ref -q HEAD) が含まれていること。detached 状態で commit が貯まって
+# push 失敗 → ローカル drift する regression を防ぐため。
+if node -e "const j=require('${tmpjson}'); const gitCmd=j.hooks.SessionEnd[1].hooks[0].command; process.exit(/git symbolic-ref -q HEAD/.test(gitCmd) ? 0 : 1)"; then
+  pass "SessionEnd git one-liner has detached HEAD guard (git symbolic-ref -q HEAD)"
+else
+  fail "SessionEnd git one-liner missing 'git symbolic-ref -q HEAD' guard (v0.4.0 Tier A#2 regression)"
+fi
+
 # -----------------------------------------------------------------------------
 # Test 4: fully-configured vault has no warnings
 # -----------------------------------------------------------------------------
