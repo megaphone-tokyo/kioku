@@ -10,13 +10,13 @@
 
 <sub>*KIOKU means "memory" in Japanese*</sub>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../../LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Max_Plan-orange)](https://claude.com/claude-code)
 [![Platform](https://img.shields.io/badge/platform-macOS_%7C_Linux-lightgrey)](#prerequisites)
 [![Follow @megaphone_tokyo](https://img.shields.io/twitter/follow/megaphone_tokyo?style=social)](https://x.com/megaphone_tokyo)
 
 Claude Code forgets knowledge from past sessions as they go.
-kioku **automatically accumulates your conversations into a Wiki** and **recalls them in the next session**.
+claude-brain **automatically accumulates your conversations into a Wiki** and **recalls them in the next session**.
 
 No more repeating the same explanations over and over.
 A "second brain" that grows with every use — for your Claude.
@@ -45,19 +45,18 @@ Combines Andrej Karpathy's LLM Wiki pattern with auto-logging and Git sync acros
 4. **Sync (L3)**: The Vault itself is a Git repo. `SessionStart` runs `git pull`, `SessionEnd` runs `git commit && git push`, syncing across machines via a GitHub Private repository
 5. **Wiki context injection**: At `SessionStart`, `wiki/index.md` is injected into the system prompt so Claude can leverage past knowledge
 6. **qmd full-text search**: Search wiki via MCP with BM25 + semantic search
-7. **External source ingest (PDF / URL)**: `kioku_ingest_pdf` extracts and summarizes local PDFs placed under `raw-sources/`; `kioku_ingest_url` fetches HTTP(S) articles with Mozilla Readability, saves Markdown + images to `raw-sources/<dir>/fetched/`, and auto-dispatches PDF URLs to the PDF pipeline. Large PDFs (≥ 2 chunks) use a detached summary process to return in ≤ 5 s (Claude Desktop 60 s timeout safe)
-8. **Wiki Ingest skills**: `/wiki-ingest-all` and `/wiki-ingest` slash commands import existing project knowledge into the Wiki
-9. **Secret isolation**: `session-logs/` stays local per machine (`.gitignore`). Only `wiki/` / `raw-sources/` / `templates/` / `CLAUDE.md` are Git-managed
+7. **Wiki Ingest skills**: `/wiki-ingest-all` and `/wiki-ingest` slash commands import existing project knowledge into the Wiki
+8. **Secret isolation**: `session-logs/` stays local per machine (`.gitignore`). Only `wiki/` / `raw-sources/` / `templates/` / `CLAUDE.md` are Git-managed
 
 <br>
 
 ## Important Notes
 
 > [!CAUTION]
-> KIOKU currently requires **Claude Code (Max plan)**. The Hook system (L0) and Wiki context injection are Claude Code-specific features. The Ingest/Lint pipeline (L1/L2) can work with other LLM APIs by swapping the `claude -p` call — this is planned as a future enhancement.
+> claude-brain currently requires **Claude Code (Max plan)**. The Hook system (L0) and Wiki context injection are Claude Code-specific features. The Ingest/Lint pipeline (L1/L2) can work with other LLM APIs by swapping the `claude -p` call — this is planned as a future enhancement.
 
 > [!IMPORTANT]
-> This software is provided **"as is"**, without warranty of any kind. The authors assume **no responsibility** for any data loss, security incidents, or damages arising from the use of this tool. Use at your own risk. See [LICENSE](LICENSE) for full terms.
+> This software is provided **"as is"**, without warranty of any kind. The authors assume **no responsibility** for any data loss, security incidents, or damages arising from the use of this tool. Use at your own risk. See [LICENSE](../../LICENSE) for full terms.
 
 <br>
 
@@ -73,7 +72,7 @@ Combines Andrej Karpathy's LLM Wiki pattern with auto-logging and Git sync acros
 | Claude Code | **Max plan** required (uses `claude` CLI and Hook system in `~/.claude/settings.json`) |
 | Obsidian | One Vault created in any folder (iCloud Drive not required) |
 | jq | 1.6+ (used by `install-hooks.sh --apply`) |
-| poppler | Required for PDF ingest (`kioku_ingest_pdf` / `kioku_ingest_url` with PDF URLs). macOS: `brew install poppler`. Linux: `apt install poppler-utils` |
+| poppler | Optional but recommended. Enables PDF ingestion via `pdftotext` / `pdfinfo`. Install with `brew install poppler` (macOS) or `apt install poppler-utils` (Debian/Ubuntu). Without poppler, PDFs in `raw-sources/` are silently skipped. |
 | Env var | `OBSIDIAN_VAULT` pointing to the Vault root |
 
 <br>
@@ -81,7 +80,7 @@ Combines Andrej Karpathy's LLM Wiki pattern with auto-logging and Git sync acros
 ## Quick Start
 
 > [!WARNING]
-> **Understand before you install:** KIOKU hooks into **all Claude Code session I/O**. This means:
+> **Understand before you install:** claude-brain hooks into **all Claude Code session I/O**. This means:
 > - Session logs may contain **API keys, tokens, or personal information** from your prompts and tool output. Masking covers major patterns but is not exhaustive — review [SECURITY.md](SECURITY.md)
 > - If `.gitignore` is misconfigured, session logs could be **accidentally pushed to GitHub**
 > - The auto-ingest pipeline sends session log content to Claude via `claude -p` for Wiki extraction
@@ -94,7 +93,7 @@ Combines Andrej Karpathy's LLM Wiki pattern with auto-logging and Git sync acros
 > Enter the following in Claude Code to start an interactive, guided setup. It explains each step's purpose and adapts to your environment.
 
 ```
-Please read skills/setup-guide/SKILL.md and guide me through the KIOKU installation.
+Please read tools/claude-brain/skills/setup-guide/SKILL.md and guide me through the claude-brain installation.
 ```
 
 ### 🛠️ Manual Setup
@@ -104,17 +103,17 @@ Please read skills/setup-guide/SKILL.md and guide me through the KIOKU installat
 
 #### 1. Create a Vault and connect it to a Git repository (manual)
 
-1. Create a new Vault in Obsidian (e.g., `~/kioku/main-kioku`)
-2. Create a Private repository on GitHub (e.g., `kioku`)
+1. Create a new Vault in Obsidian (e.g., `~/claude-brain/main-claude-brain`)
+2. Create a Private repository on GitHub (e.g., `claude-brain`)
 3. In the Vault directory: `git init && git remote add origin ...` (or `gh repo create --private --source=. --push`)
 
-This step is not automated by KIOKU scripts. GitHub authentication (gh CLI / SSH keys) depends on your environment.
+This step is not automated by claude-brain scripts. GitHub authentication (gh CLI / SSH keys) depends on your environment.
 
 #### 2. Set the environment variable
 
 ```bash
 # Add to ~/.zshrc or ~/.bashrc
-export OBSIDIAN_VAULT="$HOME/kioku/main-kioku"
+export OBSIDIAN_VAULT="$HOME/claude-brain/main-claude-brain"
 ```
 
 #### 3. Initialize the Vault
@@ -122,18 +121,18 @@ export OBSIDIAN_VAULT="$HOME/kioku/main-kioku"
 ```bash
 # Creates raw-sources/, session-logs/, wiki/, templates/ under the Vault,
 # places CLAUDE.md / .gitignore / initial templates (never overwrites existing files)
-bash scripts/setup-vault.sh
+bash tools/claude-brain/scripts/setup-vault.sh
 ```
 
 #### 4. Install Hooks
 
 ```bash
 # Option A: Auto-merge (recommended, requires jq)
-bash scripts/install-hooks.sh --apply
+bash tools/claude-brain/scripts/install-hooks.sh --apply
 # Creates backup → shows diff → confirmation prompt → adds hook entries preserving existing config
 
 # Option B: Manual merge
-bash scripts/install-hooks.sh
+bash tools/claude-brain/scripts/install-hooks.sh
 # Outputs JSON snippet to stdout for manual merge into ~/.claude/settings.json
 ```
 
@@ -150,11 +149,11 @@ Configure automatic Ingest (daily) and Lint (monthly).
 
 ```bash
 # Auto-detects OS: macOS → LaunchAgent, Linux → cron
-bash scripts/install-schedule.sh
+bash tools/claude-brain/scripts/install-schedule.sh
 
 # Test with DRY RUN first
-KIOKU_DRY_RUN=1 bash scripts/auto-ingest.sh
-KIOKU_DRY_RUN=1 bash scripts/auto-lint.sh
+KIOKU_DRY_RUN=1 bash tools/claude-brain/scripts/auto-ingest.sh
+KIOKU_DRY_RUN=1 bash tools/claude-brain/scripts/auto-lint.sh
 ```
 
 > **macOS note**: Placing the repo under `~/Documents/` or `~/Desktop/` may cause TCC (Transparency, Consent, Control) to block background access with EPERM. Use a path outside protected directories (e.g., `~/_PROJECT/`).
@@ -164,21 +163,21 @@ KIOKU_DRY_RUN=1 bash scripts/auto-lint.sh
 Enable MCP-powered full-text and semantic search for the Wiki.
 
 ```bash
-bash scripts/setup-qmd.sh
-bash scripts/install-qmd-daemon.sh
+bash tools/claude-brain/scripts/setup-qmd.sh
+bash tools/claude-brain/scripts/install-qmd-daemon.sh
 ```
 
 #### 8. Install Wiki Ingest skills (optional)
 
 ```bash
-bash scripts/install-skills.sh
+bash tools/claude-brain/scripts/install-skills.sh
 ```
 
 #### 9. Deploy to additional machines
 
 ```bash
-git clone git@github.com:<USERNAME>/kioku.git ~/kioku/main-kioku
-# Open ~/kioku/main-kioku/ as a Vault in Obsidian
+git clone git@github.com:<USERNAME>/claude-brain.git ~/claude-brain/main-claude-brain
+# Open ~/claude-brain/main-claude-brain/ as a Vault in Obsidian
 # Repeat steps 2–6
 ```
 
@@ -189,20 +188,20 @@ The **`kioku-wiki` MCP server** lets both Claude Desktop and Claude Code search,
 
 ```bash
 # 1. Install dependency (only inside mcp/, parent repo stays package.json-free)
-bash scripts/setup-mcp.sh
+bash tools/claude-brain/scripts/setup-mcp.sh
 
 # 2. Smoke test with the official Inspector
-npx @modelcontextprotocol/inspector node mcp/server.mjs
+npx @modelcontextprotocol/inspector node tools/claude-brain/mcp/server.mjs
 
 # 3. Preview client-config changes
-bash scripts/install-mcp-client.sh --dry-run
+bash tools/claude-brain/scripts/install-mcp-client.sh --dry-run
 
 # 4. Apply (merges into ~/Library/Application Support/Claude/claude_desktop_config.json)
-bash scripts/install-mcp-client.sh --apply
+bash tools/claude-brain/scripts/install-mcp-client.sh --apply
 
 # 5. Register with Claude Code (CLI / VSCode) via the printed stdio command
 claude mcp add --scope user --transport stdio kioku \
-  "$(command -v node)" "$(pwd)/mcp/server.mjs"
+  "$(command -v node)" "$(pwd)/tools/claude-brain/mcp/server.mjs"
 ```
 
 Eight tools provided:
@@ -215,8 +214,8 @@ Eight tools provided:
 | `kioku_write_note` (recommended) | Append a memo to `session-logs/`; the next auto-ingest cycle structures it into `wiki/` |
 | `kioku_write_wiki` (advanced) | Write directly into `wiki/` with template + frontmatter auto-injection |
 | `kioku_delete` | Move a page to `wiki/.archive/` (recoverable; `wiki/index.md` cannot be deleted) |
-| `kioku_ingest_pdf` | Trigger immediate ingest for a PDF / MD file already placed under `raw-sources/`. Synchronously extracts chunks + writes `wiki/summaries/` without waiting for the cron cycle. Multi-chunk PDFs return a `queued_for_summary` handle while a detached `claude -p` writes the summary in the background |
-| `kioku_ingest_url` | Fetch an HTTP/HTTPS URL and extract the article body via Mozilla Readability (LLM fallback on failure). Saves Markdown + sha256-deduped images to `raw-sources/<subdir>/fetched/`. Content-Type `application/pdf` auto-dispatches to `kioku_ingest_pdf` |
+| `kioku_ingest_pdf` (feature 2.1) | Trigger immediate ingest for a PDF / MD under `raw-sources/`. Synchronously extracts chunks and writes `wiki/summaries/` without waiting for the next auto-ingest cron |
+| `kioku_ingest_url` (feature 2.2) | Fetch an HTTP/HTTPS URL, extract the article body with Mozilla Readability, save Markdown + images under `raw-sources/<subdir>/fetched/`, and queue a wiki summary. PDF URLs auto-dispatch to `kioku_ingest_pdf` |
 
 **Notes**:
 - Fully local (stdio transport, no network exposure, single dep `@modelcontextprotocol/sdk`)
@@ -240,8 +239,8 @@ Re-run the steps only in these specific cases:
 Uninstall:
 
 ```bash
-bash scripts/install-mcp-client.sh --uninstall
-rm -rf mcp/node_modules
+bash tools/claude-brain/scripts/install-mcp-client.sh --uninstall
+rm -rf tools/claude-brain/mcp/node_modules
 ```
 
 #### 11. MCPB bundle for Claude Desktop (one-file install)
@@ -266,17 +265,17 @@ If you only use **Claude Desktop** and want the shortest install path, install t
 
 ```bash
 # 1. Build the .mcpb bundle (writes mcp/dist/kioku-wiki-<version>.mcpb, ~3.2 MB)
-bash scripts/build-mcpb.sh
+bash tools/claude-brain/scripts/build-mcpb.sh
 
 # 2. (Optional) validate manifest + inspect contents
-bash scripts/build-mcpb.sh --validate
-npx --yes @anthropic-ai/mcpb info mcp/dist/kioku-wiki-0.1.0.mcpb
+bash tools/claude-brain/scripts/build-mcpb.sh --validate
+npx --yes @anthropic-ai/mcpb info tools/claude-brain/mcp/dist/kioku-wiki-0.1.0.mcpb
 
 # 3. Clean build artifacts
-bash scripts/build-mcpb.sh --clean
+bash tools/claude-brain/scripts/build-mcpb.sh --clean
 ```
 
-The bundle is **gitignored** (`mcp/build/`, `mcp/dist/`). To publish a new release, run `build-mcpb.sh` and attach the resulting `.mcpb` to a new [GitHub Release](https://github.com/megaphone-tokyo/kioku/releases). End users will then download it via Option A.
+The bundle is **gitignored** (`mcp/build/`, `mcp/dist/`). To publish a new release: run `build-mcpb.sh`, then attach the resulting `.mcpb` to a new [GitHub Release](https://github.com/megaphone-tokyo/kioku/releases) of the [megaphone-tokyo/kioku](https://github.com/megaphone-tokyo/kioku) repo. End users will then download it via Option A.
 
 The traditional install paths in step 10 still work — MCPB is purely an *additional* delivery channel for Desktop-first users.
 
@@ -292,7 +291,7 @@ Re-install only in these cases:
 | New `.mcpb` version released | Download the new `.mcpb` and drag-install; Desktop replaces the existing extension in place |
 | Uninstalled via Settings → Connectors by accident | Drag the same `.mcpb` back in |
 
-Unlike § 10, MCPB is self-contained — **switching Node versions or updating `@modelcontextprotocol/sdk` do NOT affect an already-installed `.mcpb`** (the bundle ships its own dependencies and launches via Desktop's built-in Node runtime).
+Unlike § 10, MCPB is self-contained — **moving this source repo, switching Node versions, or updating `@modelcontextprotocol/sdk` do NOT affect an already-installed `.mcpb`** (the bundle ships its own dependencies and launches via Desktop's built-in Node runtime).
 
 > ⚠️ **After installing or updating a `.mcpb`, fully quit Claude Desktop (⌘Q, not just close the window) and relaunch.** Otherwise the previously-spawned MCP server process keeps serving cached code in memory — your new tool definitions will appear, but behavioral changes inside the server (bug fixes, validation updates, etc.) won't take effect until the process is recreated.
 
@@ -306,9 +305,6 @@ Phrases that trigger saves (Claude picks the right tool from the tool descriptio
 |---|---|---|
 | "save this to my wiki" / "remember this" / "メモして" | `kioku_write_note` | `session-logs/` → structured into `wiki/` by the next auto-ingest cycle |
 | "create this wiki page now" / "immediately reflect this" / "すぐ Wiki に作って" | `kioku_write_wiki` | `wiki/` directly (immediate, template applied, best-effort wikilink integrity) |
-| "read this article" + URL / "この記事読んで" (HTML URL) | `kioku_ingest_url` | Article body → `raw-sources/<dir>/fetched/<host>-<slug>.md`; images → `media/<host>/<sha256>.<ext>`; summary → `wiki/summaries/` |
-| "read this paper" + PDF URL / "この論文読んで" (PDF URL) | `kioku_ingest_url` → `kioku_ingest_pdf` (auto-dispatch) | PDF → `raw-sources/<dir>/<name>.pdf`; chunks → `.cache/extracted/`; summary → `wiki/summaries/` |
-| "ingest this PDF I already saved" (local path) | `kioku_ingest_pdf` | Given a path under `raw-sources/`, extracts + summarizes immediately |
 
 Practical habit: at the end of a meaningful conversation segment, ask Claude something like **"今の話をまとめてメモしておいて"** or **"この設計判断を記録して"**. Without this nudge, your Desktop conversation stays only in Claude's chat history — not in your Obsidian Vault.
 
@@ -319,8 +315,13 @@ If you also use Claude Code, its conversations are captured **automatically** wi
 ## Directory Structure
 
 ```
-
+tools/claude-brain/
 ├── README.md                        ← This file
+├── context/                         ← Current implementation (INDEX + per-feature docs)
+├── handoff/                         ← Handoff notes for next session
+├── plan/
+│   ├── user/                      ← User's design instructions
+│   └── claude/                      ← Claude's implementation specs
 ├── hooks/
 │   ├── session-logger.mjs           ← Hook entry point (UserPromptSubmit/Stop/PostToolUse/SessionEnd)
 │   └── wiki-context-injector.mjs    ← SessionStart: inject wiki/index.md into system prompt
@@ -353,10 +354,10 @@ If you also use Claude Code, its conversations are captured **automatically** wi
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `OBSIDIAN_VAULT` | none (required) | Vault root. auto-ingest/lint fall back to `${HOME}/kioku/main-kioku` |
+| `OBSIDIAN_VAULT` | none (required) | Vault root. auto-ingest/lint fall back to `${HOME}/claude-brain/main-claude-brain` |
 | `KIOKU_DRY_RUN` | `0` | `1` to skip `claude -p` calls (path verification only) |
 | `KIOKU_NO_LOG` | unset | `1` to suppress session-logger.mjs (prevents recursive logging from cron subprocesses) |
-| `KIOKU_DEBUG` | unset | `1` to emit debug info to stderr and `session-logs/.kioku/errors.log` |
+| `KIOKU_DEBUG` | unset | `1` to emit debug info to stderr and `session-logs/.claude-brain/errors.log` |
 | `KIOKU_INGEST_LOG` | `$HOME/kioku-ingest.log` | Ingest log output path (referenced by auto-lint self-diagnostics) |
 
 ### Node Version Manager PATH Setup
@@ -386,7 +387,7 @@ export PATH="${HOME}/.local/share/fnm/aliases/default/bin:${PATH}"
 
 ## Multi-Machine Setup
 
-KIOKU is designed to **share a single Wiki across multiple machines** via Git sync.
+claude-brain is designed to **share a single Wiki across multiple machines** via Git sync.
 The author runs a two-Mac setup: a MacBook (primary dev machine) and a Mac mini (for Claude Code bypass permission mode).
 
 Key points for multi-machine operation:
@@ -412,7 +413,7 @@ Reference: author's two-Mac configuration
 
 ## Security
 
-KIOKU is a Hook system that accesses **all Claude Code session I/O**.
+claude-brain is a Hook system that accesses **all Claude Code session I/O**.
 See [SECURITY.md](SECURITY.md) for the full security design.
 
 ### Defense Layers
@@ -443,7 +444,7 @@ If you find a security issue, please report it via [SECURITY.md](SECURITY.md) �
 - [ ] **Ingest quality tuning** — Review and adjust selection criteria in Vault CLAUDE.md after 2 weeks of real-world Ingest runs
 - [ ] **qmd multilingual search** — Verify semantic search accuracy for non-English content; swap embedding model if needed (e.g., `multilingual-e5-small`)
 - [ ] **Safe auto-fix skill (`/wiki-fix-safe`)** — Auto-fix trivial Lint issues (add missing cross-links, fill frontmatter gaps) with human approval
-- [ ] **Git sync error visibility** — Log `git push` failures to `session-logs/.kioku/git-sync.log` and surface warnings in auto-ingest
+- [ ] **Git sync error visibility** — Log `git push` failures to `session-logs/.claude-brain/git-sync.log` and surface warnings in auto-ingest
 
 ### Mid-term
 - [ ] **Multi-LLM support** — Replace `claude -p` in auto-ingest/lint with a pluggable LLM backend (OpenAI API, local models via Ollama, etc.)
@@ -457,42 +458,32 @@ If you find a security issue, please report it via [SECURITY.md](SECURITY.md) �
 - [ ] **Stack recommendation skill (`/wiki-suggest-stack`)** — Suggest tech stacks for new projects based on accumulated Wiki knowledge
 - [ ] **Team Wiki** — Multi-person Wiki sharing (each member's session-logs stay local; only wiki/ is shared via Git)
 
-> **Note**: KIOKU currently requires **Claude Code (Max plan)**. The Hook system (L0) and Wiki context injection are Claude Code-specific. The Ingest/Lint pipeline (L1/L2) can work with other LLM APIs by swapping the `claude -p` call — this is planned as a future enhancement.
+> **Note**: claude-brain currently requires **Claude Code (Max plan)**. The Hook system (L0) and Wiki context injection are Claude Code-specific. The Ingest/Lint pipeline (L1/L2) can work with other LLM APIs by swapping the `claude -p` call — this is planned as a future enhancement.
 
 <br>
 
 ## Changelog
 
-### 2026-04-21 — v0.3.7: Quality hotfix (ingest order + poppler PATH + docs)
-- `kioku_ingest_pdf` detached-spawn prompt now explicitly orders the summary writer to finish **every** chunk summary before writing the parent `index.md`. Fixes incomplete synthesis on multi-chunk PDFs (observed on Llama 2 77p: 5 chunks — the parent `index.md` was mtime-earlier than later chunks in v0.3.5).
-- `scripts/extract-pdf.sh` now prepends `${HOME}/.local/share/mise/shims:${HOME}/.volta/bin:${HOME}/.local/bin:${HOME}/.npm-global/bin:/opt/homebrew/bin:/opt/local/bin:/usr/local/bin` to `PATH` so GUI-launched Claude Desktop can find `pdfinfo` / `pdftotext` (parity with `auto-ingest.sh` / `auto-lint.sh`).
-- `README.md` / `README.ja.md` Prerequisites now list `poppler` as a required dependency for PDF ingest. Non-en/ja translations are scheduled for the v0.4.0 i18n parity pass.
-- v0.3.6 was a docs-only intermediate release (README i18n expansion); no `.mcpb` bundle was published. v0.3.7 bumps directly from v0.3.5.
+### 2026-04-21 — v0.4.0: Tier A (security + ops) + Tier B (cleanness) overhaul
 
-### 2026-04-20 — v0.3.5: Claude Desktop 60s timeout safe (Option B detached spawn)
-- `kioku_ingest_url` / `kioku_ingest_pdf` now split large PDFs into two phases: Phase 1 (synchronous, ≤ 5 s) returns `status: "queued_for_summary"` + `detached_pid` + `log_file` + `expected_summaries[]`; Phase 2 (detached `claude -p`, fire-and-forget) writes `wiki/summaries/` after the MCP tool has returned
-- Multi-chunk threshold: PDFs that produce ≥ 2 chunks use the detached path; short PDFs keep the synchronous behaviour (`status: "completed"`)
-- Fixes Claude Desktop's hardcoded 60 s `callTool` timeout (discovered via `app.asar` analysis — the SDK's `DEFAULT_REQUEST_TIMEOUT_MSEC` is not overridable by Desktop config; only early return works)
-
-### 2026-04-19 — v0.3.0: HTTP/HTTPS URL ingest (Feature 2.2)
-- New `kioku_ingest_url` tool: fetches a URL, extracts the article body via Mozilla Readability (LLM fallback when Readability fails), saves Markdown + sha256-deduped images under `raw-sources/<subdir>/fetched/`
-- PDF URLs (Content-Type `application/pdf`) auto-dispatch to `kioku_ingest_pdf`
-- SSRF guards: rejects `localhost` / link-local / loopback / `file://` / URL-embedded credentials; robots.txt respected by default
-- `urls.txt` support in cron pre-step: enumerate URLs in `raw-sources/<subdir>/urls.txt` and the scheduler auto-ingests on next cycle
-
-### 2026-04-18 — v0.2.0: PDF / Markdown ingest (Feature 2 + 2.1)
-- New `kioku_ingest_pdf` tool: poppler-based chunk extraction from PDFs placed under `raw-sources/`, writes `wiki/summaries/` synchronously
-- Chunk + index summary model: large PDFs split into overlapping chunks (default 15 pages, 1-page overlap) with a parent `*-index.md` navigating them
-- `source_sha256` for idempotency: re-ingest of the same PDF is skipped
-- MCP tool count: 6 → 7
+- **A#1** — Upgraded `@mozilla/readability` 0.5 → 0.6 (ReDoS [GHSA-3p6v-hrg8-8qj7](https://github.com/advisories/GHSA-3p6v-hrg8-8qj7) mitigated; 144 production dependencies pass `npm audit` clean)
+- **A#2** — Added `git symbolic-ref -q HEAD` guard to `auto-ingest.sh` / `auto-lint.sh` / `install-hooks.sh` SessionEnd, preventing runaway commits when the Vault is in a detached-HEAD state (5-day drift observed on one machine before the fix)
+- **A#3** — Refactored `withLock` (shrunk hold time from minutes to seconds), removed the `skipLock` API entirely, and added orphan-PDF cleanup
+- **B#1** — Hook layer re-audit (`session-logger.mjs`): fixed 3 MEDIUM findings (invisible-character bypass of masking, YAML injection in frontmatter, `KIOKU_NO_LOG` strict-equality drift)
+- **B#2** — Formalized cron/setup guard parity as `tests/cron-guard-parity.test.sh` (17 assertions) to enforce the Category-A / Category-B env-override conventions
+- **B#3** — `sync-to-app.sh` cross-machine race prevented by `check_github_side_lock` (α guard, 120s default window, configurable via `KIOKU_SYNC_LOCK_MAX_AGE`); regression locked in by `tests/sync-to-app.test.sh` (11 assertions)
+- **B#8** — README i18n parity: §10 MCP / §11 MCPB / Changelog sections added to all 8 non-en/ja READMEs (+1384 lines)
+- Tests: **299 Node tests** + **15 Bash suites / 415 assertions**, all green
+- [Release v0.4.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.4.0) — `.mcpb` attached
 
 ### 2026-04-17 — Phase N: MCPB bundle for Claude Desktop
-- New `mcp/manifest.json` (MCPB v0.4) and `scripts/build-mcpb.sh` produce `kioku-wiki-<version>.mcpb` (~3.2 MB)
-- Claude Desktop users can install the MCP server with a single drag & drop; `OBSIDIAN_VAULT` is configured via the install dialog's directory picker (no Node toolchain required on the user's machine — Desktop's bundled runtime is used)
+- New `mcp/manifest.json` (MCPB v0.4) and `scripts/build-mcpb.sh` produce `mcp/dist/kioku-wiki-<version>.mcpb` (~3.2 MB)
+- Claude Desktop users can install the MCP server with a single drag-and-drop; `OBSIDIAN_VAULT` is configured via the install dialog's directory picker (no Node toolchain required on the user's machine — Desktop's bundled runtime is used)
+- Phase M's manual install path (`setup-mcp.sh` + `install-mcp-client.sh`) is unchanged; MCPB is an additional delivery channel for Desktop-first users
 - See **§ 11** above for build / install steps
 
 ### 2026-04-17 — Phase M: kioku-wiki MCP server
-- Local stdio MCP server (`mcp/`) exposing six tools — `kioku_search`, `kioku_read`, `kioku_list`, `kioku_write_note`, `kioku_write_wiki`, `kioku_delete`
+- Local stdio MCP server (`tools/claude-brain/mcp/`) exposing six tools — `kioku_search`, `kioku_read`, `kioku_list`, `kioku_write_note`, `kioku_write_wiki`, `kioku_delete`
 - Both Claude Desktop and Claude Code can now browse, search, and update the Wiki on demand without leaving the chat
 - See **§ 10** above for setup
 
@@ -504,7 +495,7 @@ If you find a security issue, please report it via [SECURITY.md](SECURITY.md) �
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+This project is licensed under the MIT License. See [LICENSE](../../LICENSE) for details.
 
 As noted in the "Important Notes" section above, this software is provided "as is" without warranty of any kind.
 
@@ -519,17 +510,10 @@ As noted in the "Important Notes" section above, this software is provided "as i
 
 <br>
 
-
-## Other Products
-
-[hello from the seasons.](https://hello-from.dokokano.photo/en)
-
-<br>
-
 ## Author
 
 **[@megaphone_tokyo](https://x.com/megaphone_tokyo)**
 
 Building things with code and AI. Freelance engineer, 10 years in. Frontend-focused, lately co-developing with Claude as my main workflow.
 
-[Follow me on X](https://x.com/megaphone_tokyo) [![Follow @megaphone_tokyo](https://img.shields.io/twitter/follow/megaphone_tokyo?style=social)](https://x.com/megaphone_tokyo)
+[Follow me on X](https://x.com/megaphone_tokyo)

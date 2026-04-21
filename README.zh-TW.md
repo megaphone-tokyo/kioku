@@ -10,13 +10,13 @@
 
 <sub>*KIOKU means "memory" in Japanese*</sub>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](../../LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Max_Plan-orange)](https://claude.com/claude-code)
 [![Platform](https://img.shields.io/badge/platform-macOS_%7C_Linux-lightgrey)](#prerequisites)
 [![Follow @megaphone_tokyo](https://img.shields.io/twitter/follow/megaphone_tokyo?style=social)](https://x.com/megaphone_tokyo)
 
 Claude Code 會隨著工作階段結束而忘記過去的知識。
-kioku **自動將您的對話累積成 Wiki**，並在**下一次工作階段中回憶它們**。
+claude-brain **自動將您的對話累積成 Wiki**，並在**下一次工作階段中回憶它們**。
 
 不再需要反覆重複相同的說明。一個隨著每次使用而成長的「第二大腦」——為您的 Claude 而生。
 
@@ -42,19 +42,18 @@ kioku **自動將您的對話累積成 Wiki**，並在**下一次工作階段中
 4. **同步 (L3)**：Vault 本身就是一個 Git 儲存庫。`SessionStart` 執行 `git pull`，`SessionEnd` 執行 `git commit && git push`，透過 GitHub Private 儲存庫在多台機器間同步
 5. **Wiki 上下文注入**：在 `SessionStart` 時，將 `wiki/index.md` 注入系統提示詞，讓 Claude 能運用過去的知識
 6. **qmd 全文搜尋**：透過 MCP 以 BM25 + 語義搜尋查詢 wiki
-7. **外部來源 Ingest（PDF / URL）**：`kioku_ingest_pdf` 會擷取並摘要放置於 `raw-sources/` 下的本地 PDF；`kioku_ingest_url` 會擷取 HTTP(S) 文章並透過 Mozilla Readability 抽取內文，將 Markdown 與圖片儲存至 `raw-sources/<dir>/fetched/`，並且會自動將 PDF URL 轉派給 PDF 管線。大型 PDF（≥ 2 個 chunk）會使用 detached 的摘要程序，讓工具能在 ≤ 5 秒內返回（符合 Claude Desktop 60 秒 timeout 限制）
-8. **Wiki Ingest 技能**：`/wiki-ingest-all` 和 `/wiki-ingest` 斜線指令可將現有專案知識匯入 Wiki
-9. **機密隔離**：`session-logs/` 保留在各機器本地（`.gitignore`）。只有 `wiki/` / `raw-sources/` / `templates/` / `CLAUDE.md` 受 Git 管理
+7. **Wiki Ingest 技能**：`/wiki-ingest-all` 和 `/wiki-ingest` 斜線指令可將現有專案知識匯入 Wiki
+8. **機密隔離**：`session-logs/` 保留在各機器本地（`.gitignore`）。只有 `wiki/` / `raw-sources/` / `templates/` / `CLAUDE.md` 受 Git 管理
 
 <br>
 
 ## 注意事項
 
 > [!CAUTION]
-> KIOKU 目前需要 **Claude Code（Max 方案）**。Hook 系統（L0）和 Wiki 上下文注入是 Claude Code 專屬功能。Ingest/Lint 管線（L1/L2）可透過替換 `claude -p` 呼叫來搭配其他 LLM API 使用——這已列入未來增強計畫。
+> claude-brain 目前需要 **Claude Code（Max 方案）**。Hook 系統（L0）和 Wiki 上下文注入是 Claude Code 專屬功能。Ingest/Lint 管線（L1/L2）可透過替換 `claude -p` 呼叫來搭配其他 LLM API 使用——這已列入未來增強計畫。
 
 > [!IMPORTANT]
-> 本軟體按**「現狀」**提供，不附帶任何形式的保證。作者對因使用本工具而產生的任何資料遺失、安全事件或損害**概不負責**。使用風險自負。完整條款請參閱 [LICENSE](LICENSE)。
+> 本軟體按**「現狀」**提供，不附帶任何形式的保證。作者對因使用本工具而產生的任何資料遺失、安全事件或損害**概不負責**。使用風險自負。完整條款請參閱 [LICENSE](../../LICENSE)。
 
 <br>
 
@@ -77,7 +76,7 @@ kioku **自動將您的對話累積成 Wiki**，並在**下一次工作階段中
 ## 快速開始
 
 > [!WARNING]
-> **安裝前請先了解：** kioku 會 hook 進**所有 Claude Code 工作階段的 I/O**。這意味著：
+> **安裝前請先了解：** claude-brain 會 hook 進**所有 Claude Code 工作階段的 I/O**。這意味著：
 > - 工作階段日誌可能包含來自您的提示詞和工具輸出中的 **API 金鑰、令牌或個人資訊**。遮罩涵蓋主要模式，但並非完全——請參閱 [SECURITY.md](SECURITY.md)
 > - 如果 `.gitignore` 設定錯誤，工作階段日誌可能會**意外推送到 GitHub**
 > - 自動 Ingest 管線會透過 `claude -p` 將工作階段日誌內容傳送給 Claude 進行 Wiki 提取
@@ -90,7 +89,7 @@ kioku **自動將您的對話累積成 Wiki**，並在**下一次工作階段中
 > 在 Claude Code 中輸入以下指令，開始互動式引導設定。它會解釋每個步驟的目的，並根據您的環境進行調整。
 
 ```
-Please read skills/setup-guide/SKILL.md and guide me through the KIOKU installation.
+Please read tools/claude-brain/skills/setup-guide/SKILL.md and guide me through the claude-brain installation.
 ```
 
 ### 🛠️ 手動設定
@@ -100,17 +99,17 @@ Please read skills/setup-guide/SKILL.md and guide me through the KIOKU installat
 
 #### 1. 建立 Vault 並連接 Git 儲存庫（手動）
 
-1. 在 Obsidian 中建立新的 Vault（例如 `~/kioku/main-kioku`）
-2. 在 GitHub 上建立 Private 儲存庫（例如 `kioku`）
+1. 在 Obsidian 中建立新的 Vault（例如 `~/claude-brain/main-claude-brain`）
+2. 在 GitHub 上建立 Private 儲存庫（例如 `claude-brain`）
 3. 在 Vault 目錄中：`git init && git remote add origin ...`（或 `gh repo create --private --source=. --push`）
 
-此步驟不由 kioku 腳本自動化。GitHub 認證（gh CLI / SSH 金鑰）取決於您的環境。
+此步驟不由 claude-brain 腳本自動化。GitHub 認證（gh CLI / SSH 金鑰）取決於您的環境。
 
 #### 2. 設定環境變數
 
 ```bash
 # Add to ~/.zshrc or ~/.bashrc
-export OBSIDIAN_VAULT="$HOME/kioku/main-kioku"
+export OBSIDIAN_VAULT="$HOME/claude-brain/main-claude-brain"
 ```
 
 #### 3. 初始化 Vault
@@ -118,18 +117,18 @@ export OBSIDIAN_VAULT="$HOME/kioku/main-kioku"
 ```bash
 # Creates raw-sources/, session-logs/, wiki/, templates/ under the Vault,
 # places CLAUDE.md / .gitignore / initial templates (never overwrites existing files)
-bash scripts/setup-vault.sh
+bash tools/claude-brain/scripts/setup-vault.sh
 ```
 
 #### 4. 安裝 Hooks
 
 ```bash
 # Option A: Auto-merge (recommended, requires jq)
-bash scripts/install-hooks.sh --apply
+bash tools/claude-brain/scripts/install-hooks.sh --apply
 # Creates backup → shows diff → confirmation prompt → adds hook entries preserving existing config
 
 # Option B: Manual merge
-bash scripts/install-hooks.sh
+bash tools/claude-brain/scripts/install-hooks.sh
 # Outputs JSON snippet to stdout for manual merge into ~/.claude/settings.json
 ```
 
@@ -146,11 +145,11 @@ bash scripts/install-hooks.sh
 
 ```bash
 # Auto-detects OS: macOS → LaunchAgent, Linux → cron
-bash scripts/install-schedule.sh
+bash tools/claude-brain/scripts/install-schedule.sh
 
 # Test with DRY RUN first
-KIOKU_DRY_RUN=1 bash scripts/auto-ingest.sh
-KIOKU_DRY_RUN=1 bash scripts/auto-lint.sh
+KIOKU_DRY_RUN=1 bash tools/claude-brain/scripts/auto-ingest.sh
+KIOKU_DRY_RUN=1 bash tools/claude-brain/scripts/auto-lint.sh
 ```
 
 > **macOS 注意事項**：將儲存庫放在 `~/Documents/` 或 `~/Desktop/` 下可能導致 TCC（Transparency, Consent, Control）以 EPERM 阻擋背景存取。請使用受保護目錄以外的路徑（例如 `~/_PROJECT/`）。
@@ -160,21 +159,21 @@ KIOKU_DRY_RUN=1 bash scripts/auto-lint.sh
 啟用 MCP 驅動的全文和語義搜尋功能。
 
 ```bash
-bash scripts/setup-qmd.sh
-bash scripts/install-qmd-daemon.sh
+bash tools/claude-brain/scripts/setup-qmd.sh
+bash tools/claude-brain/scripts/install-qmd-daemon.sh
 ```
 
 #### 8. 安裝 Wiki Ingest 技能（選用）
 
 ```bash
-bash scripts/install-skills.sh
+bash tools/claude-brain/scripts/install-skills.sh
 ```
 
 #### 9. 部署到其他機器
 
 ```bash
-git clone git@github.com:<USERNAME>/kioku.git ~/kioku/main-kioku
-# Open ~/kioku/main-kioku/ as a Vault in Obsidian
+git clone git@github.com:<USERNAME>/claude-brain.git ~/claude-brain/main-claude-brain
+# Open ~/claude-brain/main-claude-brain/ as a Vault in Obsidian
 # Repeat steps 2–6
 ```
 
@@ -183,8 +182,13 @@ git clone git@github.com:<USERNAME>/kioku.git ~/kioku/main-kioku
 ## 目錄結構
 
 ```
-
+tools/claude-brain/
 ├── README.md                        ← This file
+├── context/                         ← Current implementation (INDEX + per-feature docs)
+├── handoff/                         ← Handoff notes for next session
+├── plan/
+│   ├── user/                      ← User's design instructions
+│   └── claude/                      ← Claude's implementation specs
 ├── hooks/
 │   ├── session-logger.mjs           ← Hook entry point (UserPromptSubmit/Stop/PostToolUse/SessionEnd)
 │   └── wiki-context-injector.mjs    ← SessionStart: inject wiki/index.md into system prompt
@@ -217,10 +221,10 @@ git clone git@github.com:<USERNAME>/kioku.git ~/kioku/main-kioku
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `OBSIDIAN_VAULT` | 無（必填） | Vault 根目錄。auto-ingest/lint 會回退至 `${HOME}/kioku/main-kioku` |
+| `OBSIDIAN_VAULT` | 無（必填） | Vault 根目錄。auto-ingest/lint 會回退至 `${HOME}/claude-brain/main-claude-brain` |
 | `KIOKU_DRY_RUN` | `0` | 設為 `1` 可跳過 `claude -p` 呼叫（僅驗證路徑） |
 | `KIOKU_NO_LOG` | 未設定 | 設為 `1` 可抑制 session-logger.mjs（防止 cron 子程序的遞迴日誌記錄） |
-| `KIOKU_DEBUG` | 未設定 | 設為 `1` 可將除錯資訊輸出至 stderr 和 `session-logs/.kioku/errors.log` |
+| `KIOKU_DEBUG` | 未設定 | 設為 `1` 可將除錯資訊輸出至 stderr 和 `session-logs/.claude-brain/errors.log` |
 | `KIOKU_INGEST_LOG` | `$HOME/kioku-ingest.log` | Ingest 日誌輸出路徑（auto-lint 自我診斷會參照此路徑） |
 
 ### Node 版本管理器 PATH 設定
@@ -250,7 +254,7 @@ export PATH="${HOME}/.local/share/fnm/aliases/default/bin:${PATH}"
 
 ## 多機器設定
 
-kioku 的設計目標是透過 Git 同步**在多台機器之間共享單一 Wiki**。
+claude-brain 的設計目標是透過 Git 同步**在多台機器之間共享單一 Wiki**。
 作者使用雙 Mac 配置：MacBook（主要開發機）和 Mac mini（用於 Claude Code bypass permission 模式）。
 
 多機器操作的要點：
@@ -276,7 +280,7 @@ kioku 的設計目標是透過 Git 同步**在多台機器之間共享單一 Wik
 
 ## 安全性
 
-kioku 是一個存取**所有 Claude Code 工作階段 I/O** 的 Hook 系統。
+claude-brain 是一個存取**所有 Claude Code 工作階段 I/O** 的 Hook 系統。
 完整的安全設計請參閱 [SECURITY.md](SECURITY.md)。
 
 ### 防禦層級
@@ -307,7 +311,7 @@ kioku 是一個存取**所有 Claude Code 工作階段 I/O** 的 Hook 系統。
 - [ ] **Ingest 品質調校** — 在 2 週的實際 Ingest 運行後，檢視並調整 Vault CLAUDE.md 中的選取標準
 - [ ] **qmd 多語言搜尋** — 驗證非英文內容的語義搜尋準確度；如需要則更換嵌入模型（例如 `multilingual-e5-small`）
 - [ ] **安全自動修復技能 (`/wiki-fix-safe`)** — 在人工批准下自動修復瑣碎的 Lint 問題（新增缺失的交叉連結、填補 frontmatter 缺漏）
-- [ ] **Git 同步錯誤可見性** — 將 `git push` 失敗記錄至 `session-logs/.kioku/git-sync.log` 並在 auto-ingest 中顯示警告
+- [ ] **Git 同步錯誤可見性** — 將 `git push` 失敗記錄至 `session-logs/.claude-brain/git-sync.log` 並在 auto-ingest 中顯示警告
 
 ### 中期
 - [ ] **多 LLM 支援** — 將 auto-ingest/lint 中的 `claude -p` 替換為可插拔的 LLM 後端（OpenAI API、透過 Ollama 的本地模型等）
@@ -321,13 +325,42 @@ kioku 是一個存取**所有 Claude Code 工作階段 I/O** 的 Hook 系統。
 - [ ] **技術棧推薦技能 (`/wiki-suggest-stack`)** — 根據累積的 Wiki 知識為新專案建議技術棧
 - [ ] **團隊 Wiki** — 多人 Wiki 共享（每位成員的 session-logs 保留在本地；僅 wiki/ 透過 Git 共享）
 
-> **注意**：KIOKU 目前需要 **Claude Code（Max 方案）**。Hook 系統（L0）和 Wiki 上下文注入是 Claude Code 專屬功能。Ingest/Lint 管線（L1/L2）可透過替換 `claude -p` 呼叫來搭配其他 LLM API 使用——這已列入未來增強計畫。
+> **注意**：claude-brain 目前需要 **Claude Code（Max 方案）**。Hook 系統（L0）和 Wiki 上下文注入是 Claude Code 專屬功能。Ingest/Lint 管線（L1/L2）可透過替換 `claude -p` 呼叫來搭配其他 LLM API 使用——這已列入未來增強計畫。
+
+<br>
+
+## 更新歷史
+
+### 2026-04-21 — v0.4.0：Tier A（安全性 + 維運）＋ Tier B（整潔度）全面翻修
+
+- **A#1** — 將 `@mozilla/readability` 從 0.5 升級至 0.6（緩解 ReDoS [GHSA-3p6v-hrg8-8qj7](https://github.com/advisories/GHSA-3p6v-hrg8-8qj7)；144 個 production dependencies 通過 `npm audit` 清潔檢查）
+- **A#2** — 於 `auto-ingest.sh` / `auto-lint.sh` / `install-hooks.sh` SessionEnd 新增 `git symbolic-ref -q HEAD` 守衛，防止 Vault 處於 detached-HEAD 狀態時失控 commit（修復前曾於某台機器觀察到 5 天偏移）
+- **A#3** — 重構 `withLock`（hold time 由數分鐘縮短至數秒）、完全移除 `skipLock` API，並新增 orphan-PDF cleanup
+- **B#1** — Hook 層再稽核（`session-logger.mjs`）：修復 3 項 MEDIUM findings（invisible-character bypass of masking、frontmatter 中的 YAML injection、`KIOKU_NO_LOG` strict-equality drift）
+- **B#2** — 將 cron/setup 守衛一致性規範化為 `tests/cron-guard-parity.test.sh`（17 項 assertions），以強制 Category-A / Category-B env-override 慣例
+- **B#3** — 透過 `check_github_side_lock`（α guard、120 秒預設窗口，可經 `KIOKU_SYNC_LOCK_MAX_AGE` 設定）防止 `sync-to-app.sh` 跨機器 race；由 `tests/sync-to-app.test.sh`（11 項 assertions）鎖定 regression 防線
+- **B#8** — README i18n 一致性：所有 8 份 non-en/ja READMEs 新增 §10 MCP / §11 MCPB / Changelog 章節（+1384 行）
+- 測試：**299 Node tests** ＋ **15 Bash suites / 415 assertions**，全部綠燈
+- [Release v0.4.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.4.0) — 已附上 `.mcpb`
+
+### 2026-04-17 — Phase N：Claude Desktop 用 MCPB 套件
+- 新增 `mcp/manifest.json`（MCPB v0.4）與 `scripts/build-mcpb.sh`，可產生 `mcp/dist/kioku-wiki-<version>.mcpb`（約 3.2 MB）
+- Claude Desktop 使用者只需拖放單一 `.mcpb` 檔案即可完成 MCP 伺服器安裝。`OBSIDIAN_VAULT` 透過安裝對話框中的目錄選擇器設定（使用者機器無須安裝 Node — 由 Desktop 內建執行階段啟動）
+- 詳細說明請參考 [README.md](README.md) 或 [README.ja.md](README.ja.md)
+
+### 2026-04-17 — Phase M：kioku-wiki MCP 伺服器
+- 本機 stdio MCP 伺服器（`tools/claude-brain/mcp/`）提供六項工具 — `kioku_search`、`kioku_read`、`kioku_list`、`kioku_write_note`、`kioku_write_wiki`、`kioku_delete`
+- Claude Desktop 與 Claude Code 現在皆可在不離開聊天介面的情況下瀏覽、搜尋與編輯 Wiki
+- 設定說明請參考 [README.md](README.md) 或 [README.ja.md](README.ja.md)
+
+### 2026-04-16 — Phase L：遷移至 macOS LaunchAgent
+- 新派遣腳本 `scripts/install-schedule.sh` 自動判別 macOS LaunchAgent / Linux cron
 
 <br>
 
 ## 授權
 
-本專案採用 MIT 授權條款。詳情請參閱 [LICENSE](LICENSE)。
+本專案採用 MIT 授權條款。詳情請參閱 [LICENSE](../../LICENSE)。
 
 如上方「注意事項」所述，本軟體按「現狀」提供，不附帶任何形式的保證。
 
@@ -342,17 +375,10 @@ kioku 是一個存取**所有 Claude Code 工作階段 I/O** 的 Hook 系統。
 
 <br>
 
-
-## Other Products
-
-[hello from the seasons.](https://hello-from.dokokano.photo/en)
-
-<br>
-
 ## 作者
 
 **[@megaphone_tokyo](https://x.com/megaphone_tokyo)**
 
 用程式碼和 AI 打造各種東西。自由工程師，入行十年。以前端為主，最近的主要工作流程是與 Claude 協同開發。
 
-[歡迎追蹤](https://x.com/megaphone_tokyo) [![Follow @megaphone_tokyo](https://img.shields.io/twitter/follow/megaphone_tokyo?style=social)](https://x.com/megaphone_tokyo)
+[歡迎追蹤](https://x.com/megaphone_tokyo)
