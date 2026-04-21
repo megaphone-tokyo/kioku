@@ -11,7 +11,7 @@
 <sub>*KIOKU means "memory" in Japanese*</sub>
 
 Claude Code oublie les connaissances des sessions passees au fur et a mesure.
-kioku **accumule automatiquement vos conversations dans un Wiki** et **les rappelle lors de la prochaine session**.
+claude-brain **accumule automatiquement vos conversations dans un Wiki** et **les rappelle lors de la prochaine session**.
 
 Plus besoin de repeter les memes explications encore et encore. Un « second cerveau » qui grandit a chaque utilisation — pour votre Claude.
 
@@ -37,19 +37,18 @@ Enregistre automatiquement les sessions Claude Code et construit une base de con
 4. **Synchronisation (L3)** : Le Vault lui-meme est un depot Git. `SessionStart` execute `git pull`, `SessionEnd` execute `git commit && git push`, synchronisant entre machines via un depot prive GitHub
 5. **Injection de contexte wiki** : A `SessionStart`, `wiki/index.md` est injecte dans le prompt systeme afin que Claude puisse exploiter les connaissances passees
 6. **Recherche plein texte qmd** : Recherche dans le wiki via MCP avec BM25 + recherche semantique
-7. **Ingest de sources externes (PDF / URL)** : `kioku_ingest_pdf` extrait et resume les PDF locaux places sous `raw-sources/` ; `kioku_ingest_url` recupere les articles HTTP(S) via Mozilla Readability, enregistre le Markdown + les images dans `raw-sources/<dir>/fetched/` et redirige automatiquement les URL PDF vers le pipeline PDF. Les PDF volumineux (≥ 2 chunks) utilisent un processus de resume `detached` pour repondre en ≤ 5 s (compatible avec le timeout de 60 s de Claude Desktop)
-8. **Competences Wiki Ingest** : Les commandes slash `/wiki-ingest-all` et `/wiki-ingest` importent les connaissances de projets existants dans le Wiki
-9. **Isolation des secrets** : `session-logs/` reste local sur chaque machine (`.gitignore`). Seuls `wiki/` / `raw-sources/` / `templates/` / `CLAUDE.md` sont geres par Git
+7. **Competences Wiki Ingest** : Les commandes slash `/wiki-ingest-all` et `/wiki-ingest` importent les connaissances de projets existants dans le Wiki
+8. **Isolation des secrets** : `session-logs/` reste local sur chaque machine (`.gitignore`). Seuls `wiki/` / `raw-sources/` / `templates/` / `CLAUDE.md` sont geres par Git
 
 <br>
 
 ## Notes importantes
 
 > [!CAUTION]
-> KIOKU necessite actuellement **Claude Code (plan Max)**. Le systeme de Hook (L0) et l'injection de contexte Wiki sont des fonctionnalites specifiques a Claude Code. Le pipeline Ingest/Lint (L1/L2) peut fonctionner avec d'autres API LLM en remplacant l'appel `claude -p` — ceci est prevu comme une amelioration future.
+> claude-brain necessite actuellement **Claude Code (plan Max)**. Le systeme de Hook (L0) et l'injection de contexte Wiki sont des fonctionnalites specifiques a Claude Code. Le pipeline Ingest/Lint (L1/L2) peut fonctionner avec d'autres API LLM en remplacant l'appel `claude -p` — ceci est prevu comme une amelioration future.
 
 > [!IMPORTANT]
-> Ce logiciel est fourni **« tel quel »**, sans garantie d'aucune sorte. Les auteurs n'assument **aucune responsabilite** pour toute perte de donnees, incident de securite ou dommage resultant de l'utilisation de cet outil. Utilisez-le a vos propres risques. Consultez [LICENSE](LICENSE) pour les conditions completes.
+> Ce logiciel est fourni **« tel quel »**, sans garantie d'aucune sorte. Les auteurs n'assument **aucune responsabilite** pour toute perte de donnees, incident de securite ou dommage resultant de l'utilisation de cet outil. Utilisez-le a vos propres risques. Consultez [LICENSE](../../LICENSE) pour les conditions completes.
 
 <br>
 
@@ -72,7 +71,7 @@ Enregistre automatiquement les sessions Claude Code et construit une base de con
 ## Demarrage rapide
 
 > [!WARNING]
-> **Comprenez avant d'installer :** KIOKU se connecte a **toutes les E/S des sessions Claude Code**. Cela signifie :
+> **Comprenez avant d'installer :** claude-brain se connecte a **toutes les E/S des sessions Claude Code**. Cela signifie :
 > - Les journaux de session peuvent contenir des **cles API, tokens ou informations personnelles** provenant de vos prompts et des sorties d'outils. Le masquage couvre les principaux patrons mais n'est pas exhaustif — consultez [SECURITY.md](SECURITY.md)
 > - Si `.gitignore` est mal configure, les journaux de session pourraient etre **accidentellement pushes sur GitHub**
 > - Le pipeline d'auto-ingest envoie le contenu des journaux de session a Claude via `claude -p` pour l'extraction vers le Wiki
@@ -85,7 +84,7 @@ Enregistre automatiquement les sessions Claude Code et construit une base de con
 > Entrez ce qui suit dans Claude Code pour demarrer une configuration interactive et guidee. Elle explique le but de chaque etape et s'adapte a votre environnement.
 
 ```
-Please read skills/setup-guide/SKILL.md and guide me through the KIOKU installation.
+Please read tools/claude-brain/skills/setup-guide/SKILL.md and guide me through the claude-brain installation.
 ```
 
 ### 🛠️ Configuration manuelle
@@ -95,17 +94,17 @@ Please read skills/setup-guide/SKILL.md and guide me through the KIOKU installat
 
 #### 1. Creer un Vault et le connecter a un depot Git (manuel)
 
-1. Creer un nouveau Vault dans Obsidian (ex. : `~/kioku/main-kioku`)
-2. Creer un depot prive sur GitHub (ex. : `kioku`)
+1. Creer un nouveau Vault dans Obsidian (ex. : `~/claude-brain/main-claude-brain`)
+2. Creer un depot prive sur GitHub (ex. : `claude-brain`)
 3. Dans le repertoire du Vault : `git init && git remote add origin ...` (ou `gh repo create --private --source=. --push`)
 
-Cette etape n'est pas automatisee par les scripts kioku. L'authentification GitHub (gh CLI / cles SSH) depend de votre environnement.
+Cette etape n'est pas automatisee par les scripts claude-brain. L'authentification GitHub (gh CLI / cles SSH) depend de votre environnement.
 
 #### 2. Definir la variable d'environnement
 
 ```bash
 # Ajouter a ~/.zshrc ou ~/.bashrc
-export OBSIDIAN_VAULT="$HOME/kioku/main-kioku"
+export OBSIDIAN_VAULT="$HOME/claude-brain/main-claude-brain"
 ```
 
 #### 3. Initialiser le Vault
@@ -113,18 +112,18 @@ export OBSIDIAN_VAULT="$HOME/kioku/main-kioku"
 ```bash
 # Cree raw-sources/, session-logs/, wiki/, templates/ dans le Vault,
 # place CLAUDE.md / .gitignore / templates initiaux (n'ecrase jamais les fichiers existants)
-bash scripts/setup-vault.sh
+bash tools/claude-brain/scripts/setup-vault.sh
 ```
 
 #### 4. Installer les Hooks
 
 ```bash
 # Option A : Fusion automatique (recommandee, necessite jq)
-bash scripts/install-hooks.sh --apply
+bash tools/claude-brain/scripts/install-hooks.sh --apply
 # Cree une sauvegarde → affiche le diff → invite de confirmation → ajoute les entrees de hook en preservant la configuration existante
 
 # Option B : Fusion manuelle
-bash scripts/install-hooks.sh
+bash tools/claude-brain/scripts/install-hooks.sh
 # Affiche un extrait JSON sur stdout pour fusion manuelle dans ~/.claude/settings.json
 ```
 
@@ -141,11 +140,11 @@ Configurez l'Ingest automatique (quotidien) et le Lint (mensuel).
 
 ```bash
 # Detection automatique de l'OS : macOS → LaunchAgent, Linux → cron
-bash scripts/install-schedule.sh
+bash tools/claude-brain/scripts/install-schedule.sh
 
 # Tester d'abord en mode DRY RUN
-KIOKU_DRY_RUN=1 bash scripts/auto-ingest.sh
-KIOKU_DRY_RUN=1 bash scripts/auto-lint.sh
+KIOKU_DRY_RUN=1 bash tools/claude-brain/scripts/auto-ingest.sh
+KIOKU_DRY_RUN=1 bash tools/claude-brain/scripts/auto-lint.sh
 ```
 
 > **Note macOS** : Placer le depot sous `~/Documents/` ou `~/Desktop/` peut provoquer un blocage d'acces en arriere-plan par TCC (Transparency, Consent, Control) avec EPERM. Utilisez un chemin en dehors des repertoires proteges (ex. : `~/_PROJECT/`).
@@ -155,21 +154,21 @@ KIOKU_DRY_RUN=1 bash scripts/auto-lint.sh
 Activez la recherche plein texte et semantique du Wiki via MCP.
 
 ```bash
-bash scripts/setup-qmd.sh
-bash scripts/install-qmd-daemon.sh
+bash tools/claude-brain/scripts/setup-qmd.sh
+bash tools/claude-brain/scripts/install-qmd-daemon.sh
 ```
 
 #### 8. Installer les competences Wiki Ingest (optionnel)
 
 ```bash
-bash scripts/install-skills.sh
+bash tools/claude-brain/scripts/install-skills.sh
 ```
 
 #### 9. Deployer sur des machines supplementaires
 
 ```bash
-git clone git@github.com:<USERNAME>/kioku.git ~/kioku/main-kioku
-# Ouvrir ~/kioku/main-kioku/ comme Vault dans Obsidian
+git clone git@github.com:<USERNAME>/claude-brain.git ~/claude-brain/main-claude-brain
+# Ouvrir ~/claude-brain/main-claude-brain/ comme Vault dans Obsidian
 # Repeter les etapes 2 a 6
 ```
 
@@ -178,8 +177,13 @@ git clone git@github.com:<USERNAME>/kioku.git ~/kioku/main-kioku
 ## Structure des repertoires
 
 ```
-
+tools/claude-brain/
 ├── README.md                        ← Ce fichier
+├── context/                         ← Implementation actuelle (INDEX + docs par fonctionnalite)
+├── handoff/                         ← Notes de passation pour la prochaine session
+├── plan/
+│   ├── user/                      ← Instructions de conception de l'utilisateur
+│   └── claude/                      ← Specifications d'implementation de Claude
 ├── hooks/
 │   ├── session-logger.mjs           ← Point d'entree du Hook (UserPromptSubmit/Stop/PostToolUse/SessionEnd)
 │   └── wiki-context-injector.mjs    ← SessionStart : injecte wiki/index.md dans le prompt systeme
@@ -212,10 +216,10 @@ git clone git@github.com:<USERNAME>/kioku.git ~/kioku/main-kioku
 
 | Variable | Defaut | Objectif |
 |---|---|---|
-| `OBSIDIAN_VAULT` | aucun (requis) | Racine du Vault. auto-ingest/lint se rabattent sur `${HOME}/kioku/main-kioku` |
+| `OBSIDIAN_VAULT` | aucun (requis) | Racine du Vault. auto-ingest/lint se rabattent sur `${HOME}/claude-brain/main-claude-brain` |
 | `KIOKU_DRY_RUN` | `0` | `1` pour ignorer les appels `claude -p` (verification des chemins uniquement) |
 | `KIOKU_NO_LOG` | non defini | `1` pour supprimer session-logger.mjs (empeche la journalisation recursive des sous-processus cron) |
-| `KIOKU_DEBUG` | non defini | `1` pour emettre des infos de debogage sur stderr et dans `session-logs/.kioku/errors.log` |
+| `KIOKU_DEBUG` | non defini | `1` pour emettre des infos de debogage sur stderr et dans `session-logs/.claude-brain/errors.log` |
 | `KIOKU_INGEST_LOG` | `$HOME/kioku-ingest.log` | Chemin du log d'Ingest (reference par les auto-diagnostics d'auto-lint) |
 
 ### Configuration du PATH pour les gestionnaires de versions Node
@@ -245,7 +249,7 @@ export PATH="${HOME}/.local/share/fnm/aliases/default/bin:${PATH}"
 
 ## Configuration multi-machine
 
-kioku est concu pour **partager un seul Wiki entre plusieurs machines** via la synchronisation Git.
+claude-brain est concu pour **partager un seul Wiki entre plusieurs machines** via la synchronisation Git.
 L'auteur utilise une configuration a deux Mac : un MacBook (machine de developpement principale) et un Mac mini (pour le mode bypass permission de Claude Code).
 
 Points cles pour l'operation multi-machine :
@@ -271,7 +275,7 @@ Reference : configuration a deux Mac de l'auteur
 
 ## Securite
 
-kioku est un systeme de Hook qui accede a **toutes les E/S des sessions Claude Code**.
+claude-brain est un systeme de Hook qui accede a **toutes les E/S des sessions Claude Code**.
 Consultez [SECURITY.md](SECURITY.md) pour la conception de securite complete.
 
 ### Couches de defense
@@ -302,7 +306,7 @@ Si vous trouvez un probleme de securite, veuillez le signaler via [SECURITY.md](
 - [ ] **Ajustement de la qualite d'Ingest** — Revoir et ajuster les criteres de selection dans le Vault CLAUDE.md apres 2 semaines d'executions reelles d'Ingest
 - [ ] **Recherche multilingue qmd** — Verifier la precision de la recherche semantique pour le contenu non anglais ; changer le modele d'embeddings si necessaire (ex., `multilingual-e5-small`)
 - [ ] **Competence d'auto-correction securisee (`/wiki-fix-safe`)** — Auto-corriger les problemes Lint triviaux (ajouter les liens croises manquants, combler les lacunes de frontmatter) avec approbation humaine
-- [ ] **Visibilite des erreurs de synchronisation Git** — Enregistrer les echecs `git push` dans `session-logs/.kioku/git-sync.log` et afficher des avertissements dans auto-ingest
+- [ ] **Visibilite des erreurs de synchronisation Git** — Enregistrer les echecs `git push` dans `session-logs/.claude-brain/git-sync.log` et afficher des avertissements dans auto-ingest
 
 ### Moyen terme
 - [ ] **Support multi-LLM** — Remplacer `claude -p` dans auto-ingest/lint par un backend LLM connectable (API OpenAI, modeles locaux via Ollama, etc.)
@@ -316,13 +320,42 @@ Si vous trouvez un probleme de securite, veuillez le signaler via [SECURITY.md](
 - [ ] **Competence de recommandation de stack (`/wiki-suggest-stack`)** — Suggerer des stacks technologiques pour les nouveaux projets bases sur les connaissances Wiki accumulees
 - [ ] **Wiki d'equipe** — Partage de Wiki multi-personnes (les session-logs de chaque membre restent locaux ; seul wiki/ est partage via Git)
 
-> **Note** : KIOKU necessite actuellement **Claude Code (plan Max)**. Le systeme de Hook (L0) et l'injection de contexte Wiki sont specifiques a Claude Code. Le pipeline Ingest/Lint (L1/L2) peut fonctionner avec d'autres API LLM en remplacant l'appel `claude -p` — ceci est prevu comme une amelioration future.
+> **Note** : claude-brain necessite actuellement **Claude Code (plan Max)**. Le systeme de Hook (L0) et l'injection de contexte Wiki sont specifiques a Claude Code. Le pipeline Ingest/Lint (L1/L2) peut fonctionner avec d'autres API LLM en remplacant l'appel `claude -p` — ceci est prevu comme une amelioration future.
+
+<br>
+
+## Journal des modifications
+
+### 2026-04-21 — v0.4.0 : refonte Tier A (securite + ops) + Tier B (proprete)
+
+- **A#1** — Mise a niveau de `@mozilla/readability` 0.5 → 0.6 (ReDoS [GHSA-3p6v-hrg8-8qj7](https://github.com/advisories/GHSA-3p6v-hrg8-8qj7) corrige ; 144 dependances de production passent `npm audit` sans alerte)
+- **A#2** — Ajout d'une garde `git symbolic-ref -q HEAD` dans `auto-ingest.sh` / `auto-lint.sh` / `install-hooks.sh` SessionEnd, empechant les commits incontroles lorsque le Vault est en etat detached-HEAD (derive de 5 jours observee sur une machine avant le correctif)
+- **A#3** — Refactorisation de `withLock` (duree de maintien reduite de minutes a secondes), suppression complete de l'API `skipLock`, ajout du nettoyage des PDF orphelins
+- **B#1** — Re-audit de la couche Hook (`session-logger.mjs`) : correction de 3 findings MEDIUM (contournement du masquage par caracteres invisibles, injection YAML dans le frontmatter, derive de l'egalite stricte `KIOKU_NO_LOG`)
+- **B#2** — Formalisation de la parite des gardes cron/setup via `tests/cron-guard-parity.test.sh` (17 assertions) pour imposer les conventions d'override d'environnement Categorie-A / Categorie-B
+- **B#3** — Condition de course inter-machines de `sync-to-app.sh` evitee par `check_github_side_lock` (garde α, fenetre par defaut de 120s, configurable via `KIOKU_SYNC_LOCK_MAX_AGE`) ; regression verrouillee par `tests/sync-to-app.test.sh` (11 assertions)
+- **B#8** — Parite i18n des README : sections §10 MCP / §11 MCPB / Changelog ajoutees aux 8 README non-en/ja (+1384 lignes)
+- Tests : **299 tests Node** + **15 suites Bash / 415 assertions**, tous au vert
+- [Release v0.4.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.4.0) — `.mcpb` joint
+
+### 2026-04-17 — Phase N : paquet MCPB pour Claude Desktop
+- Nouveau `mcp/manifest.json` (MCPB v0.4) et `scripts/build-mcpb.sh` produisent `mcp/dist/kioku-wiki-<version>.mcpb` (~3.2 Mo)
+- Les utilisateurs de Claude Desktop peuvent installer le serveur MCP par simple glisser-déposer. `OBSIDIAN_VAULT` se configure via le sélecteur de répertoire de la boîte de dialogue d'installation (aucun runtime Node requis chez l'utilisateur — Desktop utilise son runtime intégré)
+- Pour les instructions détaillées, voir [README.md](README.md) ou [README.ja.md](README.ja.md)
+
+### 2026-04-17 — Phase M : serveur MCP kioku-wiki
+- Serveur MCP local stdio (`tools/claude-brain/mcp/`) exposant six outils — `kioku_search`, `kioku_read`, `kioku_list`, `kioku_write_note`, `kioku_write_wiki`, `kioku_delete`
+- Claude Desktop et Claude Code peuvent désormais parcourir, rechercher et mettre à jour le Wiki sans quitter le chat
+- Pour la configuration, voir [README.md](README.md) ou [README.ja.md](README.ja.md)
+
+### 2026-04-16 — Phase L : migration vers macOS LaunchAgent
+- Le nouveau dispatcher `scripts/install-schedule.sh` choisit automatiquement LaunchAgent (macOS) ou cron (Linux)
 
 <br>
 
 ## Licence
 
-Ce projet est sous licence MIT. Consultez [LICENSE](LICENSE) pour les details.
+Ce projet est sous licence MIT. Consultez [LICENSE](../../LICENSE) pour les details.
 
 Comme indique dans la section « Notes importantes » ci-dessus, ce logiciel est fourni « tel quel » sans garantie d'aucune sorte.
 
@@ -337,17 +370,10 @@ Comme indique dans la section « Notes importantes » ci-dessus, ce logiciel est
 
 <br>
 
-
-## Other Products
-
-[hello from the seasons.](https://hello-from.dokokano.photo/en)
-
-<br>
-
 ## Auteur
 
 **[@megaphone_tokyo](https://x.com/megaphone_tokyo)**
 
 Je construis des choses avec du code et de l'IA. Ingenieur freelance, 10 ans d'experience. Specialise en frontend, mon flux de travail principal est desormais le co-developpement avec Claude.
 
-[Suivez-moi sur X](https://x.com/megaphone_tokyo) [![Follow @megaphone_tokyo](https://img.shields.io/twitter/follow/megaphone_tokyo?style=social)](https://x.com/megaphone_tokyo)
+[Suivez-moi sur X](https://x.com/megaphone_tokyo)
