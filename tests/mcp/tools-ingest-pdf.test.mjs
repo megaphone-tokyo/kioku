@@ -223,6 +223,40 @@ describe('kioku_ingest_pdf', { skip: !HAS_POPPLER ? 'poppler not installed' : fa
     assert.match(sharedLog, /OBSIDIAN_VAULT=/, 'OBSIDIAN_VAULT propagated to detached child');
   });
 
+  test('MCP25d v0.3.7 prompt order: index.md is written AFTER all chunk summaries (multi-chunk)', async () => {
+    // v0.3.7 Issue 1: detached child が全 chunk summary の完成を待たずに親 index.md を
+    // 書き出す問題 (Llama 2 77p で実害) への対策として、buildIngestPrompt() の prompt 本文に
+    // 「chunk 先 → index 後」の順序指示を明記した。stub claude の argv は shared log に
+    // 1 行で書かれるので (改行ありのプロンプトが $* 展開で 1 argument として echo される)、
+    // そこを grep して順序指示の文字列が含まれることを確認する。
+    //
+    // 実際に LLM が順序を守って書くかは MacBook 実機の index.md mtime 比較で検証する領域。
+    // 本テストは「順序指示がプロンプトに乗っているか」の proxy アサーション。
+    await writeFile(stubClaudeLog, '');
+    const vault = await makeVault('mcp25d');
+    await cp(join(FIXTURES, 'sample-42p.pdf'), join(vault, 'raw-sources', 'papers', 'ordering.pdf'));
+    const result = await handleIngestPdf(
+      vault,
+      { path: 'raw-sources/papers/ordering.pdf' },
+      { claudeBin: claudeBin() },
+    );
+    assert.equal(result.status, 'queued_for_summary',
+      `42p PDF should queue for detached summary, got: ${JSON.stringify(result)}`);
+    // detached stub claude が shared log にプロンプト本文 (改行含む) を書くまで polling
+    let sharedLog = '';
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 25));
+      sharedLog = await readFile(stubClaudeLog, 'utf8');
+      if (sharedLog.includes('ARGV: -p')) break;
+    }
+    assert.match(sharedLog, /重要な順序/,
+      `prompt must contain the ordering instruction marker, got: ${sharedLog.slice(0, 500)}`);
+    assert.match(sharedLog, /全 chunk 完了後/,
+      `prompt must state that index.md comes AFTER all chunks are done, got: ${sharedLog.slice(0, 500)}`);
+    assert.match(sharedLog, /chunk summary を書く前に index\.md を先に書く/,
+      `prompt must explain the failure mode of writing index.md first, got: ${sharedLog.slice(0, 500)}`);
+  });
+
   test('MCP26 second call is idempotent -> skipped', async () => {
     const vault = await makeVault('mcp26');
     await cp(join(FIXTURES, 'sample-8p.pdf'), join(vault, 'raw-sources', 'papers', 'same.pdf'));

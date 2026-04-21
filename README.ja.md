@@ -73,6 +73,7 @@ Andrej Karpathy の LLM Wiki パターン に、自動ログ収集と Git 同期
 | Claude Code | **Max プラン** が必要（`claude` CLI と `~/.claude/settings.json` の Hook システムを使用） |
 | Obsidian | 任意のフォルダに Vault を 1 つ作成済み（iCloud Drive 上でなくてよい） |
 | jq | 1.6+（`install-hooks.sh --apply` で使用） |
+| poppler | PDF 取り込み (`kioku_ingest_pdf` / PDF URL を含む `kioku_ingest_url`) に必須。macOS: `brew install poppler` / Linux: `apt install poppler-utils` |
 | 環境変数 | `OBSIDIAN_VAULT` で Vault ルートを指定 |
 
 <br>
@@ -478,6 +479,12 @@ KIOKU は Claude Code の**全セッション入出力にアクセスする Hook
 <br>
 
 ## 更新履歴
+
+### 2026-04-21 — v0.3.7: 品質 hotfix (取り込み順序 + poppler PATH + ドキュメント)
+- `kioku_ingest_pdf` の detached spawn プロンプトに、**全 chunk summary を書き終えてから** 親 `index.md` を書くよう明示的な順序指示を追加。multi-chunk PDF で index の synthesis が不完全になる問題を修正 (Llama 2 77p / 5 chunks で発覚: v0.3.5 では親 `index.md` の mtime が後半 chunk より早かった)
+- `scripts/extract-pdf.sh` が `${HOME}/.local/share/mise/shims:${HOME}/.volta/bin:${HOME}/.local/bin:${HOME}/.npm-global/bin:/opt/homebrew/bin:/opt/local/bin:/usr/local/bin` を PATH の先頭に追加するようになり、GUI 起動の Claude Desktop でも `pdfinfo` / `pdftotext` が発見可能 (`auto-ingest.sh` / `auto-lint.sh` と同パターン)
+- `README.md` / `README.ja.md` の Prerequisites に `poppler` が必須依存として明記された。非 en/ja の翻訳は v0.4.0 の i18n parity で一括対応
+- v0.3.6 はドキュメントのみの中間リリース (README 多言語展開) で `.mcpb` は未発行。v0.3.7 は v0.3.5 から直接 bump
 
 ### 2026-04-20 — v0.3.5: Claude Desktop 60 秒タイムアウト対応 (Option B detached spawn)
 - `kioku_ingest_url` / `kioku_ingest_pdf` が大型 PDF を 2 段階化: Phase 1 (同期、≤ 5 秒) が `status: "queued_for_summary"` + `detached_pid` + `log_file` + `expected_summaries[]` を返し、Phase 2 (detached `claude -p`、fire-and-forget) が MCP tool 応答後に `wiki/summaries/` を書き出す

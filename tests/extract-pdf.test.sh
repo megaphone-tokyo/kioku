@@ -428,6 +428,44 @@ else
 fi
 
 # -----------------------------------------------------------------------------
+# EP18 (v0.3.7): PATH 補強 — 最小 PATH で起動されても script が Homebrew / MacPorts /
+# Volta / mise を先頭に append して pdfinfo / pdftotext / node を発見する
+# (Claude Desktop GUI 起動時の最小 PATH を再現)
+# -----------------------------------------------------------------------------
+echo "test EP18: PATH hardening — pdfinfo/pdftotext found even under minimal parent PATH"
+POPPLER_DIR=""
+for dir in /opt/homebrew/bin /opt/local/bin /usr/local/bin; do
+  if [[ -x "${dir}/pdfinfo" && -x "${dir}/pdftotext" ]]; then
+    POPPLER_DIR="${dir}"
+    break
+  fi
+done
+if [[ -z "${POPPLER_DIR}" ]]; then
+  echo "  skip  EP18 (poppler not in /opt/homebrew, /opt/local, or /usr/local — test host uses non-standard install)"
+else
+  CASE18="$(make_case ep18 papers)"
+  cp "${FIXTURES}/sample-8p.pdf" "${CASE18}/raw-sources/papers/path-test.pdf"
+  # 最小 PATH で script を起動する。Homebrew / MacPorts / Volta / mise を含まないので、
+  # extract-pdf.sh 内部の PATH prepend が効いていないと pdfinfo / pdftotext / node の
+  # どれかが見つからず exit 1 になる。HOME は保持 (~/.volta/bin 等の prepend が効く前提)。
+  set +e
+  out18="$(PATH="/usr/bin:/bin" HOME="${HOME}" bash "${EXTRACT}" \
+    "${CASE18}/raw-sources/papers/path-test.pdf" \
+    "${CASE18}/.cache/extracted" \
+    "papers" 2>&1)"
+  rc=$?
+  set -e
+  assert_eq "0" "${rc}" "EP18 exit 0 with minimal parent PATH (script restores poppler/node path)"
+  assert_file_exists "${CASE18}/.cache/extracted/papers--path-test-pp001-008.md" "EP18 chunk MD created via PATH-hardened lookup"
+  # 再発防止のため、PATH prepend 行自体の存在も assert (今後 export PATH 行が消えたら FAIL)
+  if grep -q '^export PATH=.*opt/homebrew/bin' "${EXTRACT}"; then
+    pass "EP18 extract-pdf.sh has 'export PATH=.*/opt/homebrew/bin' prepend line"
+  else
+    fail "EP18 extract-pdf.sh missing PATH prepend line (regression)"
+  fi
+fi
+
+# -----------------------------------------------------------------------------
 # Summary
 # -----------------------------------------------------------------------------
 TOTAL=$((PASS + FAIL))
