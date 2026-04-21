@@ -73,6 +73,7 @@ Combines Andrej Karpathy's LLM Wiki pattern with auto-logging and Git sync acros
 | Claude Code | **Max plan** required (uses `claude` CLI and Hook system in `~/.claude/settings.json`) |
 | Obsidian | One Vault created in any folder (iCloud Drive not required) |
 | jq | 1.6+ (used by `install-hooks.sh --apply`) |
+| poppler | Required for PDF ingest (`kioku_ingest_pdf` / `kioku_ingest_url` with PDF URLs). macOS: `brew install poppler`. Linux: `apt install poppler-utils` |
 | Env var | `OBSIDIAN_VAULT` pointing to the Vault root |
 
 <br>
@@ -461,6 +462,12 @@ If you find a security issue, please report it via [SECURITY.md](SECURITY.md) �
 <br>
 
 ## Changelog
+
+### 2026-04-21 — v0.3.7: Quality hotfix (ingest order + poppler PATH + docs)
+- `kioku_ingest_pdf` detached-spawn prompt now explicitly orders the summary writer to finish **every** chunk summary before writing the parent `index.md`. Fixes incomplete synthesis on multi-chunk PDFs (observed on Llama 2 77p: 5 chunks — the parent `index.md` was mtime-earlier than later chunks in v0.3.5).
+- `scripts/extract-pdf.sh` now prepends `${HOME}/.local/share/mise/shims:${HOME}/.volta/bin:${HOME}/.local/bin:${HOME}/.npm-global/bin:/opt/homebrew/bin:/opt/local/bin:/usr/local/bin` to `PATH` so GUI-launched Claude Desktop can find `pdfinfo` / `pdftotext` (parity with `auto-ingest.sh` / `auto-lint.sh`).
+- `README.md` / `README.ja.md` Prerequisites now list `poppler` as a required dependency for PDF ingest. Non-en/ja translations are scheduled for the v0.4.0 i18n parity pass.
+- v0.3.6 was a docs-only intermediate release (README i18n expansion); no `.mcpb` bundle was published. v0.3.7 bumps directly from v0.3.5.
 
 ### 2026-04-20 — v0.3.5: Claude Desktop 60s timeout safe (Option B detached spawn)
 - `kioku_ingest_url` / `kioku_ingest_pdf` now split large PDFs into two phases: Phase 1 (synchronous, ≤ 5 s) returns `status: "queued_for_summary"` + `detached_pid` + `log_file` + `expected_summaries[]`; Phase 2 (detached `claude -p`, fire-and-forget) writes `wiki/summaries/` after the MCP tool has returned
