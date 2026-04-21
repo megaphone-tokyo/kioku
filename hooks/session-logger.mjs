@@ -10,7 +10,7 @@ import { appendFile, mkdir, readFile, writeFile, rename, open, stat, realpath } 
 import { dirname, join } from 'node:path';
 import { hostname } from 'node:os';
 
-import { MASK_RULES } from '../scripts/lib/masking.mjs';
+import { maskText as mask } from '../scripts/lib/masking.mjs';
 
 // -----------------------------------------------------------------------------
 // 定数
@@ -31,13 +31,41 @@ const BASH_BLOCKLIST = new Set([
 
 // マスキング規則 (MASK_RULES) は ../scripts/lib/masking.mjs に集約した。
 // 新パターン追加時はそちらのコメント (同期対象 3 箇所) を参照すること。
+// v0.4.0 Tier B#1: 旧自前 mask() を削除し maskText() に委譲。INVISIBLE_CHARS
+// 除去 + NFC 正規化を Hook 経路にも適用 (RED-L0-01 / BLUE-L0-01)。
+
+// 環境変数の真偽判定を 1 / true / yes / on (case-insensitive) に統一する。
+// 既定は fail-safe (値が不明瞭なら falsy 側に倒さず truthy に寄せる) 設計。
+// KIOKU_NO_LOG は "true" でも発火すべき (再帰ログ防止の本意)。
+// v0.4.0 Tier B#1 (BLUE-L0-02): strict `=== '1'` の truthy drift 対策。
+function envTruthy(val) {
+  if (!val) return false;
+  return /^(1|true|yes|on)$/i.test(String(val).trim());
+}
+
+// YAML スカラー値を安全に埋め込むためのヘルパ。
+// - 制御文字 (U+0000..U+001F, U+007F) と Unicode 不可視/区切り文字を除去。
+// - YAML 構造文字を含む場合は単一引用符で囲み、単引用符自体は '' に倍化する。
+// v0.4.0 Tier B#1 (RED-L0-02): frontmatter injection 対策。
+// session_id / cwd / project_dir が改行や `---` を含む場合に YAML 境界を偽装
+// できないようにする。
+function yamlSafeValue(v) {
+  if (v == null) return '';
+  let s = String(v)
+    .replace(/[\u0000-\u001F\u007F]/g, '')
+    .replace(/[\u200B-\u200F\u2028-\u2029\uFEFF]/g, '');
+  if (/[:#&*!|>'"%@`[\]{},]|^\s|\s$|^[-?~]|^(null|true|false|yes|no|on|off)$/i.test(s)) {
+    return `'${s.replace(/'/g, "''")}'`;
+  }
+  return s;
+}
 
 // -----------------------------------------------------------------------------
 // ユーティリティ
 // -----------------------------------------------------------------------------
 
 function debugLog(ctx, msg) {
-  if (process.env.KIOKU_DEBUG !== '1') return;
+  if (!envTruthy(process.env.KIOKU_DEBUG)) return;
   process.stderr.write(`[claude-brain] ${msg}\n`);
   writeErrorLog(ctx, `DEBUG: ${msg}`).catch(() => {});
 }
@@ -51,15 +79,6 @@ async function writeErrorLog(ctx, msg) {
   } catch {
     // 無視: エラーログ書き込み失敗は黙殺
   }
-}
-
-function mask(text) {
-  if (typeof text !== 'string') return text;
-  let out = text;
-  for (const [re, rep] of MASK_RULES) {
-    out = out.replace(re, rep);
-  }
-  return out;
 }
 
 // ローカルタイムゾーンのタイムスタンプ生成 (OSS-001: Asia/Tokyo ハードコードを廃止)
@@ -222,11 +241,11 @@ function buildFrontmatter(payload, ts) {
   const lines = [
     '---',
     'type: session-log',
-    `session_id: ${payload.session_id}`,
-    `hostname: ${hostname()}`,
-    `cwd: ${payload.cwd || ''}`,
+    `session_id: ${yamlSafeValue(payload.session_id)}`,
+    `hostname: ${yamlSafeValue(hostname())}`,
+    `cwd: ${yamlSafeValue(payload.cwd || '')}`,
     `date: ${ts.iso}`,
-    `project_dir: ${projectDir || 'null'}`,
+    `project_dir: ${projectDir ? yamlSafeValue(projectDir) : 'null'}`,
     'ingested: false',
     'related: []',
     '---',
@@ -455,11 +474,13 @@ const HANDLERS = {
 // -----------------------------------------------------------------------------
 
 async function main() {
-  // KIOKU_NO_LOG=1 のときは Hook 全体を no-op 化する。
+  // KIOKU_NO_LOG が truthy (1 / true / yes / on) のときは Hook 全体を no-op 化する。
   // auto-ingest.sh / auto-lint.sh が起動する claude -p サブプロセスは
   // 親の ~/.claude/settings.json を継承するため、このフラグがないと
   // サブプロセス自身の活動が session-logs/ に再帰的に記録されてしまう。
-  if (process.env.KIOKU_NO_LOG === '1') return;
+  // v0.4.0 Tier B#1 (BLUE-L0-02): strict `=== '1'` から envTruthy 経由に変更し、
+  // ユーザーが直感的に `=true` と書いた場合の silent drift を防ぐ (fail-safe)。
+  if (envTruthy(process.env.KIOKU_NO_LOG)) return;
 
   const vault = process.env.OBSIDIAN_VAULT;
   if (!vault) return;

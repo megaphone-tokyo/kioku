@@ -99,7 +99,7 @@ export async function handleIngestPdf(vault, args, injections = {}) {
   const subdirPrefix = relFromRaw.includes('/') ? relFromRaw.split('/')[0] : 'root';
   const stem = basename(absPath, ext);
 
-  // v0.3.4: 15s heartbeat を仕込む。ingest-url からの skipLock 経由呼び出しでも
+  // v0.3.4: 15s heartbeat を仕込む。ingest-url からの dispatch 経由呼び出しでも
   // sendProgress は外側 (kioku_ingest_url 側) から injection で渡ってくるので、
   // 同じ progressToken で継続的に notification が流れる (client は単一 token を
   // 追うので、handler 境界を跨いでも timeout リセットが一貫)。
@@ -108,13 +108,16 @@ export async function handleIngestPdf(vault, args, injections = {}) {
     `kioku_ingest_pdf: processing ${pathArg}`,
   );
 
-  // skipLock: 機能 2.2 kioku_ingest_url が PDF URL を dispatch するとき、外側で既に
-  // withLock を取得済みなので二重取得 (deadlock or 60s timeout) を避けるための injection。
-  // 通常呼び出しでは undefined → withLock で囲む。
+  // 2026-04-21 v0.4.0 Tier A#3 M-a4: skipLock injection を完全削除した。
+  // 旧実装では ingest-url が outer withLock を保持したまま handleIngestPdf を
+  // skipLock=true で呼んで二重取得を回避していたが、これは outer lock を最大
+  // 4.5 分保持する M-a2 問題の原因でもあった。M-a2 修正 (ingest-url.mjs の
+  // dispatch を withLock 外へ出す) により skipLock は構造的に不要になったため削除。
+  // handleIngestPdf は常に自前で withLock を取得する (reentrant 判定不要)。
   //
-  // v0.3.5 Option B: Phase 1 (extract + analyze + decide) は従来通り lock 下で
+  // v0.3.5 Option B: Phase 1 (extract + analyze + decide) は lock 下で
   // 実行する。chunks >= DETACHED_CHUNK_THRESHOLD なら `{ __queued }` を返し、
-  // lock 解放後に Phase 2 (spawnDetached) を回す。short PDF (1 chunk) は従来通り
+  // lock 解放後に Phase 2 (spawnDetached) を回す。short PDF (1 chunk) は
   // lock 下で sync に claude -p を回して `extracted_and_summarized` を返す。
   const phase1 = async () => {
       const warnings = [];
@@ -250,16 +253,11 @@ export async function handleIngestPdf(vault, args, injections = {}) {
   };
 
   try {
-    // Phase 1 — lock 下 (or skipLock 時は素通し) で extract + decide
-    let phase1Result;
-    if (injections.skipLock) {
-      phase1Result = await phase1();
-    } else {
-      phase1Result = await withLock(vault, phase1, {
-        ttlMs: LOCK_TTL_MS,
-        timeoutMs: LOCK_ACQUIRE_TIMEOUT_MS,
-      });
-    }
+    // Phase 1 — lock 下で extract + decide (skipLock は v0.4.0 Tier A#3 で削除)
+    const phase1Result = await withLock(vault, phase1, {
+      ttlMs: LOCK_TTL_MS,
+      timeoutMs: LOCK_ACQUIRE_TIMEOUT_MS,
+    });
 
     if (phase1Result.kind === 'done') {
       return phase1Result.result;

@@ -31,6 +31,16 @@ LOG_PREFIX="[extract-url]"
 # なる経路を塞ぐ。shell 側で明示的に unset することで node CLI に伝搬させない。
 # テスト目的で loopback fixture-server を許可したい場合は
 # `KIOKU_ALLOW_LOOPBACK_IN_CRON=1` を指定すること (最低限の allowlist flag)。
+#
+# 2026-04-21 NEW-L2: `KIOKU_ALLOW_LOOPBACK_IN_CRON` / `KIOKU_ALLOW_IGNORE_ROBOTS_IN_CRON`
+# は shell 層のテスト専用 gate であり、意図的に `mcp/lib/child-env.mjs` の
+# `ENV_ALLOW_EXACT` allowlist には載せていない。理由:
+#   1. node CLI (`url-extract-cli.mjs`) 側は `KIOKU_URL_ALLOW_LOOPBACK` /
+#      `KIOKU_URL_IGNORE_ROBOTS` だけを読む (命名が別体系なのは意図的)
+#   2. 上記 `_IN_CRON` flag を `ENV_ALLOW_EXACT` に追加すると、cron 以外の caller
+#      (MCP tool 経由の `kioku_ingest_url` 等) が同じ flag で bypass を発動できて
+#      しまい、shell 層で unset している LOW-d4 の防御が崩れる (security regression)。
+# 将来誰かが「allowlist に足せば simpler」と思っても、この別体系は維持すること。
 if [[ "${KIOKU_ALLOW_LOOPBACK_IN_CRON:-0}" != "1" ]]; then
   unset KIOKU_URL_ALLOW_LOOPBACK
 fi

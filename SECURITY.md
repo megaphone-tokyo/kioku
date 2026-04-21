@@ -113,7 +113,7 @@ The MCP server adds write paths that did not exist before. The matrix:
 | MCP `kioku_ingest_url` (images) | `raw-sources/<subdir>/fetched/media/<host>/` | file 0600 / sha256-named | MIME whitelist + hostname traversal guard + git-ignored |
 | MCP `kioku_ingest_url` (raw HTML cache) | `.cache/html/` | dir 0700 / file 0600 | `urlToFilename` sanitizer (SAFE_PATH_RE compatible) + git-ignored |
 
-Cross-boundary writes (e.g. `kioku_write_wiki` pointing into `session-logs/`) are rejected at the realpath stage. All wiki/ writes are serialized through `$VAULT/.kioku-mcp.lock` (advisory flock with 30 s TTL) so MCP and `auto-ingest.sh` cannot collide. `kioku_ingest_url` dispatches to `kioku_ingest_pdf` with `skipLock=true` to avoid re-entrance on the same lock. `MASK_RULES` (mirror of `session-logger.mjs`) is applied to every `body` argument **and** URL-derived frontmatter fields before persistence.
+Cross-boundary writes (e.g. `kioku_write_wiki` pointing into `session-logs/`) are rejected at the realpath stage. All wiki/ writes are serialized through `$VAULT/.kioku-mcp.lock` (advisory flock with 30 s TTL) so MCP and `auto-ingest.sh` cannot collide. `kioku_ingest_url` releases the outer `withLock` after writing the PDF to disk (seconds) and then calls `kioku_ingest_pdf`, which acquires its own `withLock` for the extraction phase — this keeps the shared lock hold time bounded even for large PDFs (v0.4.0 Tier A#3 refactor; the earlier `skipLock` injection has been removed). `MASK_RULES` (mirror of `session-logger.mjs`) is applied to every `body` argument **and** URL-derived frontmatter fields before persistence.
 
 ### Outbound Network Policy (feature 2.2)
 

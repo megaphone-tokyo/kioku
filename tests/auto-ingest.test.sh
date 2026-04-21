@@ -816,6 +816,47 @@ else
 fi
 
 # -----------------------------------------------------------------------------
+# Test F19 (v0.4.0 Tier A#2, 2026-04-21): detached HEAD ガード
+# rebase 中断・detached checkout 状態で auto-ingest が走ると、guard 無しでは
+# git commit が detached HEAD 先端に積まれて push 失敗でローカル drift する。
+# guard (git symbolic-ref -q HEAD) で git 書き込みを丸ごと skip + WARN することを検証。
+# -----------------------------------------------------------------------------
+echo "test F19: detached HEAD state -> skip git commit/push + WARN"
+VAULT_F19="$(make_vault vault-f19)"
+add_unprocessed_log "${VAULT_F19}" "20260421-100000-test-f19"
+(
+  cd "${VAULT_F19}" && \
+  git init --quiet && \
+  git config user.email t@test && \
+  git config user.name t && \
+  echo 'session-logs/' > .gitignore && \
+  git add .gitignore && \
+  git commit -m init --quiet && \
+  git checkout --detach --quiet
+)
+# wiki/ に変更を用意: guard が無ければ `git diff --cached` が非空となり
+# `git commit` が detached HEAD 先端に積まれてしまうシナリオを再現する。
+echo "content" > "${VAULT_F19}/wiki/new-page.md"
+
+before_sha_f19="$(cd "${VAULT_F19}" && git rev-parse HEAD)"
+
+set +e
+out_f19="$(
+  PATH="${STUB_DIR}:${PATH}" \
+  OBSIDIAN_VAULT="${VAULT_F19}" \
+  bash "${AUTO_INGEST}" 2>&1
+)"
+rc=$?
+set -e
+
+after_sha_f19="$(cd "${VAULT_F19}" && git rev-parse HEAD)"
+
+assert_eq "0" "${rc}" "F19 exit 0 (non-destructive fail-safe)"
+assert_contains "${out_f19}" "detached HEAD" "F19 stderr mentions detached HEAD"
+assert_contains "${out_f19}" "Recovery:" "F19 stderr provides recovery hint"
+assert_eq "${before_sha_f19}" "${after_sha_f19}" "F19 HEAD unchanged (guard prevented commit in detached state)"
+
+# -----------------------------------------------------------------------------
 # サマリ
 # -----------------------------------------------------------------------------
 echo

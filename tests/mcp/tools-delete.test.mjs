@@ -2,7 +2,7 @@
 
 import { test, describe, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm, writeFile, readdir, stat, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, readdir, stat, readFile, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -166,6 +166,52 @@ describe('kioku_delete', () => {
           return smallInLinks !== undefined;
         },
       );
+    } finally { await cleanup(); }
+  });
+
+  test('MCP26e scanReferences records unreadable files in skippedUnreadable (L-2)', async () => {
+    // 2026-04-21 L-2 regression test: readFile 失敗 (EACCES / EIO / ENOENT) が
+    // silent catch で握りつぶされて operator が気付けない経路を塞ぐ。
+    // chmod 0 (permission denied) の file を walk に含めて skippedUnreadable[] に
+    // 記録されることを確認する。macOS で root 以外なら EACCES を確実に誘発できる。
+    try {
+      await writeFile(join(vault, 'wiki', 'foo.md'),
+        '---\ntitle: Foo\n---\n\n# Foo\n');
+      const fetchedDir = join(vault, 'raw-sources', 'articles', 'fetched');
+      await mkdir(fetchedDir, { recursive: true });
+      // 通常 size & 読取り不能な MD (permission denied)
+      const unreadablePath = join(fetchedDir, 'evil.com-locked.md');
+      await writeFile(unreadablePath, '---\nsource_url: "https://evil.com/"\n---\n\nsee [[Foo]]\n');
+      await chmod(unreadablePath, 0o000);
+      // 通常 size の読取り可能な MD にも wikilink を持たせて brokenLinks 側は発火する
+      await writeFile(join(fetchedDir, 'normal.com-small.md'),
+        '---\nsource_url: "https://normal.com/"\n---\n\nsee [[Foo]]\n');
+
+      try {
+        await assert.rejects(
+          handleDelete(vault, { path: 'foo.md' }),
+          (err) => {
+            if (err.code !== 'broken_links_detected') return false;
+            const unreadable = err.data?.skippedUnreadable ?? [];
+            // 読取り不能 file が skippedUnreadable[] に載ること
+            const locked = unreadable.find((x) =>
+              x.sourcePath === 'raw-sources/articles/fetched/evil.com-locked.md'
+            );
+            if (!locked) return false;
+            assert.ok(typeof locked.error === 'string' && locked.error.length > 0,
+              'skippedUnreadable[].error must be a non-empty string');
+            // 読取り可能 file は brokenLinks に載ること
+            const links = err.data?.brokenLinks ?? [];
+            const smallInLinks = links.find((x) =>
+              x.sourcePath === 'raw-sources/articles/fetched/normal.com-small.md'
+            );
+            return smallInLinks !== undefined;
+          },
+        );
+      } finally {
+        // cleanup 前に permission を戻さないと rm が失敗する
+        await chmod(unreadablePath, 0o644).catch(() => {});
+      }
     } finally { await cleanup(); }
   });
 

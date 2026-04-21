@@ -693,3 +693,95 @@ describe('session-logger: index corruption recovery', () => {
     }
   });
 });
+
+// v0.4.0 Tier B#1 — Hook 層 re-audit findings の回帰テスト
+// 参照: security-review/meeting/2026-04-21_hook-layer-reaudit.md
+describe('session-logger: v0.4.0 Tier B#1 regression', () => {
+  // RED-L0-01 / BLUE-L0-01: Hook 経路の maskText 適用 (INVISIBLE_CHARS + NFC)
+  test('masks tokens that contain zero-width invisibles (INVISIBLE_CHARS bypass)', async () => {
+    const { root, vault } = await createVault();
+    try {
+      // U+200B (ZWSP) を prefix 境界に挿入した API key は旧 mask() では素通りしたが、
+      // maskText() は INVISIBLE_CHARS_RE で前処理するのでマッチするはず。
+      const zwspKey = 'sk-ant-\u200Babcdefghijklmnopqrstuvwxyz';
+      const softHyphenKey = 'ghp_\u00ADabcdefghijklmnopqrstuvwxyz';
+      await runHook(vault, {
+        session_id: 'test-session-b1-01',
+        hook_event_name: 'UserPromptSubmit',
+        cwd: '/tmp',
+        prompt: `zwsp=${zwspKey} soft=${softHyphenKey}`,
+      });
+      const body = await readFirstSessionFile(vault);
+      assert.ok(!body.includes('abcdefghijklmnopqrstuvwxyz'),
+        'raw 20-char suffix must not survive masking');
+      assert.match(body, /sk-ant-\*\*\*/);
+      assert.match(body, /ghp_\*\*\*/);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  // RED-L0-02: frontmatter YAML value injection
+  test('buildFrontmatter neutralizes newline/--- injection in cwd', async () => {
+    const { root, vault } = await createVault();
+    try {
+      const evilCwd = '/tmp/x\n---\ntype: injected\nrelated: ["/etc/passwd"]';
+      await runHook(vault, {
+        session_id: 'test-session-b1-02',
+        hook_event_name: 'UserPromptSubmit',
+        cwd: evilCwd,
+        prompt: 'hello',
+      });
+      const body = await readFirstSessionFile(vault);
+      // frontmatter は必ず 1 つの `---` 開始と 1 つの `---` 終端で閉じる
+      const fmMatch = body.match(/^---\n([\s\S]*?)\n---\n/);
+      assert.ok(fmMatch, 'frontmatter must be well-formed');
+      const fm = fmMatch[1];
+      // 注入された type/related キーが frontmatter に追加されていないこと
+      assert.ok(!/\ntype: injected/.test(fm), 'injected `type:` key must not appear');
+      assert.ok(!/\nrelated: \["\/etc\/passwd"\]/.test(fm),
+        'injected `related:` key must not appear');
+      // cwd は単一引用符でクオートされ、制御文字が除去された状態で残る
+      assert.match(fm, /^cwd: '/m);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  // BLUE-L0-02: KIOKU_NO_LOG の truthy drift 対策
+  for (const truthy of ['true', 'yes', 'on', 'TRUE', 'Yes']) {
+    test(`KIOKU_NO_LOG=${truthy} suppresses output (envTruthy)`, async () => {
+      const { root, vault } = await createVault();
+      try {
+        const { code } = await runHook(vault, {
+          session_id: `test-session-b1-03-${truthy.toLowerCase()}`,
+          hook_event_name: 'UserPromptSubmit',
+          prompt: 'should be suppressed',
+        }, { KIOKU_NO_LOG: truthy });
+        assert.strictEqual(code, 0);
+        const files = await listSessionFiles(vault);
+        assert.strictEqual(files.length, 0,
+          `no session file should be created when KIOKU_NO_LOG=${truthy}`);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+  }
+
+  test('KIOKU_NO_LOG=false or empty does NOT suppress output', async () => {
+    const { root, vault } = await createVault();
+    try {
+      await runHook(vault, {
+        session_id: 'test-session-b1-03-false',
+        hook_event_name: 'UserPromptSubmit',
+        cwd: '/tmp',
+        prompt: 'should be recorded',
+      }, { KIOKU_NO_LOG: 'false' });
+      const files = await listSessionFiles(vault);
+      assert.strictEqual(files.length, 1,
+        'falsy value must not trigger no-op (only 1/true/yes/on activate)');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});

@@ -33,6 +33,50 @@ for arg in "$@"; do
 done
 
 # -----------------------------------------------------------------------------
+# GitHub-side lock (α): 2026-04-21 NEW-L2 fix (v0.4.0 Tier B#3)
+#
+# 2 台運用 (MacBook + Mac mini) で cron sync が近接時刻に起動すると、両方が
+# 同じ内容で origin/next に push して重複 PR を生む race 条件がある (症状 #1)。
+# kioku の origin/next の最終 push 時刻を gh CLI で確認し、閾値秒数以内に
+# 他 run が push 済ならこの run は早期 exit して重複 push を避ける。
+#
+# Config:
+#   KIOKU_SYNC_LOCK_MAX_AGE  閾値 (秒)。デフォルト 120。0 を指定すると無効化。
+#
+# Fail-open:
+#   - gh auth 失敗 / network error / rate limit: 全て現状回帰 (guard skip)。
+#   - 片方 Mac で gh 無効化の場合、この guard は効かない。trade-off として受容。
+#
+# Design:
+#   - --dry-run では skip (operator が手動検証する時に guard でブロックしない)。
+#   - line 72 の `git fetch` 直後に呼び出す。branch checkout より前に入れて、
+#     push 予定の branch 作り込みコストを早期回避する。
+#   - exit 時は既存 trap (line 65) が .git-kioku を復元する。
+#
+# Reference: 合意記録 plan/claude/26042104_meeting...md ## Resume session 2
+# -----------------------------------------------------------------------------
+check_github_side_lock() {
+  [[ "${DRY_RUN:-0}" == "1" ]] && return 0
+  local max_age="${KIOKU_SYNC_LOCK_MAX_AGE:-120}"
+  (( max_age <= 0 )) && return 0
+
+  local last_push_iso last_push_epoch now_epoch age
+  last_push_iso="$(gh api repos/megaphone-tokyo/kioku/branches/next \
+      --jq .commit.commit.committer.date 2>/dev/null || true)"
+  [[ -z "${last_push_iso}" ]] && return 0  # gh 未認証 / network error → fail-open
+
+  last_push_epoch="$(date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "${last_push_iso}" +%s 2>/dev/null || echo 0)"
+  now_epoch="$(date -u +%s)"
+  age=$(( now_epoch - last_push_epoch ))
+
+  if (( age >= 0 && age < max_age )); then
+    echo "  [skip] origin/next was pushed ${age}s ago (<${max_age}s); another sync likely just completed" >&2
+    exit 0
+  fi
+  return 0
+}
+
+# -----------------------------------------------------------------------------
 # 前提チェック
 # -----------------------------------------------------------------------------
 
@@ -71,6 +115,11 @@ mv .git-kioku .git
 # 散らかる (feature 2.2 リリース時の WT drift 問題)。fetch 失敗は許容。
 git fetch origin --quiet 2>/dev/null || true
 
+# 2026-04-21 NEW-L2 (v0.4.0 Tier B#3): cross-machine race guard.
+# gh api で origin/next の最終 push 時刻を取り、閾値以内なら早期 exit。
+# --dry-run / KIOKU_SYNC_LOCK_MAX_AGE=0 で skip。gh エラーは fail-open。
+check_github_side_lock
+
 # 2026-04-20: rebase-merge 運用で origin/next の履歴が rewrite される
 # (kioku main へ rebase-merge 済の commit が origin/main に存在し、ローカル
 # next に残る pre-rebase commit と diverge して PR が CONFLICT) ケース + WT が
@@ -87,7 +136,11 @@ if git show-ref --quiet refs/remotes/origin/main 2>/dev/null; then
   # git stash list で後から復旧可能。
   if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
     local_dirty_stash=1
-    git stash push -u -m "sync-to-app auto-stash $(date +%Y%m%d-%H%M%S)" --quiet 2>/dev/null || true
+    # 2026-04-21 NEW-L1 fix: stash message に `$$` (shell PID) を混ぜて 1 秒以内の
+    # 連続呼び出しでも message が衝突しないようにする。macOS `date` は `%N`
+    # (nanosec) 非対応のため PID で一意化する。`git stash list` で recovery する
+    # operator が履歴を区別できる。
+    git stash push -u -m "sync-to-app auto-stash $(date +%Y%m%d-%H%M%S)-pid$$" --quiet 2>/dev/null || true
     echo "  [notice] dirty WT detected; uncommitted changes stashed. Recover with: cd $(pwd) && mv .git-kioku .git && git stash list" >&2
   fi
   # -B: 既存なら reset、無ければ create。--force 相当で WT の untracked も排除しない
