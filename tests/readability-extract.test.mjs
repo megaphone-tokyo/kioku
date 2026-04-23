@@ -11,7 +11,7 @@ const FIX = join(__dirname, 'fixtures/html');
 describe('readability-extract', () => {
   test('UE1 normal article extracts title + body', async () => {
     const html = await readFile(join(FIX, 'article-normal.html'), 'utf8');
-    const r = extractArticle(html, 'https://example.com/article');
+    const r = extractArticle({ html, baseUrl: 'https://example.com/article' });
     assert.equal(r.title, 'Attention Is All You Need');
     assert.match(r.content, /Transformer/);
     assert.match(r.content, /attention mechanisms/);
@@ -24,27 +24,75 @@ describe('readability-extract', () => {
 
   test('UE2 sparse article → needsFallback=true', async () => {
     const html = await readFile(join(FIX, 'article-sparse.html'), 'utf8');
-    const r = extractArticle(html, 'https://example.com/sparse');
+    const r = extractArticle({ html, baseUrl: 'https://example.com/sparse' });
     assert.equal(r.needsFallback, true);
   });
 
   test('UE3 script/style/noscript stripped', async () => {
     const html = await readFile(join(FIX, 'article-spa-shell.html'), 'utf8');
-    const r = extractArticle(html, 'https://example.com/spa');
+    const r = extractArticle({ html, baseUrl: 'https://example.com/spa' });
     assert.ok(!/\<script\>/i.test(r.content));
     assert.equal(r.needsFallback, true);
   });
 
   test('UE4 published_time in frontmatter output', async () => {
     const html = await readFile(join(FIX, 'article-normal.html'), 'utf8');
-    const r = extractArticle(html, 'https://example.com/');
+    const r = extractArticle({ html, baseUrl: 'https://example.com/' });
     assert.equal(r.publishedTime, '2017-06-12T00:00:00Z');
   });
 
   test('UE5 og:image extracted', async () => {
     // normal fixture doesn't have og:image; add inline HTML
     const html = '<html><head><title>T</title><meta property="og:image" content="https://cdn.example.com/hero.png"></head><body><article><h1>T</h1><p>' + 'x'.repeat(500) + '</p></article></body></html>';
-    const r = extractArticle(html, 'https://example.com/');
+    const r = extractArticle({ html, baseUrl: 'https://example.com/' });
     assert.equal(r.ogImage, 'https://cdn.example.com/hero.png');
+  });
+});
+
+describe('extractArticle discriminated union', () => {
+  test('accepts { html, baseUrl } form', () => {
+    const r = extractArticle({ html: '<html><body><article><h1>T</h1><p>body body body body body body body body body body body body body body body body body body body body body body body body body body body body body</p></article></body></html>', baseUrl: 'about:blank' });
+    assert.equal(typeof r, 'object');
+    assert.ok('needsFallback' in r);
+  });
+
+  test('baseUrl defaults to about:blank when omitted', () => {
+    const r = extractArticle({ html: '<html><body><p>hi</p></body></html>' });
+    assert.ok('needsFallback' in r);
+  });
+
+  test('rejects { url } form (including { url, html } to avoid ambiguity)', () => {
+    assert.throws(
+      () => extractArticle({ url: 'https://example.com' }),
+      /url.*not supported|html is required/i,
+    );
+    assert.throws(
+      () => extractArticle({ url: 'https://example.com', html: '<p>x</p>' }),
+      /url.*not supported/i,
+    );
+  });
+
+  test('rejects legacy 2-arg signature', () => {
+    assert.throws(
+      () => extractArticle('<p>x</p>', 'https://example.com'),
+      /must be called with an object/i,
+    );
+  });
+
+  test('file:// baseUrl rewritten + file:// attr stripped (VULN-E001 defense in depth)', () => {
+    // Substantive body (>300 chars) so Readability extracts content fully.
+    const padding = 'This is a substantive paragraph. '.repeat(30);
+    const r = extractArticle({
+      html: `<html><body><article><h1>Title</h1><p>${padding}</p><img src="file:///etc/passwd" alt="leak"></article></body></html>`,
+      baseUrl: 'file:///tmp/x.xhtml',
+    });
+    // Readability should actually extract content now
+    assert.ok(r.textContent && r.textContent.length > 100, `expected substantive content, got: ${r.textContent?.length ?? 0} chars`);
+    // Defense: the file:// URL must be stripped from content
+    const combined = String(r.content || '') + String(r.textContent || '');
+    assert.ok(!/file:\/\//.test(combined), `file:// URL leaked: ${combined.slice(0, 500)}`);
+    // (baseUrl normalization itself is already exercised by the sanitizer: the JSDOM
+    // instance uses about:blank internally, so relative URL resolution cannot reach
+    // local files; this test also covers the string-level attribute stripping.)
   });
 });

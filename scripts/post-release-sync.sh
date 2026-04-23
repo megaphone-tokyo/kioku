@@ -17,7 +17,15 @@
 #   bash tools/claude-brain/scripts/post-release-sync.sh             # 同期のみ (手動 commit)
 #   bash tools/claude-brain/scripts/post-release-sync.sh --commit    # 同期 + parent commit + push
 #   bash tools/claude-brain/scripts/post-release-sync.sh --dry-run   # 実行予定のみ表示
+#   bash tools/claude-brain/scripts/post-release-sync.sh --force-sync  # diverge 時 git reset --hard で強制追従 (opt-in)
 #   bash tools/claude-brain/scripts/post-release-sync.sh --help      # usage
+#
+# Diverge 対応:
+#   通常は sync-to-app.sh 経由で local main は origin/main に ff-merge される。
+#   ただし手動で app/ main に commit を足した直後などで local/origin が diverge
+#   すると ff-only merge が fail する (2026-04-21 v0.4.0 post-release docs 運用
+#   で実体験)。default は fatal エラー + 手順案内で停止、意図を明示できる場合
+#   は --force-sync で `git reset --hard origin/main` で強制追従する。
 #
 # 前提:
 #   - app/.git-kioku が存在 (kioku repo の .git)
@@ -33,12 +41,14 @@ APP_DIR="${BRAIN_DIR}/app"
 REPO_ROOT="$(cd "${BRAIN_DIR}/../.." && pwd)"
 
 MODE=sync
+FORCE_SYNC=0
 for arg in "$@"; do
   case "${arg}" in
     --commit) MODE=commit ;;
     --dry-run) MODE=dry-run ;;
+    --force-sync) FORCE_SYNC=1 ;;
     -h|--help)
-      sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -77,7 +87,11 @@ if [[ "${MODE}" == "dry-run" ]]; then
   echo "  would: mv .git-kioku .git"
   echo "  would: git fetch origin --quiet"
   echo "  would: git checkout main --quiet"
-  echo "  would: git merge --ff-only origin/main --quiet"
+  if [[ "${FORCE_SYNC}" -eq 1 ]]; then
+    echo "  would: (--force-sync) git reset --hard origin/main if diverged, else git merge --ff-only"
+  else
+    echo "  would: git merge --ff-only origin/main --quiet (fatal error if diverged; use --force-sync to discard local)"
+  fi
   echo "  would: mv .git .git-kioku"
   echo "  would: cd \"${REPO_ROOT}\" && git status --short tools/claude-brain/app/"
   echo "  would: (if --commit) git add / commit / push origin main"
@@ -95,7 +109,33 @@ mv .git-kioku .git
 echo "=== post-release-sync: fetching + aligning app/ to kioku main ==="
 git fetch origin --quiet
 git checkout main --quiet
-git merge --ff-only origin/main --quiet
+
+# Diverge 検出: local HEAD が origin/main の祖先でなければ ff-only merge は不能
+# (= 手動で app/ main に commit を足した後に remote が別 commit で進んだ場合)
+if git merge-base --is-ancestor HEAD origin/main 2>/dev/null; then
+  # local HEAD が origin/main の祖先 → 普通に FF merge
+  git merge --ff-only origin/main --quiet
+elif [[ "${FORCE_SYNC}" -eq 1 ]]; then
+  # diverge だが --force-sync で明示的に強制追従を許可
+  echo "  [force-sync] local main diverged from origin/main; git reset --hard origin/main" >&2
+  echo "    (discarded local HEAD: $(git rev-parse --short HEAD))" >&2
+  git reset --hard origin/main --quiet
+else
+  # diverge + --force-sync なし → 手順案内して exit
+  local_head="$(git rev-parse --short HEAD)"
+  remote_head="$(git rev-parse --short origin/main)"
+  echo "ERROR: local app/ main is diverged from origin/main." >&2
+  echo "  local HEAD:  ${local_head}" >&2
+  echo "  remote HEAD: ${remote_head}" >&2
+  echo "" >&2
+  echo "  This usually means you manually committed to app/ main (bypassing sync-to-app" >&2
+  echo "  → kioku PR → merge flow). If those local commits are already merged into kioku" >&2
+  echo "  main via PR (same content, different sha), re-run with --force-sync to discard" >&2
+  echo "  local commits and align hard to origin/main." >&2
+  echo "" >&2
+  echo "  Otherwise resolve the divergence manually (rebase or merge) before re-running." >&2
+  exit 1
+fi
 KIOKU_MAIN_SHA="$(git rev-parse HEAD)"
 
 mv .git .git-kioku

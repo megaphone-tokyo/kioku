@@ -109,7 +109,7 @@ describe('kioku-mcp server', () => {
     assert.equal(init.result?.serverInfo?.name, 'kioku-wiki');
   });
 
-  test('MCP2 tools/list returns 8 kioku_ tools', async () => {
+  test('MCP2 tools/list returns 9 kioku_ tools', async () => {
     const child = startServer();
     const responses = await rpc(child, [
       {
@@ -126,6 +126,7 @@ describe('kioku-mcp server', () => {
     const names = (list.result?.tools ?? []).map((t) => t.name).sort();
     assert.deepEqual(names, [
       'kioku_delete',
+      'kioku_ingest_document',
       'kioku_ingest_pdf',
       'kioku_ingest_url',
       'kioku_list',

@@ -1,16 +1,45 @@
-// readability-extract.mjs — Mozilla Readability で本文抽出
-import { JSDOM } from 'jsdom';
+// readability-extract.mjs — Mozilla Readability で本文抽出 (Phase 2 refactor)。
+//
+// 2026-04-22 (Phase 2 VULN-E001 対応):
+//   旧 signature `extractArticle(html, baseUrl)` は呼出側に URL fetch 前提を
+//   強要し、EPUB XHTML 経路で file:// baseUrl が JSDOM を経由して local file
+//   を読み取るリスクがあった。discriminated union に refactor:
+//     extractArticle({ html, baseUrl? })   — EPUB / URL fetch 済 HTML 経路
+//     extractArticle({ url })              — Phase 3+ で fetch 層が必要な時 (現状 throw)
+//   baseUrl は常に http(s):// か about:blank に normalize。file://, data://,
+//   javascript:, vbscript: は about:blank に強制書換。
+
 import { Readability } from '@mozilla/readability';
+import { sanitizedJsdom } from './html-sanitize.mjs';
 
 const FALLBACK_MIN_TEXT_CHARS = 300;
 
+function normalizeBaseUrl(baseUrl) {
+  if (typeof baseUrl !== 'string' || !baseUrl) return 'about:blank';
+  const lc = baseUrl.toLowerCase();
+  if (lc.startsWith('http://') || lc.startsWith('https://')) return baseUrl;
+  return 'about:blank';
+}
+
 /**
- * @param {string} html
- * @param {string} baseUrl
+ * @param {{ html: string, baseUrl?: string } | { url: string }} opts
  * @returns {{ title, content, textContent, byline, siteName, publishedTime, ogImage, needsFallback }}
  */
-export function extractArticle(html, baseUrl) {
-  const dom = new JSDOM(html, { url: baseUrl });
+export function extractArticle(opts) {
+  if (typeof opts === 'string' || opts == null) {
+    throw new TypeError('extractArticle must be called with an object: { html, baseUrl? } | { url }');
+  }
+  if ('url' in opts) {
+    // Even { url, html } is rejected to avoid ambiguity (url is silently ignored).
+    throw new Error('extractArticle({ url }) form is not supported in Phase 2; fetch externally and pass { html, baseUrl }');
+  }
+  if (!('html' in opts) || typeof opts.html !== 'string') {
+    throw new TypeError('html is required and must be a string');
+  }
+  const html = opts.html;
+  const baseUrl = normalizeBaseUrl(opts.baseUrl);
+
+  const dom = sanitizedJsdom(html, baseUrl);
   const doc = dom.window.document;
 
   // Pull metadata from head (Readability doesn't give us og:image / published_time)
