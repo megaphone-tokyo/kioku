@@ -352,6 +352,28 @@ async function handleStop(payload, ctx, index, entry, ts) {
   await appendFile(join(ctx.sessionLogsDir, entry.file), body, 'utf8');
   entry.counters.assistant_turns += 1;
   void tail;
+
+  // v0.5.1 Phase B (Task B-4): opt-in で hot.md 更新提案を systemMessage に出す。
+  // default (未設定 / "0" 等) は何も出さない — hot.md は Git sync 対象で boundary が
+  // session-logs より厳しいため、自動化は user が明示的に承諾した場合のみ発動する
+  // (26042304 meeting §3.1 高橋 指摘 + CTO 合意)。
+  //
+  // Claude Code v2 schema (hotfix 4、2026-04-23): Stop event は hookSpecificOutput
+  // の 3 event サポートリスト (PreToolUse / UserPromptSubmit / PostToolUse) に含まれず、
+  // 旧 v1 flat `{additionalContext}` は CLI に認識されず silent 無効化される。
+  // PostCompact (hotfix 3) と同じく top-level `systemMessage` (全 event 共通 optional)
+  // を使って system prompt に注入する。
+  if (envTruthy(process.env.KIOKU_HOT_AUTO_PROMPT)) {
+    const prompt = [
+      '## ホットキャッシュ更新 (opt-in 提案)',
+      '',
+      '直近のセッション状況を踏まえて、$OBSIDIAN_VAULT/wiki/hot.md を短い引き継ぎメモ',
+      '(Recent Context、500 word 以下) として更新すべきか検討してください。',
+      '更新する場合は `kioku_write_wiki` または直接 Edit で hot.md を書き換えてください。',
+      '秘密情報 (API key / token / PII) は絶対に含めないこと (scan-secrets.sh が検知します)。',
+    ].join('\n');
+    process.stdout.write(JSON.stringify({ systemMessage: prompt }));
+  }
 }
 
 function splitBashCommand(cmd) {

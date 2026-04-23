@@ -59,6 +59,10 @@ export const ENV_ALLOW_EXACT = new Set([
   'KIOKU_DEBUG',
   'KIOKU_LLM_FB_OUT',
   'KIOKU_LLM_FB_LOG',
+  // v0.5.1 Phase B (Task B-4): Stop hook の hot.md 更新 opt-in prompt 制御.
+  // session-logger が子 claude として実行されるケースでも user の opt-in 設定を
+  // propagate させる。default 未設定なら何も起きない (fail-safe).
+  'KIOKU_HOT_AUTO_PROMPT',
 ]);
 
 /**

@@ -69,15 +69,16 @@ describe('wiki-context-injector', () => {
       assert.equal(code, 0, 'exit code 0');
       assert.ok(stdout.length > 0, 'stdout に出力あり');
       const parsed = JSON.parse(stdout);
-      assert.ok(typeof parsed.additionalContext === 'string');
-      assert.match(parsed.additionalContext, /ナレッジベース/);
-      assert.match(parsed.additionalContext, /Wiki 目次/);
-      assert.ok(
-        parsed.additionalContext.includes(indexBody),
-        'additionalContext に index.md 本文が含まれる'
-      );
-      assert.match(parsed.additionalContext, /現在のプロジェクト: my-project/);
-      assert.ok(parsed.additionalContext.includes('$OBSIDIAN_VAULT/wiki/'));
+      // Claude Code v2 schema: hookSpecificOutput wrapper
+      assert.ok(parsed.hookSpecificOutput, 'hookSpecificOutput wrapping present');
+      assert.equal(parsed.hookSpecificOutput.hookEventName, 'SessionStart');
+      const ctx = parsed.hookSpecificOutput.additionalContext;
+      assert.ok(typeof ctx === 'string');
+      assert.match(ctx, /ナレッジベース/);
+      assert.match(ctx, /Wiki 目次/);
+      assert.ok(ctx.includes(indexBody), 'additionalContext に index.md 本文が含まれる');
+      assert.match(ctx, /現在のプロジェクト: my-project/);
+      assert.ok(ctx.includes('$OBSIDIAN_VAULT/wiki/'));
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -100,26 +101,33 @@ describe('wiki-context-injector', () => {
     assert.equal(stdout, '');
   });
 
-  test('H4: index.md が 10,000 文字を超えても Hook 側は全文出力する (打ち切りは Claude Code 側)', async () => {
+  test('H4: index.md が MAX_INDEX_CHARS (10000) を超えたら Hook 側で truncate + 明示メッセージ (v0.5.1 hotfix)', async () => {
     const { root, vault } = await createVault();
     try {
+      // 12000 char の巨大 index.md で cap 動作を検証
       const huge = '# Huge Index\n\n' + '- ' + 'x'.repeat(12000) + '\n';
       await writeFile(join(vault, 'wiki', 'index.md'), huge);
 
       const { code, stdout } = await runInjector({ vault });
       assert.equal(code, 0);
       const parsed = JSON.parse(stdout);
+      const ctx = parsed.hookSpecificOutput.additionalContext;
+      // Hook 側で 10000 char cap + 明示 truncation メッセージ
+      // (Claude Code v2 の additionalContext が末尾から truncate される挙動への対策、
+      //  hot.md 優先配置のため index.md 側を圧縮する 2026-04-23 hotfix 導入)
+      assert.ok(ctx.length < 11500,
+        `Hook 側 cap が効く (合計 ${ctx.length} chars、index 10000 + ルール等 ~1000)`);
+      assert.match(ctx, /\.\.\. \(index\.md truncated, read full file with Read tool\)/);
       assert.ok(
-        parsed.additionalContext.length > 10000,
-        'Hook 側は切り詰めない (10KB 上限は Claude Code 側の責務)'
+        !ctx.includes('x'.repeat(11000)),
+        '12000 文字の x 全部は含まれない (10000 で cut)',
       );
-      assert.ok(parsed.additionalContext.includes(huge));
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 
-  test('H5: 出力は valid JSON として parse できる', async () => {
+  test('H5: 出力は valid JSON として parse できる + v2 schema 遵守', async () => {
     const { root, vault } = await createVault();
     try {
       await writeFile(join(vault, 'wiki', 'index.md'), '# Index\n\n特殊文字: "quote" \\ \n タブ\t 改行\n');
@@ -127,8 +135,12 @@ describe('wiki-context-injector', () => {
       assert.equal(code, 0);
       assert.doesNotThrow(() => JSON.parse(stdout));
       const parsed = JSON.parse(stdout);
-      assert.ok(typeof parsed.additionalContext === 'string');
-      assert.ok(parsed.additionalContext.includes('"quote"'));
+      // Claude Code v2 schema: hookSpecificOutput wrapper required
+      assert.ok(parsed.hookSpecificOutput, 'v2 hookSpecificOutput wrapping present');
+      assert.equal(parsed.hookSpecificOutput.hookEventName, 'SessionStart');
+      const ctx = parsed.hookSpecificOutput.additionalContext;
+      assert.ok(typeof ctx === 'string');
+      assert.ok(ctx.includes('"quote"'));
     } finally {
       await rm(root, { recursive: true, force: true });
     }

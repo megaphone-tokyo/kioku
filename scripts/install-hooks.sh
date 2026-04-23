@@ -135,7 +135,17 @@ emit_snippet_json() {
         "hooks": [
           {
             "type": "command",
-            "command": "OBSIDIAN_VAULT=\"${OBSIDIAN_VAULT}\" node '${INJECTOR_ABS}'"
+            "command": "OBSIDIAN_VAULT=\"${OBSIDIAN_VAULT}\" CLAUDE_HOOK_EVENT=SessionStart node '${INJECTOR_ABS}'"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "OBSIDIAN_VAULT=\"${OBSIDIAN_VAULT}\" CLAUDE_HOOK_EVENT=PostCompact node '${INJECTOR_ABS}'"
           }
         ]
       }
@@ -360,8 +370,14 @@ cat <<'EOF'
 # Design notes (important):
 #   - SessionStart chains two commands: first 'git pull --rebase' against the
 #     Vault repository, then wiki-context-injector.mjs which outputs
-#     { "additionalContext": ... } containing wiki/index.md so Claude picks up
-#     the knowledge base automatically at session start.
+#     { "additionalContext": ... } containing wiki/index.md (+ wiki/hot.md
+#     if present) so Claude picks up the knowledge base automatically at
+#     session start. CLAUDE_HOOK_EVENT=SessionStart is exported so the
+#     injector branches correctly even if the stdin JSON path is unused.
+#   - PostCompact (v0.5.1 Phase B) invokes the same injector with
+#     CLAUDE_HOOK_EVENT=PostCompact, which injects ONLY wiki/hot.md. This
+#     restores the short hand-off context after Claude Code compacts the
+#     conversation. If wiki/hot.md is absent, the injector silently no-ops.
 #   - SessionEnd runs two chained commands: first session-logger.mjs appends
 #     the session summary, then 'git add / commit / push' syncs wiki changes.
 #   - Normal coding sessions do NOT trigger a push because Hook only writes

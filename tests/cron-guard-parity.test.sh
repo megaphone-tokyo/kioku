@@ -170,6 +170,14 @@ else
   else
     pass "CGP-2 ENV_ALLOW_PREFIXES excludes bare 'KIOKU_'"
   fi
+
+  # v0.5.1 Phase B (Task B-4): opt-in flag KIOKU_HOT_AUTO_PROMPT は内部通信フラグ
+  # として ENV_ALLOW_EXACT に明示追加されている必要がある (propagate 保証).
+  if printf '%s' "${exact_block}" | grep -qE "['\"]KIOKU_HOT_AUTO_PROMPT['\"]"; then
+    pass "CGP-2 ENV_ALLOW_EXACT includes KIOKU_HOT_AUTO_PROMPT (v0.5.1 Phase B opt-in)"
+  else
+    fail "CGP-2 KIOKU_HOT_AUTO_PROMPT should be in ENV_ALLOW_EXACT (v0.5.1 Phase B Task B-4)"
+  fi
 fi
 
 # -----------------------------------------------------------------------------

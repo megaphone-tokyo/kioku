@@ -210,6 +210,11 @@ copy_if_missing \
   "${TEMPLATES_DIR}/wiki/log.md" \
   "${OBSIDIAN_VAULT}/wiki/log.md"
 
+# v0.5.1 Phase B: hot cache (PostCompact hook で自動注入される短い引き継ぎメモ)
+copy_if_missing \
+  "${TEMPLATES_DIR}/wiki/hot.md" \
+  "${OBSIDIAN_VAULT}/wiki/hot.md"
+
 copy_if_missing \
   "${TEMPLATES_DIR}/notes/concept.md" \
   "${OBSIDIAN_VAULT}/templates/concept.md"
