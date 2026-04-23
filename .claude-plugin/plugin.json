@@ -1,0 +1,34 @@
+{
+  "name": "kioku",
+  "version": "0.5.1",
+  "description": "KIOKU — Hardened LLM Wiki for Claude Code + Claude Desktop. Automatic conversation capture to Obsidian Vault, Karpathy LLM Wiki pattern, hot cache + PostCompact hook, secret masking, cross-machine Git sync. Research/legal/enterprise-grade memory for Claude.",
+  "author": {
+    "name": "megaphone-tokyo",
+    "url": "https://github.com/megaphone-tokyo"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/megaphone-tokyo/kioku",
+  "repository": "https://github.com/megaphone-tokyo/kioku",
+  "keywords": [
+    "obsidian",
+    "knowledge-base",
+    "wiki",
+    "memory",
+    "second-brain",
+    "vault",
+    "markdown",
+    "llm-wiki",
+    "karpathy",
+    "pkm",
+    "hot-cache",
+    "post-compact",
+    "session-logger",
+    "ingest",
+    "pdf",
+    "epub",
+    "docx",
+    "url-extraction",
+    "hardened",
+    "security-first"
+  ]
+}

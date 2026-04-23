@@ -1,0 +1,30 @@
+{
+  "name": "kioku-marketplace",
+  "owner": {
+    "name": "megaphone-tokyo",
+    "url": "https://github.com/megaphone-tokyo"
+  },
+  "metadata": {
+    "description": "KIOKU: Hardened LLM Wiki for Claude Code / Claude Desktop by megaphone-tokyo",
+    "version": "0.5.1"
+  },
+  "plugins": [
+    {
+      "name": "kioku",
+      "source": {
+        "source": "github",
+        "repo": "megaphone-tokyo/kioku",
+        "ref": "main"
+      },
+      "description": "Hardened LLM Wiki for Claude Code + Claude Desktop. Automatic conversation → Obsidian Vault knowledge base. Hot cache + PostCompact hook + secret masking + Git sync.",
+      "version": "0.5.1",
+      "author": {
+        "name": "megaphone-tokyo",
+        "url": "https://github.com/megaphone-tokyo"
+      },
+      "homepage": "https://github.com/megaphone-tokyo/kioku",
+      "repository": "https://github.com/megaphone-tokyo/kioku",
+      "license": "MIT"
+    }
+  ]
+}
