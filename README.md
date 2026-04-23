@@ -465,6 +465,16 @@ If you find a security issue, please report it via [SECURITY.md](SECURITY.md) �
 
 ## Changelog
 
+### 2026-04-23 — v0.5.1: Hot cache + PostCompact hook + opt-in Stop prompt
+
+- **Hot cache pattern** — New `wiki/hot.md` (<=500 words, hard cap 4000 chars) is auto-injected at **SessionStart** and re-injected after **PostCompact** (context compaction), so the LLM retains short-term working context across sessions and compactions. Inspired by the claude-obsidian UX pattern
+- **PostCompact hook** — `install-hooks.sh` now wires a 6th event (`PostCompact`) that re-injects hot.md only (index.md is already in context after compaction, so it is skipped to avoid token bloat)
+- **Opt-in Stop prompt** (`KIOKU_HOT_AUTO_PROMPT=1`) — When explicitly set, session end triggers an update suggestion for hot.md. **Default OFF** — hot.md is Git-synced and has a stricter security boundary than session-logs, so auto-prompting requires explicit user consent
+- **Security boundary maintained** — hot.md flows through `applyMasks()` (API key / token pattern masking) before injection, is in the scan-secrets.sh walk target, rejects symlink escape via `realpath` (vault-external paths rejected), and truncates at 4000 chars with a WARN log
+- **Claude Code v2 hook schema alignment (4 hotfixes)** — Claude Code v2 uses different output schemas per event: `hookSpecificOutput` is supported only for `PreToolUse` / `UserPromptSubmit` / `PostToolUse`; `PostCompact` and `Stop` must use top-level `systemMessage`. The legacy v1 flat `{additionalContext}` is silently discarded in v2. hotfixes 1-4 migrate all hook output to the correct per-event schema
+- Tests: **47 Node assertions** (HOT-1..9d + HOT-V1/V2 + session-logger regression + injector H1-H5) **+ 488 Bash assertions** (IH-PC1/2 + SS-H1 + cron-guard-parity CGP-2 + 15 existing suites), all green
+- [Release v0.5.1](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.5.1) — `kioku-wiki-0.5.1.mcpb` attached (9.2 MB)
+
 ### 2026-04-23 — v0.5.0: Feature 2.4 — PDF / MD / EPUB / DOCX unified ingest router
 
 - **Phase 1** — `kioku_ingest_document` router: a unified MCP tool that dispatches by file extension (`.pdf` / `.md` / `.epub` / `.docx`) to the correct handler. Existing `kioku_ingest_pdf` becomes a deprecation alias retained for the v0.5 – v0.7 window; removal planned for v0.8

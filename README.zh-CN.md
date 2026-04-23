@@ -331,6 +331,16 @@ claude-brain 是一个可以访问**所有 Claude Code 会话输入输出**的 H
 
 ## 更新历史
 
+### 2026-04-23 — v0.5.1：热缓存 + PostCompact hook + opt-in Stop prompt
+
+- **热缓存模式** — 新增 `wiki/hot.md`（≤500 词，硬上限 4000 字符），在 **SessionStart** 时自动注入，并在 **PostCompact**（上下文压缩）后重新注入，让 LLM 在会话和压缩之间保留短期工作上下文。灵感来自 claude-obsidian 的 UX 模式
+- **PostCompact hook** — `install-hooks.sh` 现在接入第 6 个事件（`PostCompact`），仅重新注入 hot.md（压缩后 index.md 已在上下文中，因此跳过以避免 token 膨胀）
+- **Opt-in Stop prompt**（`KIOKU_HOT_AUTO_PROMPT=1`）— 显式设置时，会话结束会触发 hot.md 更新建议 prompt。**默认 OFF** — hot.md 通过 Git 同步，比 session-logs 有更严格的安全边界，因此自动 prompt 需要用户的明确同意
+- **安全边界维持** — hot.md 在注入前通过 `applyMasks()`（API key / token 模式屏蔽），包含在 scan-secrets.sh walk 目标中，通过 `realpath` 拒绝 symlink escape（vault 外路径被拒绝），并在 4000 字符处截断 + 输出 WARN log
+- **Claude Code v2 hook schema 对齐（4 个 hotfix）** — Claude Code v2 对不同事件使用不同的输出 schema：`hookSpecificOutput` 仅支持 `PreToolUse` / `UserPromptSubmit` / `PostToolUse`；`PostCompact` 和 `Stop` 必须使用顶层 `systemMessage`。旧的 v1 扁平 `{additionalContext}` 在 v2 中被静默丢弃。Hotfix 1-4 将所有 hook 输出按事件迁移到正确的 schema
+- 测试：**Node 47 断言**（HOT-1..9d + HOT-V1/V2 + session-logger 回归 + injector H1-H5）**+ Bash 488 断言**（IH-PC1/2 + SS-H1 + cron-guard-parity CGP-2 + 现有 15 suites），全绿
+- [Release v0.5.1](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.5.1) — `kioku-wiki-0.5.1.mcpb` 附件（9.2 MB）
+
 ### 2026-04-23 — v0.5.0：功能 2.4 — PDF / MD / EPUB / DOCX 统一 ingest 路由
 
 - **Phase 1** — `kioku_ingest_document` 路由器：一个统一的 MCP 工具，根据文件扩展名（`.pdf` / `.md` / `.epub` / `.docx`）分发到对应的 handler。原有的 `kioku_ingest_pdf` 转为 deprecation alias，在 v0.5 – v0.7 窗口内保留，计划在 v0.8 移除
