@@ -14,6 +14,7 @@
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Max_Plan-orange)](https://claude.com/claude-code)
 [![Platform](https://img.shields.io/badge/platform-macOS_%7C_Linux-lightgrey)](#prerequisites)
 [![Follow @megaphone_tokyo](https://img.shields.io/twitter/follow/megaphone_tokyo?style=social)](https://x.com/megaphone_tokyo)
+[![SafeSkill 20/100](https://img.shields.io/badge/SafeSkill-20%2F100_Blocked-red)](https://safeskill.dev/scan/megaphone-tokyo-kioku)
 
 Claude Code forgets knowledge from past sessions as they go.
 claude-brain **automatically accumulates your conversations into a Wiki** and **recalls them in the next session**.
