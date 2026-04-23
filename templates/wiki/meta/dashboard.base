@@ -1,0 +1,111 @@
+filters:
+  and:
+    - file.inFolder("wiki")
+    - 'file.ext == "md"'
+    - '!file.inFolder("wiki/summaries")'
+
+formulas:
+  age_days: '(now() - file.mtime).days'
+
+properties:
+  type:
+    displayName: "Type"
+  status:
+    displayName: "Status"
+  updated:
+    displayName: "Updated"
+  tech_stack:
+    displayName: "Tech Stack"
+  formula.age_days:
+    displayName: "Days Since Edit"
+
+views:
+  - type: table
+    name: "Hot Cache (v0.5.1 短期記憶)"
+    limit: 5
+    filters:
+      and:
+        - file.name == "hot.md"
+    order:
+      - file.name
+      - updated
+      - formula.age_days
+
+  - type: list
+    name: "Active Projects"
+    filters:
+      and:
+        - file.inFolder("wiki/projects")
+        - 'status == "active"'
+    order:
+      - file.name
+      - updated
+      - tech_stack
+
+  - type: table
+    name: "Recent Activity (全 wiki/、直近 20 件)"
+    limit: 20
+    order:
+      - formula.age_days
+      - file.name
+      - type
+      - status
+    groupBy:
+      property: type
+      direction: ASC
+
+  - type: list
+    name: "Concepts"
+    filters:
+      and:
+        - file.inFolder("wiki/concepts")
+    order:
+      - file.name
+      - updated
+      - formula.age_days
+
+  - type: list
+    name: "Design Decisions"
+    filters:
+      and:
+        - file.inFolder("wiki/decisions")
+    order:
+      - formula.age_days
+      - file.name
+
+  - type: list
+    name: "Analyses (LLM 自動要約 / 比較)"
+    filters:
+      and:
+        - file.inFolder("wiki/analyses")
+    order:
+      - formula.age_days
+      - file.name
+
+  - type: list
+    name: "Patterns"
+    filters:
+      and:
+        - file.inFolder("wiki/patterns")
+    order:
+      - formula.age_days
+      - file.name
+
+  - type: list
+    name: "Bugs / Edge Cases"
+    filters:
+      and:
+        - file.inFolder("wiki/bugs")
+    order:
+      - formula.age_days
+      - file.name
+
+  - type: list
+    name: "Stale Pages (30 日以上 更新なし、要 revisit)"
+    limit: 15
+    filters:
+      and:
+        - 'formula.age_days > 30'
+    order:
+      - formula.age_days
+      - file.name
