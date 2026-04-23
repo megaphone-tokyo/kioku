@@ -326,6 +326,16 @@ claude-brain은 **모든 Claude Code 세션 입출력**에 접근하는 Hook 시
 
 ## 변경 이력
 
+### 2026-04-23 — v0.5.0: 기능 2.4 — PDF / MD / EPUB / DOCX 통합 ingest router
+
+- **Phase 1** — `kioku_ingest_document` router 추가. 확장자(`.pdf` / `.md` / `.epub` / `.docx`)에 따라 적절한 handler로 dispatch하는 통합 MCP tool. 기존 `kioku_ingest_pdf`는 deprecation alias로 v0.5 ~ v0.7 window 동안 유지되며, v0.8에서 제거 예정
+- **Phase 2** — EPUB 취입: yauzl 기반의 8 층 방어(zip-slip / symlink / 누적 size cap / entry count cap / NFKC filename / nested ZIP skip / XXE pre-scan / XHTML script sanitize)로 안전하게 전개. spine 순의 챕터를 `readability-extract` + `turndown`으로 Markdown chunk화하여 `.cache/extracted/epub-<subdir>--<stem>-ch<NNN>.md`에 저장 (2 챕터 이상인 경우 `-index.md`도 생성). LLM 요약은 auto-ingest cron으로 비동기 처리
+- **Phase 3** — DOCX 취입 (MVP): `mammoth + yauzl` 2 단 구성 (mammoth 내부 jszip의 attack surface를 yauzl 측 8 층 방어로 사전 차단). `word/document.xml` / `docProps/core.xml`은 XXE pre-scan(`assertNoDoctype`) 경유. 이미지(VULN-D004/D007)와 OLE 임베딩(VULN-D006)은 defer, MVP에서는 본문 + 제목만 추출. Metadata는 `--- DOCX METADATA ---` fence + **untrusted** 주석으로 다운스트림 LLM 요약에 대한 prompt injection을 delimit
+- **Pre-release hotfix** — `scripts/extract-docx.mjs` / `scripts/extract-epub.mjs`의 argv 정규표현식을 Unicode-aware(`\p{L}\p{N}`)로 수정. 기존 `\w` (ASCII 전용)에서는 `論文.docx` / `日本語.epub` 같은 일본어/중국어 파일명이 auto-ingest cron 경로에서 silent skip되고 있었음. EPUB은 v0.4.0 이후의 latent regression을 소급 수정(LEARN#6 cross-boundary drift). 아울러 `html-sanitize`의 `DANGEROUS_TAGS`에 `meta` / `base` / `link`를 추가(향후 EPUB consumer 경로용 defense-in-depth)
+- **기지 issue (비적용)** — `fast-xml-parser` CVE-2026-41650 ([GHSA-gh4j-gqv2-49f6](https://github.com/NaturalIntelligence/fast-xml-parser/security/advisories/GHSA-gh4j-gqv2-49f6), medium)은 **XMLBuilder** (XML을 쓰는 API) 고유의 문제. 본 프로젝트는 `mcp/lib/xml-safe.mjs`에서 **XMLParser만** (XML을 읽는 API) 사용하므로 exploit 불가. dependabot alert 해소를 위해 **v0.5.1**에서 `fast-xml-parser@^5.7.0`으로 upgrade 예정
+- 테스트: **Bash 158 assertions + Node 전 suite green** (extract-docx 16 / extract-epub 7 / html-sanitize 10 / auto-ingest 70 / cron-guard-parity 25 / MCP layer 30). `npm audit`은 runtime deps에서 **0 vulnerabilities**, red-hacker + blue-hacker 병렬 `/security-review`에서 **HIGH/CRITICAL 0** 건
+- [Release v0.5.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.5.0) — `kioku-wiki-0.5.0.mcpb` 첨부 (9.2 MB)
+
 ### 2026-04-21 — v0.4.0: Tier A (보안 + 운영) + Tier B (정합성) 개편
 
 - **A#1** — `@mozilla/readability` 0.5 → 0.6으로 업그레이드 (ReDoS [GHSA-3p6v-hrg8-8qj7](https://github.com/advisories/GHSA-3p6v-hrg8-8qj7) 완화; 144개의 프로덕션 의존성이 `npm audit` 클린 통과)

@@ -331,6 +331,16 @@ claude-brain спроектирован для **совместного испо
 
 ## История изменений
 
+### 2026-04-23 — v0.5.0: функция 2.4 — единый ingest-роутер для PDF / MD / EPUB / DOCX
+
+- **Phase 1** — Роутер `kioku_ingest_document`: единый MCP-инструмент, диспетчеризующий по расширению файла (`.pdf` / `.md` / `.epub` / `.docx`) к соответствующему handler. Существующий `kioku_ingest_pdf` становится deprecation alias и сохраняется в окне v0.5 — v0.7; удаление запланировано на v0.8
+- **Phase 2** — Загрузка EPUB: безопасное извлечение через yauzl с 8-слойной защитой (zip-slip / symlink / кумулятивный лимит размера / лимит количества entry / NFKC filename / skip вложенных ZIP / XXE pre-scan / sanitize script в XHTML). Главы в порядке spine конвертируются в Markdown-чанки (`readability-extract` + `turndown`) и сохраняются в `.cache/extracted/epub-<subdir>--<stem>-ch<NNN>.md`; для EPUB с несколькими главами дополнительно создаётся `-index.md`. LLM-резюме формируются асинхронно через cron auto-ingest
+- **Phase 3** — Загрузка DOCX (MVP): двухслойная архитектура `mammoth + yauzl` (внутренняя поверхность атаки jszip у mammoth заблаговременно закрыта 8-слойной защитой yauzl). Файлы `word/document.xml` / `docProps/core.xml` проходят XXE pre-scan (`assertNoDoctype`). Изображения (VULN-D004/D007) и OLE-вложения (VULN-D006) отложены — MVP извлекает только основной текст + заголовки. Метаданные заключаются в fence `--- DOCX METADATA ---` с аннотацией **untrusted** для защиты от prompt injection в последующей LLM-суммаризации
+- **Pre-release hotfix** — Исправлена argv-regex в `scripts/extract-docx.mjs` / `scripts/extract-epub.mjs` на Unicode-aware (`\p{L}\p{N}`); предыдущий `\w` (только ASCII) молча пропускал японские / китайские имена файлов типа `論文.docx` / `日本語.epub` на cron-пути auto-ingest. EPUB находился в этой латентной регрессии с v0.4.0 и исправлен ретроактивно (LEARN#6 cross-boundary drift). Дополнительно `meta` / `base` / `link` добавлены в `DANGEROUS_TAGS` модуля `html-sanitize` как defense-in-depth для будущих consumer-путей EPUB
+- **Known issue (неприменимо)** — CVE-2026-41650 в `fast-xml-parser` ([GHSA-gh4j-gqv2-49f6](https://github.com/NaturalIntelligence/fast-xml-parser/security/advisories/GHSA-gh4j-gqv2-49f6), medium) затрагивает API **XMLBuilder** (XML writer). В этом кодовом базисе используется только **XMLParser** (XML reader) в `mcp/lib/xml-safe.mjs`, поэтому уязвимость неэксплуатируема. Зависимость будет обновлена до `fast-xml-parser@^5.7.0` в **v0.5.1** для закрытия alert от dependabot
+- Тесты: **158 Bash assertion + полный Node suite зелёные** (extract-docx 16 / extract-epub 7 / html-sanitize 10 / auto-ingest 70 / cron-guard-parity 25 / слой MCP 30). `npm audit` сообщает **0 уязвимостей** в runtime-зависимостях; параллельные `/security-review` red-hacker + blue-hacker сообщают **0 HIGH/CRITICAL** находок
+- [Release v0.5.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.5.0) — приложен `kioku-wiki-0.5.0.mcpb` (9,2 МБ)
+
 ### 2026-04-21 — v0.4.0: комплексное обновление Tier A (безопасность + эксплуатация) + Tier B (чистота кода)
 
 - **A#1** — Обновление `@mozilla/readability` 0.5 → 0.6 (устранена уязвимость ReDoS [GHSA-3p6v-hrg8-8qj7](https://github.com/advisories/GHSA-3p6v-hrg8-8qj7); 144 production-зависимости проходят `npm audit` без предупреждений)
