@@ -263,6 +263,16 @@ claude-brain एक Hook सिस्टम है जो **सभी Claude Cod
 
 ## परिवर्तन इतिहास
 
+### 2026-04-23 — v0.5.0: फ़ीचर 2.4 — PDF / MD / EPUB / DOCX एकीकृत ingest router
+
+- **Phase 1** — `kioku_ingest_document` router: एक एकीकृत MCP टूल जो फ़ाइल एक्सटेंशन (`.pdf` / `.md` / `.epub` / `.docx`) के अनुसार संबंधित handler को dispatch करता है। मौजूदा `kioku_ingest_pdf` deprecation alias बन गया है और v0.5 – v0.7 विंडो में बरकरार रखा जाएगा; v0.8 में हटाने की योजना है
+- **Phase 2** — EPUB ingest: yauzl के माध्यम से सुरक्षित extraction, 8-परत रक्षा के साथ (zip-slip / symlink / संचयी आकार सीमा / entry संख्या सीमा / NFKC फ़ाइलनाम / nested ZIP skip / XXE pre-scan / XHTML script sanitize)। Spine-क्रम में अध्यायों को `readability-extract` + `turndown` के ज़रिए Markdown chunks में बदला जाता है और `.cache/extracted/epub-<subdir>--<stem>-ch<NNN>.md` में संग्रहित किया जाता है; बहु-अध्याय EPUB के लिए `-index.md` भी बनता है। LLM summary auto-ingest cron के माध्यम से asynchronous रूप से प्रवाहित होती है
+- **Phase 3** — DOCX ingest (MVP): `mammoth + yauzl` दो-परत आर्किटेक्चर (mammoth के आंतरिक jszip की attack surface को yauzl की 8-परत रक्षा से पहले ही सुरक्षित कर दिया जाता है)। `word/document.xml` / `docProps/core.xml` XXE pre-scan (`assertNoDoctype`) से गुज़रते हैं। छवियाँ (VULN-D004/D007) और OLE embedded content (VULN-D006) स्थगित — MVP केवल body text + headings निकालता है। Metadata को `--- DOCX METADATA ---` fence में घेरा जाता है और **untrusted** के रूप में चिह्नित किया जाता है ताकि downstream LLM summarization के विरुद्ध prompt injection की सीमा स्पष्ट हो
+- **Pre-release hotfix** — `scripts/extract-docx.mjs` / `scripts/extract-epub.mjs` के argv regex को Unicode-aware बनाने के लिए ठीक किया (`\p{L}\p{N}`); पिछला `\w` (केवल ASCII) auto-ingest cron path में `論文.docx` / `日本語.epub` जैसे जापानी/चीनी फ़ाइलनामों को silently skip कर देता था। EPUB v0.4.0 से इस latent regression में था और retroactively ठीक किया गया (LEARN#6 cross-boundary drift)। इसके अतिरिक्त भविष्य के EPUB consumer paths के लिए defense-in-depth के रूप में `meta` / `base` / `link` को `html-sanitize` के `DANGEROUS_TAGS` में जोड़ा गया
+- **Known issue (लागू नहीं)** — `fast-xml-parser` CVE-2026-41650 ([GHSA-gh4j-gqv2-49f6](https://github.com/NaturalIntelligence/fast-xml-parser/security/advisories/GHSA-gh4j-gqv2-49f6), medium) **XMLBuilder** API (XML writer) को लक्षित करता है। यह codebase `mcp/lib/xml-safe.mjs` में केवल **XMLParser** (XML reader) का उपयोग करता है, इसलिए यह vulnerability exploit करने योग्य नहीं है। dependabot alert को clear करने के लिए **v0.5.1** में dependency को `fast-xml-parser@^5.7.0` पर अपग्रेड किया जाएगा
+- टेस्ट: **158 Bash assertions + पूर्ण Node suite सभी green** (extract-docx 16 / extract-epub 7 / html-sanitize 10 / auto-ingest 70 / cron-guard-parity 25 / MCP layer 30)। `npm audit` runtime dependencies पर **0 vulnerabilities** रिपोर्ट करता है; red-hacker + blue-hacker समानांतर `/security-review` **0 HIGH/CRITICAL** findings रिपोर्ट करता है
+- [Release v0.5.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.5.0) — `kioku-wiki-0.5.0.mcpb` attached (9.2 MB)
+
 ### 2026-04-21 — v0.4.0: Tier A (security + ops) + Tier B (cleanness) ओवरहॉल
 
 - **A#1** — `@mozilla/readability` को 0.5 → 0.6 पर अपग्रेड किया (ReDoS [GHSA-3p6v-hrg8-8qj7](https://github.com/advisories/GHSA-3p6v-hrg8-8qj7) शमित; 144 production dependencies `npm audit` clean पास करती हैं)

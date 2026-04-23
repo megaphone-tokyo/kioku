@@ -331,6 +331,16 @@ claude-brain 是一個存取**所有 Claude Code 工作階段 I/O** 的 Hook 系
 
 ## 更新歷史
 
+### 2026-04-23 — v0.5.0：機能 2.4 — PDF / MD / EPUB / DOCX 統一 ingest router
+
+- **Phase 1** — `kioku_ingest_document` router：統一的 MCP 工具，依副檔名（`.pdf` / `.md` / `.epub` / `.docx`）分派至對應 handler。既有 `kioku_ingest_pdf` 轉為 deprecation alias，於 v0.5 – v0.7 期間保留；計畫於 v0.8 移除
+- **Phase 2** — EPUB 取入：透過 yauzl 安全展開，內建 8 層防禦（zip-slip / symlink / 累計大小上限 / entry 數上限 / NFKC 檔名 / 巢狀 ZIP skip / XXE pre-scan / XHTML script sanitize）。依 spine 順序之章節會轉換為 Markdown chunk（`readability-extract` + `turndown`），儲存於 `.cache/extracted/epub-<subdir>--<stem>-ch<NNN>.md`；多章節 EPUB 另產生 `-index.md`。LLM 摘要透過 auto-ingest cron 非同步處理
+- **Phase 3** — DOCX 取入（MVP）：採用 `mammoth + yauzl` 兩層架構（mammoth 內部 jszip 的攻擊面由 yauzl 的 8 層防禦預先守護）。`word/document.xml` / `docProps/core.xml` 均經過 XXE pre-scan（`assertNoDoctype`）。圖片（VULN-D004/D007）與 OLE embedded content（VULN-D006）於本版本暫不支援 — MVP 僅擷取本文 + 標題。Metadata 以 `--- DOCX METADATA ---` fence 包覆並標註為 **untrusted**，以區隔下游 LLM 摘要的 prompt injection 風險
+- **Pre-release hotfix** — 修正 `scripts/extract-docx.mjs` / `scripts/extract-epub.mjs` 中的 argv regex 為 Unicode 感知（`\p{L}\p{N}`）；先前的 `\w`（僅 ASCII）會在 auto-ingest cron 路徑中靜默跳過 `論文.docx` / `日本語.epub` 等日文／中文檔名。EPUB 自 v0.4.0 起便潛伏此 regression，現已回溯修復（LEARN#6 cross-boundary drift）。此外，`meta` / `base` / `link` 已加入 `html-sanitize` 的 `DANGEROUS_TAGS`，作為未來 EPUB consumer path 的 defense-in-depth
+- **Known issue（不適用）** — `fast-xml-parser` CVE-2026-41650 ([GHSA-gh4j-gqv2-49f6](https://github.com/NaturalIntelligence/fast-xml-parser/security/advisories/GHSA-gh4j-gqv2-49f6)，medium) 影響 **XMLBuilder** API（XML writer）。本 codebase 於 `mcp/lib/xml-safe.mjs` 僅使用 **XMLParser**（XML reader），因此不受此漏洞影響。該依賴將於 **v0.5.1** 升級至 `fast-xml-parser@^5.7.0` 以清除 dependabot alert
+- 測試：**158 項 Bash assertions + 完整 Node suite 全部綠燈**（extract-docx 16 / extract-epub 7 / html-sanitize 10 / auto-ingest 70 / cron-guard-parity 25 / MCP layer 30）。`npm audit` 針對 runtime dependencies 回報 **0 vulnerabilities**；red-hacker + blue-hacker 並行 `/security-review` 回報 **0 HIGH/CRITICAL**
+- [Release v0.5.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.5.0) — 已附上 `kioku-wiki-0.5.0.mcpb`（9.2 MB）
+
 ### 2026-04-21 — v0.4.0：Tier A（安全性 + 維運）＋ Tier B（整潔度）全面翻修
 
 - **A#1** — 將 `@mozilla/readability` 從 0.5 升級至 0.6（緩解 ReDoS [GHSA-3p6v-hrg8-8qj7](https://github.com/advisories/GHSA-3p6v-hrg8-8qj7)；144 個 production dependencies 通過 `npm audit` 清潔檢查）

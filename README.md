@@ -204,7 +204,7 @@ claude mcp add --scope user --transport stdio kioku \
   "$(command -v node)" "$(pwd)/tools/claude-brain/mcp/server.mjs"
 ```
 
-Eight tools provided:
+Nine tools provided:
 
 | Tool | Purpose |
 |---|---|
@@ -214,8 +214,9 @@ Eight tools provided:
 | `kioku_write_note` (recommended) | Append a memo to `session-logs/`; the next auto-ingest cycle structures it into `wiki/` |
 | `kioku_write_wiki` (advanced) | Write directly into `wiki/` with template + frontmatter auto-injection |
 | `kioku_delete` | Move a page to `wiki/.archive/` (recoverable; `wiki/index.md` cannot be deleted) |
-| `kioku_ingest_pdf` (feature 2.1) | Trigger immediate ingest for a PDF / MD under `raw-sources/`. Synchronously extracts chunks and writes `wiki/summaries/` without waiting for the next auto-ingest cron |
-| `kioku_ingest_url` (feature 2.2) | Fetch an HTTP/HTTPS URL, extract the article body with Mozilla Readability, save Markdown + images under `raw-sources/<subdir>/fetched/`, and queue a wiki summary. PDF URLs auto-dispatch to `kioku_ingest_pdf` |
+| `kioku_ingest_document` (feature 2.4) | **Unified ingest router** for local documents under `raw-sources/`. Dispatches by extension: `.pdf` / `.md` → PDF handler, `.epub` → EPUB handler (yauzl + 8-layer defense + readability → chapter Markdown chunks), `.docx` → DOCX handler (mammoth + yauzl + XXE pre-scan → single Markdown chunk). Image / OLE embedded content is skipped for safety (MVP) |
+| `kioku_ingest_pdf` (feature 2.1, deprecated alias) | Deprecated alias for `kioku_ingest_document` restricted to `.pdf` / `.md`. Retained through the v0.5 – v0.7 window, removal planned for v0.8. Prefer `kioku_ingest_document` for new integrations |
+| `kioku_ingest_url` (feature 2.2) | Fetch an HTTP/HTTPS URL, extract the article body with Mozilla Readability, save Markdown + images under `raw-sources/<subdir>/fetched/`, and queue a wiki summary. PDF URLs auto-dispatch to `kioku_ingest_document` |
 
 **Notes**:
 - Fully local (stdio transport, no network exposure, single dep `@modelcontextprotocol/sdk`)
@@ -463,6 +464,16 @@ If you find a security issue, please report it via [SECURITY.md](SECURITY.md) �
 <br>
 
 ## Changelog
+
+### 2026-04-23 — v0.5.0: Feature 2.4 — PDF / MD / EPUB / DOCX unified ingest router
+
+- **Phase 1** — `kioku_ingest_document` router: a unified MCP tool that dispatches by file extension (`.pdf` / `.md` / `.epub` / `.docx`) to the correct handler. Existing `kioku_ingest_pdf` becomes a deprecation alias retained for the v0.5 – v0.7 window; removal planned for v0.8
+- **Phase 2** — EPUB ingestion: safe extraction via yauzl with 8-layer defense (zip-slip / symlink / cumulative size cap / entry count cap / NFKC filename / nested ZIP skip / XXE pre-scan / XHTML script sanitize). Spine-ordered chapters are converted to Markdown chunks (`readability-extract` + `turndown`), stored at `.cache/extracted/epub-<subdir>--<stem>-ch<NNN>.md`; multi-chapter EPUBs also get an `-index.md`. LLM summaries flow through the auto-ingest cron asynchronously
+- **Phase 3** — DOCX ingestion (MVP): a `mammoth + yauzl` two-layer architecture (mammoth's internal jszip attack surface is pre-guarded by yauzl's 8-layer defense). `word/document.xml` / `docProps/core.xml` go through an XXE pre-scan (`assertNoDoctype`). Images (VULN-D004/D007) and OLE embedded content (VULN-D006) are deferred — MVP extracts body text + headings only. Metadata is enclosed in a `--- DOCX METADATA ---` fence with an **untrusted** annotation to delimit prompt injection against downstream LLM summarization
+- **Pre-release hotfix** — Fixed the argv regex in `scripts/extract-docx.mjs` / `scripts/extract-epub.mjs` to be Unicode-aware (`\p{L}\p{N}`); the previous `\w` (ASCII only) silently skipped Japanese / Chinese filenames like `論文.docx` / `日本語.epub` in the auto-ingest cron path. EPUB was in this latent regression since v0.4.0 and is fixed retroactively (LEARN#6 cross-boundary drift). Additionally, `meta` / `base` / `link` were added to `html-sanitize`'s `DANGEROUS_TAGS` as defense-in-depth for future EPUB consumer paths
+- **Known issue (non-applicable)** — `fast-xml-parser` CVE-2026-41650 ([GHSA-gh4j-gqv2-49f6](https://github.com/NaturalIntelligence/fast-xml-parser/security/advisories/GHSA-gh4j-gqv2-49f6), medium) targets the **XMLBuilder** API (XML writer). This codebase uses only **XMLParser** (XML reader) in `mcp/lib/xml-safe.mjs`, so the vulnerability is not exploitable. The dependency will be upgraded to `fast-xml-parser@^5.7.0` in **v0.5.1** to clear the dependabot alert
+- Tests: **158 Bash assertions + full Node suite green** (extract-docx 16 / extract-epub 7 / html-sanitize 10 / auto-ingest 70 / cron-guard-parity 25 / MCP layer 30). `npm audit` reports **0 vulnerabilities** on runtime dependencies; red-hacker + blue-hacker parallel `/security-review` reports **0 HIGH/CRITICAL** findings
+- [Release v0.5.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.5.0) — `kioku-wiki-0.5.0.mcpb` attached (9.2 MB)
 
 ### 2026-04-21 — v0.4.0: Tier A (security + ops) + Tier B (cleanness) overhaul
 
