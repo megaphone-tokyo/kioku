@@ -331,6 +331,16 @@ claude-brain спроектирован для **совместного испо
 
 ## История изменений
 
+### 2026-04-23 — v0.5.1: Hot cache + PostCompact hook + opt-in Stop prompt
+
+- **Паттерн hot cache** — Новый `wiki/hot.md` (<=500 слов, жёсткий лимит 4000 символов) автоматически внедряется при **SessionStart** и повторно внедряется после **PostCompact** (компактификации контекста), чтобы LLM сохранял краткосрочный рабочий контекст между сессиями и компактификациями. Вдохновлён UX-паттерном claude-obsidian
+- **Hook PostCompact** — `install-hooks.sh` теперь подключает 6-е событие (`PostCompact`), которое повторно внедряет только hot.md (index.md уже в контексте после компактификации, поэтому пропускается для избежания раздувания токенов)
+- **Opt-in Stop prompt** (`KIOKU_HOT_AUTO_PROMPT=1`) — При явной установке конец сессии вызывает предложение обновить hot.md. **По умолчанию OFF** — hot.md синхронизируется через Git и имеет более строгую границу безопасности, чем session-logs, поэтому автоматический prompt требует явного согласия пользователя
+- **Граница безопасности сохранена** — hot.md проходит через `applyMasks()` (маскирование паттернов API key / token) перед инъекцией, включён в цель обхода scan-secrets.sh, отклоняет symlink escape через `realpath` (пути вне vault отклонены) и обрезается на 4000 символах с WARN log
+- **Согласование схемы hook Claude Code v2 (4 hotfix)** — Claude Code v2 использует разные схемы вывода для разных событий: `hookSpecificOutput` поддерживается только для `PreToolUse` / `UserPromptSubmit` / `PostToolUse`; `PostCompact` и `Stop` должны использовать `systemMessage` верхнего уровня. Устаревший v1 flat `{additionalContext}` молча отбрасывается в v2. Hotfix 1-4 мигрируют весь вывод hook в правильную схему для каждого события
+- Тесты: **47 Node-утверждений** (HOT-1..9d + HOT-V1/V2 + регрессия session-logger + H1-H5 injector) **+ 488 Bash-утверждений** (IH-PC1/2 + SS-H1 + cron-guard-parity CGP-2 + 15 существующих suites), все зелёные
+- [Release v0.5.1](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.5.1) — `kioku-wiki-0.5.1.mcpb` прикреплён (9.2 МБ)
+
 ### 2026-04-23 — v0.5.0: функция 2.4 — единый ingest-роутер для PDF / MD / EPUB / DOCX
 
 - **Phase 1** — Роутер `kioku_ingest_document`: единый MCP-инструмент, диспетчеризующий по расширению файла (`.pdf` / `.md` / `.epub` / `.docx`) к соответствующему handler. Существующий `kioku_ingest_pdf` становится deprecation alias и сохраняется в окне v0.5 — v0.7; удаление запланировано на v0.8

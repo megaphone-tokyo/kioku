@@ -326,6 +326,16 @@ claude-brain은 **모든 Claude Code 세션 입출력**에 접근하는 Hook 시
 
 ## 변경 이력
 
+### 2026-04-23 — v0.5.1: Hot cache + PostCompact hook + opt-in Stop prompt
+
+- **Hot cache 패턴** — 새로운 `wiki/hot.md` (<=500 단어, hard cap 4000자) 가 **SessionStart** 시 자동 주입되고, **PostCompact** (context compaction) 이후 재주입되어 LLM이 session 및 compaction 간에 단기 작업 context를 유지할 수 있음. claude-obsidian의 UX 패턴에서 영감을 받음
+- **PostCompact hook** — `install-hooks.sh`가 이제 6번째 event (`PostCompact`)를 연결하여 hot.md만 재주입 (index.md는 compaction 후에도 context에 남아있으므로 token bloat를 피하기 위해 생략)
+- **Opt-in Stop prompt** (`KIOKU_HOT_AUTO_PROMPT=1`) — 명시적으로 설정한 경우에만 session 종료 시 hot.md 업데이트 제안 prompt가 표시됨. **Default OFF** — hot.md는 Git으로 sync되며 session-logs보다 엄격한 security boundary를 가지므로 auto-prompt에는 사용자의 명시적 동의가 필요
+- **Security boundary 유지** — hot.md는 주입 전에 `applyMasks()` (API key / token 패턴 마스킹)를 통과하고, scan-secrets.sh walk 대상에 포함되며, `realpath`를 통해 symlink escape (vault 외부 경로)를 거부하고, 4000자에서 truncate + WARN log 기록
+- **Claude Code v2 hook schema 정합 (4 hotfix)** — Claude Code v2는 event별로 다른 output schema를 사용함: `hookSpecificOutput`은 `PreToolUse` / `UserPromptSubmit` / `PostToolUse`만 지원; `PostCompact` / `Stop`은 top-level `systemMessage`를 사용해야 함. 기존 v1 flat `{additionalContext}`는 v2에서 silent하게 discard됨. Hotfix 1-4로 모든 hook output을 per-event로 올바른 schema로 migration
+- 테스트: **Node 47 assertions** (HOT-1..9d + HOT-V1/V2 + session-logger regression + injector H1-H5) **+ Bash 488 assertions** (IH-PC1/2 + SS-H1 + cron-guard-parity CGP-2 + 기존 15 suites), 모두 green
+- [Release v0.5.1](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.5.1) — `kioku-wiki-0.5.1.mcpb` 첨부 (9.2 MB)
+
 ### 2026-04-23 — v0.5.0: 기능 2.4 — PDF / MD / EPUB / DOCX 통합 ingest router
 
 - **Phase 1** — `kioku_ingest_document` router 추가. 확장자(`.pdf` / `.md` / `.epub` / `.docx`)에 따라 적절한 handler로 dispatch하는 통합 MCP tool. 기존 `kioku_ingest_pdf`는 deprecation alias로 v0.5 ~ v0.7 window 동안 유지되며, v0.8에서 제거 예정

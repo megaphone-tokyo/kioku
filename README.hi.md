@@ -263,6 +263,16 @@ claude-brain एक Hook सिस्टम है जो **सभी Claude Cod
 
 ## परिवर्तन इतिहास
 
+### 2026-04-23 — v0.5.1: Hot cache + PostCompact hook + opt-in Stop prompt
+
+- **Hot cache pattern** — नया `wiki/hot.md` (<=500 शब्द, hard cap 4000 वर्ण) **SessionStart** पर auto-inject होता है और **PostCompact** (context compaction) के बाद फिर से inject होता है, ताकि LLM sessions और compactions के बीच अल्पकालिक कार्य context बनाए रखे। claude-obsidian के UX pattern से प्रेरित
+- **PostCompact hook** — `install-hooks.sh` अब छठा event (`PostCompact`) जोड़ता है जो केवल hot.md को फिर से inject करता है (compaction के बाद index.md पहले से context में है, इसलिए token bloat से बचने के लिए छोड़ा जाता है)
+- **Opt-in Stop prompt** (`KIOKU_HOT_AUTO_PROMPT=1`) — स्पष्ट रूप से set करने पर session समाप्ति पर hot.md update सुझाव prompt आता है। **Default OFF** — hot.md Git-synced है और session-logs से कड़ी security boundary है, इसलिए auto-prompt के लिए user की स्पष्ट सहमति चाहिए
+- **Security boundary बनाए रखी गई** — hot.md injection से पहले `applyMasks()` (API key / token pattern masking) से गुजरता है, scan-secrets.sh walk target में है, `realpath` के माध्यम से symlink escape अस्वीकार करता है (vault के बाहर path अस्वीकृत), और WARN log के साथ 4000 वर्णों पर truncate करता है
+- **Claude Code v2 hook schema alignment (4 hotfixes)** — Claude Code v2 event के अनुसार अलग output schemas उपयोग करता है: `hookSpecificOutput` केवल `PreToolUse` / `UserPromptSubmit` / `PostToolUse` के लिए समर्थित है; `PostCompact` और `Stop` को top-level `systemMessage` उपयोग करना चाहिए। पुराना v1 flat `{additionalContext}` v2 में silently discard होता है। Hotfixes 1-4 सभी hook output को प्रति-event सही schema में migrate करते हैं
+- परीक्षण: **47 Node assertions** (HOT-1..9d + HOT-V1/V2 + session-logger regression + injector H1-H5) **+ 488 Bash assertions** (IH-PC1/2 + SS-H1 + cron-guard-parity CGP-2 + 15 मौजूदा suites), सभी green
+- [Release v0.5.1](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.5.1) — `kioku-wiki-0.5.1.mcpb` संलग्न (9.2 MB)
+
 ### 2026-04-23 — v0.5.0: फ़ीचर 2.4 — PDF / MD / EPUB / DOCX एकीकृत ingest router
 
 - **Phase 1** — `kioku_ingest_document` router: एक एकीकृत MCP टूल जो फ़ाइल एक्सटेंशन (`.pdf` / `.md` / `.epub` / `.docx`) के अनुसार संबंधित handler को dispatch करता है। मौजूदा `kioku_ingest_pdf` deprecation alias बन गया है और v0.5 – v0.7 विंडो में बरकरार रखा जाएगा; v0.8 में हटाने की योजना है
