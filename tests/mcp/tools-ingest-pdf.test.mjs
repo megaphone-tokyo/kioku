@@ -31,7 +31,7 @@ const REPO_ROOT = join(__dirname, '..', '..', '..', '..');
 const FIXTURES = join(__dirname, '..', 'fixtures', 'pdf');
 const EXTRACT_PDF = join(__dirname, '..', '..', 'scripts', 'extract-pdf.sh');
 
-const { handleIngestPdf } = await import(join(MCP_DIR, 'tools', 'ingest-pdf.mjs'));
+const { handleIngestPdf, INGEST_PDF_TOOL_DEF } = await import(join(MCP_DIR, 'tools', 'ingest-pdf.mjs'));
 
 // poppler が無ければ本スイート全体を skip (CI での SKIP を明示)
 const popplerCheck = spawnSync('sh', ['-c', 'command -v pdfinfo >/dev/null 2>&1 && command -v pdftotext >/dev/null 2>&1'], { stdio: 'ignore' });
@@ -368,4 +368,15 @@ describe('kioku_ingest_pdf', { skip: !HAS_POPPLER ? 'poppler not installed' : fa
   // 新しい invariant は MCP45 (tools-ingest-url.test.mjs) 側で検証する:
   // - kioku_ingest_url → PDF dispatch 経路で handleIngestPdf が自前の withLock を
   //   取得する (outer withLock は dispatch 前に release される) ことが整合性の要。
+});
+
+describe('kioku_ingest_pdf deprecation signaling', () => {
+  test('MCP-P-dep-title carries deprecated-alias marker', () => {
+    assert.match(INGEST_PDF_TOOL_DEF.title, /deprecated/i);
+    assert.match(INGEST_PDF_TOOL_DEF.title, /kioku_ingest_document/);
+  });
+
+  test('MCP-P-dep-desc description prefixed with deprecation and removal version', () => {
+    assert.match(INGEST_PDF_TOOL_DEF.description, /^\[Deprecated in v0\.5\+ — use kioku_ingest_document\. This alias will be removed in v0\.7\.\]/);
+  });
 });

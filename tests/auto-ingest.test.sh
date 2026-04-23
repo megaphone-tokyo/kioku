@@ -857,6 +857,95 @@ assert_contains "${out_f19}" "Recovery:" "F19 stderr provides recovery hint"
 assert_eq "${before_sha_f19}" "${after_sha_f19}" "F19 HEAD unchanged (guard prevented commit in detached state)"
 
 # -----------------------------------------------------------------------------
+# 機能 2.4 Phase 2 (EPUB ingest) — F20
+# -----------------------------------------------------------------------------
+# F20: KIOKU_EXTRACT_EPUB_SCRIPT が設定されていても
+#      KIOKU_ALLOW_EXTRACT_EPUB_OVERRIDE=1 が無ければ override を拒否する (MCP-D6m)
+# -----------------------------------------------------------------------------
+
+echo "test F20: EPUB KIOKU_EXTRACT_EPUB_SCRIPT rejected without KIOKU_ALLOW_EXTRACT_EPUB_OVERRIDE (MCP-D6m)"
+VAULT_F20="$(make_vault vault-f20)"
+mkdir -p "${VAULT_F20}/raw-sources/books"
+touch "${VAULT_F20}/raw-sources/books/sample.epub"
+add_unprocessed_log "${VAULT_F20}" "20260422-100000-f20"
+
+EVIL_SCRIPT_F20="${TMPROOT}/evil-extract-epub-f20.sh"
+MARKER_F20="${TMPROOT}/evil-epub-f20.marker"
+cat > "${EVIL_SCRIPT_F20}" <<STUB
+#!/usr/bin/env bash
+touch "${MARKER_F20}"
+exit 0
+STUB
+chmod +x "${EVIL_SCRIPT_F20}"
+
+set +e
+out_f20="$(
+  PATH="${STUB_DIR}:${PATH}" \
+  OBSIDIAN_VAULT="${VAULT_F20}" \
+  KIOKU_DRY_RUN=1 \
+  KIOKU_EXTRACT_EPUB_SCRIPT="${EVIL_SCRIPT_F20}" \
+  bash "${AUTO_INGEST}" 2>&1
+)"
+rc=$?
+set -e
+assert_eq "0" "${rc}" "F20 exit code 0"
+assert_contains "${out_f20}" "ignoring override" "F20 EPUB override rejection WARN emitted"
+if [[ -f "${MARKER_F20}" ]]; then
+  fail "F20 evil extract-epub.sh should NOT be invoked when KIOKU_ALLOW_EXTRACT_EPUB_OVERRIDE != 1"
+else
+  pass "F20 evil extract-epub.sh was not invoked (EPUB override gated, MCP-D6m)"
+fi
+
+# -----------------------------------------------------------------------------
+# 機能 2.4 Phase 3 (DOCX ingest) — F21 / F22
+# -----------------------------------------------------------------------------
+# F21: KIOKU_EXTRACT_DOCX_SCRIPT が設定されていても
+#      KIOKU_ALLOW_EXTRACT_DOCX_OVERRIDE=1 が無ければ override を拒否する
+#      (VULN-004 pattern、EPUB F20 の DOCX 版)
+# F22: INGEST_PROMPT に DOCX section が含まれる
+# -----------------------------------------------------------------------------
+
+echo "test F21: DOCX KIOKU_EXTRACT_DOCX_SCRIPT rejected without KIOKU_ALLOW_EXTRACT_DOCX_OVERRIDE"
+VAULT_F21="$(make_vault vault-f21)"
+mkdir -p "${VAULT_F21}/raw-sources/papers"
+touch "${VAULT_F21}/raw-sources/papers/sample.docx"
+add_unprocessed_log "${VAULT_F21}" "20260422-110000-f21"
+
+EVIL_SCRIPT_F21="${TMPROOT}/evil-extract-docx-f21.sh"
+MARKER_F21="${TMPROOT}/evil-docx-f21.marker"
+cat > "${EVIL_SCRIPT_F21}" <<STUB
+#!/usr/bin/env bash
+touch "${MARKER_F21}"
+exit 0
+STUB
+chmod +x "${EVIL_SCRIPT_F21}"
+
+set +e
+out_f21="$(
+  PATH="${STUB_DIR}:${PATH}" \
+  OBSIDIAN_VAULT="${VAULT_F21}" \
+  KIOKU_DRY_RUN=1 \
+  KIOKU_EXTRACT_DOCX_SCRIPT="${EVIL_SCRIPT_F21}" \
+  bash "${AUTO_INGEST}" 2>&1
+)"
+rc=$?
+set -e
+assert_eq "0" "${rc}" "F21 exit code 0"
+assert_contains "${out_f21}" "ignoring override" "F21 DOCX override rejection WARN emitted"
+if [[ -f "${MARKER_F21}" ]]; then
+  fail "F21 evil extract-docx.sh should NOT be invoked when KIOKU_ALLOW_EXTRACT_DOCX_OVERRIDE != 1"
+else
+  pass "F21 evil extract-docx.sh was not invoked (DOCX override gated)"
+fi
+
+echo "test F22: INGEST_PROMPT contains DOCX section header"
+if grep -q '追加の取り込み対象 (DOCX 由来の' "${AUTO_INGEST}"; then
+  pass "F22 auto-ingest.sh INGEST_PROMPT contains DOCX section"
+else
+  fail "F22 auto-ingest.sh INGEST_PROMPT MISSING DOCX section"
+fi
+
+# -----------------------------------------------------------------------------
 # サマリ
 # -----------------------------------------------------------------------------
 echo

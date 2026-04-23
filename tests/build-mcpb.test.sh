@@ -146,14 +146,14 @@ STAGING="${REPO_ROOT}/tools/claude-brain/mcp/build/staging"
   && pass "MCPB4b staging excludes cron-only scripts/auto-ingest.sh (最小配布)" \
   || fail "MCPB4b staging includes scripts/auto-ingest.sh (不要に同梱されている)"
 
-# ingest-pdf.mjs の path 解決整合確認:
-# `join(__dirname, '..', '..', 'scripts', 'extract-pdf.sh')` は
-# staging では `server/tools/../../scripts/extract-pdf.sh` = staging ルート直下 scripts/
-# parent repo でも `mcp/tools/../../scripts/extract-pdf.sh` = tools/claude-brain/scripts/
-# この契約が壊れていないことを確認 (ingest-pdf.mjs にパス文字列が残っている)
-grep -q "'..', '..', 'scripts', 'extract-pdf.sh'" "${REPO_ROOT}/tools/claude-brain/mcp/tools/ingest-pdf.mjs" \
-  && pass "MCPB4b ingest-pdf.mjs の path resolve が scripts/ staging 配置と整合" \
-  || fail "MCPB4b ingest-pdf.mjs の path 文字列が変更された — build-mcpb.sh の staging 位置と再整合すること"
+# ingest/pdf.mjs の path 解決整合確認 (機能 2.4 Phase 2 Task 4 で ingest/pdf.mjs に移設):
+# `join(__dirname, '..', '..', '..', 'scripts', 'extract-pdf.sh')` は
+# staging では `server/tools/ingest/../../../scripts/extract-pdf.sh` = staging ルート直下 scripts/
+# parent repo でも `mcp/tools/ingest/../../../scripts/extract-pdf.sh` = tools/claude-brain/scripts/
+# この契約が壊れていないことを確認 (ingest/pdf.mjs にパス文字列が残っている)
+grep -q "'..', '..', '..', 'scripts', 'extract-pdf.sh'" "${REPO_ROOT}/tools/claude-brain/mcp/tools/ingest/pdf.mjs" \
+  && pass "MCPB4b ingest/pdf.mjs の path resolve が scripts/ staging 配置と整合" \
+  || fail "MCPB4b ingest/pdf.mjs の path 文字列が変更された — build-mcpb.sh の staging 位置と再整合すること"
 
 # -----------------------------------------------------------------------------
 # MCPB5: --clean removes build/ and dist/

@@ -31,11 +31,19 @@
  *    - KIOKU_LLM_FB_OUT   : LLM fallback が結果を書き出す絶対パス
  *    - KIOKU_LLM_FB_LOG   : LLM fallback の stderr ログパス
  *
- * 以下は **意図的に exclude**:
+ * 以下は **意図的に exclude** (production leak 回避):
  *    KIOKU_URL_ALLOW_LOOPBACK / KIOKU_URL_IGNORE_ROBOTS /
  *    KIOKU_URL_MAX_* / KIOKU_URL_USER_AGENT / KIOKU_URL_REFRESH_DAYS /
  *    KIOKU_EXTRACT_URL_SCRIPT / KIOKU_ALLOW_EXTRACT_URL_OVERRIDE /
+ *    KIOKU_EXTRACT_EPUB_SCRIPT / KIOKU_ALLOW_EXTRACT_EPUB_OVERRIDE /   // Phase 2 機能 2.4
+ *    KIOKU_DOC_MAX_EXTRACT_BYTES / KIOKU_DOC_MAX_ENTRIES /              // Phase 2 機能 2.4
+ *    KIOKU_DOC_MAX_ENTRY_BYTES / KIOKU_DOC_MAX_INPUT_BYTES /            // Phase 2 機能 2.4
  *    KIOKU_INGEST_MAX_SECONDS など
+ *
+ * Phase 2 (2026-04-22): EPUB ingest の size cap は claude -p 子に届くべきではない
+ *   ため exact allowlist には追加しない。extract-epub.mjs spawn 時に呼出側が
+ *   明示注入する (meeting 26042202 合意、prompt injection 経由で size cap を巨大化
+ *   される攻撃の遮断)。
  */
 export const ENV_ALLOW_EXACT = new Set([
   // OS 標準

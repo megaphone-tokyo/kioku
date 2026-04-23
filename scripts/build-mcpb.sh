@@ -139,13 +139,13 @@ cp -R "${MCP_DIR}/tools" "${STAGING_DIR}/server/tools"
 find "${STAGING_DIR}/server/tools" -mindepth 1 -type d -empty -delete 2>/dev/null || true
 
 # 2026-04-20 v0.3.3 fix (機能 2.1 以降の長期バグ): MCP tool `kioku_ingest_pdf` は
-# `scripts/extract-pdf.sh` を spawn するが (ingest-pdf.mjs 内で
-# `join(__dirname, '..', '..', 'scripts', 'extract-pdf.sh')` に resolve)、
+# `scripts/extract-pdf.sh` を spawn するが (機能 2.4 Phase 2 Task 4 で
+# ingest/pdf.mjs に移設後は `join(__dirname, '..', '..', '..', 'scripts', 'extract-pdf.sh')` に resolve)、
 # v0.2.0/v0.3.0/v0.3.1/v0.3.2 の .mcpb bundle にこの shell script が含まれて
 # いなかったため、Claude Desktop 経由で kioku_ingest_pdf を叩くと rc=127 で
 # 失敗していた (dev 時は parent repo 直パスで解決するので dogfooding でも
 # 検出できなかった)。staging のルートに scripts/ を配置することで
-# server/tools/ingest-pdf.mjs から `../../scripts/extract-pdf.sh` が正しく解決する。
+# server/tools/ingest/pdf.mjs から `../../../scripts/extract-pdf.sh` が正しく解決する。
 #
 # 同梱対象:
 #   - extract-pdf.sh        : kioku_ingest_pdf が spawn (必須)

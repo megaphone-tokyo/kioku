@@ -114,7 +114,7 @@ export async function extractAndSaveUrl(opts) {
   }
 
   // 6. Readability → 不足なら LLM fallback
-  const extracted = extractArticle(fetchResult.body, fetchResult.finalUrl);
+  const extracted = extractArticle({ html: fetchResult.body, baseUrl: fetchResult.finalUrl });
   let markdown;
   let fallbackUsed;
   if (extracted.needsFallback) {

@@ -224,6 +224,84 @@ fi
 rm -f /tmp/prs-dryrun-block.$$.txt
 
 # -----------------------------------------------------------------------------
+# PRS-S10: --force-sync flag 分岐 (2026-04-21 v0.4.0 post-release diverge fix)
+# -----------------------------------------------------------------------------
+echo "test PRS-S10: --force-sync flag branch"
+
+if grep -qF -e "--force-sync)" "${TARGET}"; then
+  pass "PRS-S10 --force-sync flag branch present"
+else
+  fail "PRS-S10 --force-sync flag branch missing"
+fi
+
+if grep -qF 'FORCE_SYNC=1' "${TARGET}"; then
+  pass "PRS-S10 FORCE_SYNC=1 assignment present"
+else
+  fail "PRS-S10 FORCE_SYNC=1 assignment missing"
+fi
+
+# -----------------------------------------------------------------------------
+# PRS-S11: diverge 検出 (merge-base --is-ancestor) + 両 branch (FF / reset)
+# -----------------------------------------------------------------------------
+echo "test PRS-S11: divergence detection via git merge-base --is-ancestor"
+
+if grep -qE 'git merge-base --is-ancestor HEAD origin/main' "${TARGET}"; then
+  pass "PRS-S11 merge-base --is-ancestor check present"
+else
+  fail "PRS-S11 merge-base --is-ancestor check missing"
+fi
+
+# FF path と reset --hard path 両方が存在
+if grep -qE 'git merge --ff-only origin/main' "${TARGET}"; then
+  pass "PRS-S11 ff-only merge branch present (ancestor case)"
+else
+  fail "PRS-S11 ff-only merge branch missing"
+fi
+
+if grep -qE 'git reset --hard origin/main' "${TARGET}"; then
+  pass "PRS-S11 reset --hard origin/main branch present (force-sync case)"
+else
+  fail "PRS-S11 reset --hard origin/main branch missing"
+fi
+
+# -----------------------------------------------------------------------------
+# PRS-S12: diverge + --force-sync なし時のエラー案内
+# -----------------------------------------------------------------------------
+echo "test PRS-S12: divergence error guidance"
+
+if grep -qF 'diverged from origin/main' "${TARGET}"; then
+  pass "PRS-S12 divergence error message present"
+else
+  fail "PRS-S12 divergence error message missing"
+fi
+
+if grep -qF -e '--force-sync to discard' "${TARGET}"; then
+  pass "PRS-S12 error message guides user to --force-sync"
+else
+  fail "PRS-S12 error message does not mention --force-sync"
+fi
+
+# -----------------------------------------------------------------------------
+# PRS-S13: dry-run 動的テスト — default / --force-sync で output が変わる
+# -----------------------------------------------------------------------------
+echo "test PRS-S13: --dry-run output differs by --force-sync"
+
+default_dry="$(bash "${TARGET}" --dry-run 2>&1 || true)"
+force_dry="$(bash "${TARGET}" --dry-run --force-sync 2>&1 || true)"
+
+if printf '%s' "${default_dry}" | grep -qF 'fatal error if diverged'; then
+  pass "PRS-S13 default --dry-run mentions fatal on diverge"
+else
+  fail "PRS-S13 default --dry-run missing diverge warning"
+fi
+
+if printf '%s' "${force_dry}" | grep -qF '(--force-sync) git reset --hard'; then
+  pass "PRS-S13 --force-sync --dry-run announces reset --hard"
+else
+  fail "PRS-S13 --force-sync --dry-run missing reset announcement"
+fi
+
+# -----------------------------------------------------------------------------
 # サマリ
 # -----------------------------------------------------------------------------
 echo
