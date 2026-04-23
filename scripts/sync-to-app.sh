@@ -172,7 +172,7 @@ echo "=== sync-to-app: copying from parent to app/ ==="
 # mcp/ は Phase M で追加された独立 npm プロジェクト。node_modules/ はユーザーが
 # `bash scripts/setup-mcp.sh` で導入するため、rsync 側でも除外する。
 # Phase N で追加した build/ と dist/ (MCPB バンドルのビルド成果物) も同様に除外。
-for dir in hooks scripts templates skills tests mcp; do
+for dir in hooks scripts templates skills tests mcp docs .claude-plugin; do
   if [[ -d "${BRAIN_DIR}/${dir}" ]]; then
     # 2026-04-20 security-review HIGH-b1 fix:
     # 旧コードは `--exclude='.git*'` だったため、glob が `.gitignore` まで誤爆し
