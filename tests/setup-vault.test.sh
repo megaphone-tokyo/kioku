@@ -135,6 +135,19 @@ if grep -q '^type: hot-cache$' "${VAULT}/wiki/hot.md" 2>/dev/null; then
 else
   fail "wiki/hot.md should have frontmatter 'type: hot-cache' (HOT-V1)"
 fi
+# DB-V1 (v0.6 Phase C-4): Obsidian Bases dashboard 配置
+assert_dir_exists "${VAULT}/wiki/meta" "wiki/meta dir created (DB-V1)"
+assert_file_exists "${VAULT}/wiki/meta/dashboard.base" "wiki/meta/dashboard.base placed (DB-V1)"
+if grep -q '^filters:$' "${VAULT}/wiki/meta/dashboard.base" 2>/dev/null; then
+  pass "dashboard.base has filters: section (DB-V1)"
+else
+  fail "dashboard.base should have 'filters:' root key (DB-V1)"
+fi
+if grep -q 'name: "Hot Cache' "${VAULT}/wiki/meta/dashboard.base" 2>/dev/null; then
+  pass "dashboard.base references Hot Cache view (DB-V1)"
+else
+  fail "dashboard.base should include Hot Cache view (DB-V1)"
+fi
 assert_file_exists "${VAULT}/templates/concept.md" "templates/concept.md placed"
 assert_file_exists "${VAULT}/templates/project.md" "templates/project.md placed"
 assert_file_exists "${VAULT}/templates/decision.md" "templates/decision.md placed"
@@ -178,19 +191,24 @@ echo "test: idempotency"
 echo "user-edited content" > "${VAULT}/wiki/index.md"
 # HOT-V2: hot.md への user 編集も idempotent に保たれること
 printf -- '---\ntype: hot-cache\nupdated: 2026-05-03\n---\n\n## Recent Context\n- user wrote this\n' > "${VAULT}/wiki/hot.md"
+# DB-V2: dashboard.base の user カスタマイズも idempotent に保たれること (v0.6 Phase C-4)
+printf -- 'filters:\n  and:\n    - file.inFolder("wiki")\n\nviews:\n  - type: table\n    name: "My Custom View"\n' > "${VAULT}/wiki/meta/dashboard.base"
 user_claude_hash_before="$(shasum "${VAULT}/CLAUDE.md" | awk '{print $1}')"
 user_index_hash_before="$(shasum "${VAULT}/wiki/index.md" | awk '{print $1}')"
 user_hot_hash_before="$(shasum "${VAULT}/wiki/hot.md" | awk '{print $1}')"
+user_base_hash_before="$(shasum "${VAULT}/wiki/meta/dashboard.base" | awk '{print $1}')"
 
 OBSIDIAN_VAULT="${VAULT}" bash "${SETUP_VAULT}" >/dev/null
 
 user_claude_hash_after="$(shasum "${VAULT}/CLAUDE.md" | awk '{print $1}')"
 user_index_hash_after="$(shasum "${VAULT}/wiki/index.md" | awk '{print $1}')"
 user_hot_hash_after="$(shasum "${VAULT}/wiki/hot.md" | awk '{print $1}')"
+user_base_hash_after="$(shasum "${VAULT}/wiki/meta/dashboard.base" | awk '{print $1}')"
 
 assert_eq "${user_claude_hash_before}" "${user_claude_hash_after}" "CLAUDE.md unchanged on re-run"
 assert_eq "${user_index_hash_before}" "${user_index_hash_after}" "user-edited wiki/index.md preserved"
 assert_eq "${user_hot_hash_before}" "${user_hot_hash_after}" "user-edited wiki/hot.md preserved (HOT-V2)"
+assert_eq "${user_base_hash_before}" "${user_base_hash_after}" "user-edited dashboard.base preserved (DB-V2)"
 
 # -----------------------------------------------------------------------------
 # Test 6: 既存 CLAUDE.md がある場合 CLAUDE.brain.md に退避
