@@ -128,6 +128,13 @@ assert_file_exists "${VAULT}/CLAUDE.md" "CLAUDE.md placed"
 assert_file_exists "${VAULT}/.gitignore" ".gitignore placed"
 assert_file_exists "${VAULT}/wiki/index.md" "wiki/index.md placed"
 assert_file_exists "${VAULT}/wiki/log.md" "wiki/log.md placed"
+# HOT-V1 (v0.5.1 Phase B): hot cache template 配置
+assert_file_exists "${VAULT}/wiki/hot.md" "wiki/hot.md placed (HOT-V1)"
+if grep -q '^type: hot-cache$' "${VAULT}/wiki/hot.md" 2>/dev/null; then
+  pass "wiki/hot.md frontmatter type=hot-cache (HOT-V1)"
+else
+  fail "wiki/hot.md should have frontmatter 'type: hot-cache' (HOT-V1)"
+fi
 assert_file_exists "${VAULT}/templates/concept.md" "templates/concept.md placed"
 assert_file_exists "${VAULT}/templates/project.md" "templates/project.md placed"
 assert_file_exists "${VAULT}/templates/decision.md" "templates/decision.md placed"
@@ -169,16 +176,21 @@ fi
 echo "test: idempotency"
 # ユーザー編集を模擬
 echo "user-edited content" > "${VAULT}/wiki/index.md"
+# HOT-V2: hot.md への user 編集も idempotent に保たれること
+printf -- '---\ntype: hot-cache\nupdated: 2026-05-03\n---\n\n## Recent Context\n- user wrote this\n' > "${VAULT}/wiki/hot.md"
 user_claude_hash_before="$(shasum "${VAULT}/CLAUDE.md" | awk '{print $1}')"
 user_index_hash_before="$(shasum "${VAULT}/wiki/index.md" | awk '{print $1}')"
+user_hot_hash_before="$(shasum "${VAULT}/wiki/hot.md" | awk '{print $1}')"
 
 OBSIDIAN_VAULT="${VAULT}" bash "${SETUP_VAULT}" >/dev/null
 
 user_claude_hash_after="$(shasum "${VAULT}/CLAUDE.md" | awk '{print $1}')"
 user_index_hash_after="$(shasum "${VAULT}/wiki/index.md" | awk '{print $1}')"
+user_hot_hash_after="$(shasum "${VAULT}/wiki/hot.md" | awk '{print $1}')"
 
 assert_eq "${user_claude_hash_before}" "${user_claude_hash_after}" "CLAUDE.md unchanged on re-run"
 assert_eq "${user_index_hash_before}" "${user_index_hash_after}" "user-edited wiki/index.md preserved"
+assert_eq "${user_hot_hash_before}" "${user_hot_hash_after}" "user-edited wiki/hot.md preserved (HOT-V2)"
 
 # -----------------------------------------------------------------------------
 # Test 6: 既存 CLAUDE.md がある場合 CLAUDE.brain.md に退避

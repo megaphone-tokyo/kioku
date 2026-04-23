@@ -138,6 +138,25 @@ else
 fi
 
 # -----------------------------------------------------------------------------
+# Test 3b (IH-PC1 / IH-PC2): v0.5.1 Phase B — PostCompact hook output
+# -----------------------------------------------------------------------------
+# IH-PC1: snippet JSON に PostCompact event が含まれ、wiki-context-injector を
+#   CLAUDE_HOOK_EVENT=PostCompact 付きで起動する設定であること。
+if node -e "const j=require('${tmpjson}'); const pc=j.hooks.PostCompact; if(!Array.isArray(pc)||pc.length!==1){process.exit(1)} const cmd=pc[0].hooks[0].command; process.exit(/wiki-context-injector\.mjs/.test(cmd) && /CLAUDE_HOOK_EVENT=PostCompact/.test(cmd) ? 0 : 1)"; then
+  pass "PostCompact event present with wiki-context-injector + CLAUDE_HOOK_EVENT (IH-PC1)"
+else
+  fail "PostCompact event missing or misconfigured (IH-PC1)"
+fi
+
+# IH-PC2: PostCompact 追加で既存 5 event 構成が破壊されていないこと。
+# 具体的には: SessionStart の 2 entry / SessionEnd の 2 entry / PostToolUse の MultiEdit matcher が保たれる。
+if node -e "const j=require('${tmpjson}'); process.exit(j.hooks.SessionStart.length===2 && j.hooks.SessionEnd.length===2 && /MultiEdit/.test(j.hooks.PostToolUse[0].matcher) && Object.keys(j.hooks).length===6 ? 0 : 1)"; then
+  pass "PostCompact addition does not break existing 5-event structure (6 total, IH-PC2)"
+else
+  fail "PostCompact addition regressed existing hook structure (IH-PC2)"
+fi
+
+# -----------------------------------------------------------------------------
 # Test 4: fully-configured vault has no warnings
 # -----------------------------------------------------------------------------
 echo "test: fully configured vault produces no warnings"

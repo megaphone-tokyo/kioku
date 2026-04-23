@@ -214,6 +214,33 @@ assert_eq "0" "${rc}" "S8 exit code 0 (masked placeholders clean)"
 assert_contains "${out_s8}" "no secret-like patterns" "S8 clean message"
 
 # -----------------------------------------------------------------------------
+# Test S9 (SS-H1): v0.5.1 Phase B — wiki/hot.md に潜む秘密情報も検知する
+# -----------------------------------------------------------------------------
+echo "test S9 (SS-H1): leaked secret inside wiki/hot.md -> detected"
+VAULT_S9="$(make_vault vault-s9)"
+# session-logs 側はクリーン (hot.md scan が独立に動くことを保証するため)
+add_log "${VAULT_S9}" "20260101-111111-ssh1-clean" "# Session
+normal text, no secrets at all."
+# wiki/hot.md に生の Anthropic API key を仕込む (本番の MASK_RULES では捕捉される想定)
+cat > "${VAULT_S9}/wiki/hot.md" <<'EOF'
+---
+type: hot-cache
+updated: 2026-05-03
+---
+
+## Recent Context
+- accidentally pasted: sk-ant-api03-abcdefghijklmnopqrstuvwxyz01234567
+EOF
+
+set +e
+out_s9="$(OBSIDIAN_VAULT="${VAULT_S9}" bash "${SCAN_SCRIPT}" 2>&1)"
+rc=$?
+set -e
+assert_eq "2" "${rc}" "S9 (SS-H1) exit code 2 when hot.md leaks"
+assert_contains "${out_s9}" "Anthropic API key" "S9 (SS-H1) sk-ant category reported"
+assert_contains "${out_s9}" "wiki/hot.md" "S9 (SS-H1) hot.md path listed as matching file"
+
+# -----------------------------------------------------------------------------
 # サマリ
 # -----------------------------------------------------------------------------
 echo

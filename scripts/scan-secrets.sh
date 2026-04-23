@@ -68,6 +68,15 @@ if [[ ! -d "${LOGS_DIR}" ]]; then
   exit 1
 fi
 
+# v0.5.1 Phase B (Task B-2 / アクションアイテム #8):
+# wiki/hot.md は PostCompact hook で LLM コンテキストに注入される Git 同期対象 (boundary)。
+# session-logs/ と同じ MASK_RULES 適用ミスで秘密情報が漏れていないか並行してスキャンする。
+HOT_MD="${OBSIDIAN_VAULT}/wiki/hot.md"
+SCAN_TARGETS=("${LOGS_DIR}")
+if [[ -f "${HOT_MD}" ]]; then
+  SCAN_TARGETS+=("${HOT_MD}")
+fi
+
 # -----------------------------------------------------------------------------
 # 秘密情報パターン定義
 #
@@ -146,13 +155,13 @@ for i in "${!PATTERNS[@]}"; do
   pat="${PATTERNS[$i]}"
   name="${PATTERN_NAMES[$i]}"
 
-  # grep -r は session-logs/ 配下を再帰スキャン。
-  # --include='*.md' で対象を限定。
+  # grep -r は session-logs/ 配下を再帰スキャン。wiki/hot.md は単体 file として渡す
+  # (grep は dir と file を混在させて受け取れる。--include は dir 再帰側だけに効く)。
   # -E で ERE、-I でバイナリ除外、-c はヒット行数ではなくファイルごとの件数なので使わず
   # 明示的に行数カウントする。
   # grep はマッチ 0 件で exit 1 を返すため、`|| true` でパイプ失敗を吸収する
   # (set -o pipefail 下でも count=0 を得るため)。
-  count=$({ grep -rEIho --include='*.md' -- "${pat}" "${LOGS_DIR}" 2>/dev/null || true; } | wc -l | tr -d ' ')
+  count=$({ grep -rEIho --include='*.md' -- "${pat}" "${SCAN_TARGETS[@]}" 2>/dev/null || true; } | wc -l | tr -d ' ')
   count="${count:-0}"
 
   if [[ "${count}" -gt 0 ]]; then
@@ -176,7 +185,11 @@ if [[ "${JSON_MODE}" == "1" ]]; then
       "${TOTAL_HITS}" "${OBSIDIAN_VAULT}" "${LOGS_DIR}"
   fi
 else
-  echo "${LOG_PREFIX} Scanning ${LOGS_DIR} ..."
+  if [[ "${#SCAN_TARGETS[@]}" -gt 1 ]]; then
+    echo "${LOG_PREFIX} Scanning ${LOGS_DIR} (and ${HOT_MD}) ..."
+  else
+    echo "${LOG_PREFIX} Scanning ${LOGS_DIR} ..."
+  fi
   if [[ "${TOTAL_HITS}" == "0" ]]; then
     echo "${LOG_PREFIX} OK: no secret-like patterns found."
   else
@@ -186,11 +199,11 @@ else
       [[ -z "${name}" ]] && continue
       printf '  - %-40s %s hit(s)\n' "${name}" "${count}"
     done
-    echo "${LOG_PREFIX} Review session-logs/ manually. Matching files:"
+    echo "${LOG_PREFIX} Review scanned paths manually. Matching files:"
     # マッチしたファイルを列挙 (重複除去)。ヒットしたパターンのいずれかを含むファイル。
     {
       for pat in "${PATTERNS[@]}"; do
-        grep -rEIl --include='*.md' -- "${pat}" "${LOGS_DIR}" 2>/dev/null || true
+        grep -rEIl --include='*.md' -- "${pat}" "${SCAN_TARGETS[@]}" 2>/dev/null || true
       done
     } | sort -u | sed 's/^/    /'
     echo "${LOG_PREFIX} If these are false positives, add the pattern to an allowlist."

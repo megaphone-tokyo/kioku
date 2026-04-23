@@ -27,7 +27,54 @@ Instead, please report them via **GitHub Security Advisories**:
 
 - **Acknowledgment**: Within 48 hours
 - **Initial assessment**: Within 1 week
-- **Fix or mitigation**: Depends on severity (critical: ASAP, high: 1 week, medium: 2 weeks)
+- **Fix or mitigation**: Depends on severity (see CVE Classification below)
+
+### CVE Classification
+
+KIOKU uses the following severity framework (aligned with the internal `security-review/` terminology):
+
+| Severity | Criteria | SLA |
+|---|---|---|
+| **Critical** | Remote code execution, complete vault exfiltration, unauthorized arbitrary writes outside vault boundaries, supply-chain compromise of distributed `.mcpb` or plugin marketplace entry | ASAP (same-day hotfix target, out-of-band release) |
+| **High** | Local privilege escalation, partial vault exfiltration, prompt injection leading to unauthorized tool use, SSRF / DNS rebind bypass, masking failure on production token format, fail-open security guard | Within 1 week (patch release) |
+| **Medium** | Information disclosure in non-secret logs, DoS without data loss, integrity issue with obvious detection, defense-in-depth gap with active exploit preconditions | Within 2 weeks (bundled in next release) |
+| **Low** | Defense-in-depth weakness without direct exploit path, hardening opportunity, documentation gap affecting security guidance | Within 4 weeks or next scheduled release |
+| **Info** | Design observations, "hypothetical" concerns without concrete PoC, hardening suggestions | Triaged, no release SLA |
+
+Vulnerabilities affecting **production-visible attack surface** (MCP server, Hook scripts, extraction pipeline, auto-ingest cron, plugin marketplace artifact) are prioritized over **developer-mode issues** (test fixtures, local-only harnesses, development scripts).
+
+### Safe Harbor
+
+We support the security research community. We will not pursue legal action against researchers who:
+
+- Make a good-faith effort to avoid privacy violations, destruction of data, or interruption of our services
+- Report vulnerabilities only through the private channels above (GitHub Security Advisory or direct email to the maintainer)
+- Give us reasonable time to address the issue before publicly disclosing (90 days from initial report, or until the fix ships, whichever is sooner)
+- Do not exploit the vulnerability beyond the minimum necessary to demonstrate it
+- Do not access data belonging to other users, including local vault contents of other KIOKU installations
+
+If in doubt about whether a particular action falls within scope, **contact us before testing**. We are happy to authorize targeted research on a case-by-case basis.
+
+### Coordinated Disclosure Timeline
+
+Standard process:
+
+1. Report received → acknowledgment within 48 hours (GitHub Security Advisory or email)
+2. Initial assessment complete within 1 week (severity classification via the table above)
+3. Fix developed and deployed according to severity SLA
+4. CVE requested for **Medium or higher** issues that affect publicly distributed artifacts (`.mcpb` on GitHub Releases, Claude Code plugin marketplace entries)
+5. Public advisory published after fix deployment — the reporting researcher is credited in the advisory, the commit message, and `security-review/findings/` unless anonymity is requested
+
+Researchers may request embargo extension if the issue is especially sensitive (e.g. chained vulnerabilities across multiple downstream consumers). We will work with the researcher to agree on a responsible disclosure date.
+
+### Out of Scope
+
+The following are **not** considered security vulnerabilities under this policy (but bug reports in GitHub Issues are welcome):
+
+- Denial of service via intentional resource exhaustion that requires local shell access (e.g. filling disk with `session-logs/`)
+- Findings on development-only flags or test fixtures (`KIOKU_URL_ALLOW_LOOPBACK=1`, `KIOKU_DRY_RUN=1`, etc. — these are documented as test-only)
+- Issues in `raw-sources/<subdir>/fetched/` that originate from attacker-controlled HTML that the user **explicitly chose to ingest** (the threat model assumes the user verifies the source before running `kioku_ingest_url`)
+- Theoretical attacks that require a compromised machine already having full vault write access
 
 ## Security Design
 
