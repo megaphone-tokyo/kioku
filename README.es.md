@@ -16,7 +16,7 @@
 [![Follow @megaphone_tokyo](https://img.shields.io/twitter/follow/megaphone_tokyo?style=social)](https://x.com/megaphone_tokyo)
 
 Claude Code olvida el conocimiento adquirido en sesiones anteriores.
-claude-brain **acumula automáticamente tus conversaciones en una Wiki** y **las recupera en la siguiente sesión**.
+KIOKU **acumula automáticamente tus conversaciones en una Wiki** y **las recupera en la siguiente sesión**.
 
 Ya no necesitas repetir las mismas explicaciones una y otra vez. Un 'second brain' que crece con cada uso — para tu Claude.
 
@@ -25,10 +25,10 @@ Ya no necesitas repetir las mismas explicaciones una y otra vez. Un 'second brai
 ### Notas importantes
 
 > [!CAUTION]
-> claude-brain actualmente requiere **Claude Code (plan Max)**. El sistema de Hooks (L0) y la inyeccion de contexto del Wiki son funcionalidades especificas de Claude Code. El pipeline de Ingest/Lint (L1/L2) puede funcionar con otras APIs de LLM sustituyendo la llamada a `claude -p` — esto esta planificado como una mejora futura.
+> KIOKU actualmente requiere **Claude Code (plan Max)**. El sistema de Hooks (L0) y la inyeccion de contexto del Wiki son funcionalidades especificas de Claude Code. El pipeline de Ingest/Lint (L1/L2) puede funcionar con otras APIs de LLM sustituyendo la llamada a `claude -p` — esto esta planificado como una mejora futura.
 
 > [!WARNING]
-> **Entiende antes de instalar:** claude-brain se conecta a **toda la E/S de las sesiones de Claude Code**. Esto significa:
+> **Entiende antes de instalar:** KIOKU se conecta a **toda la E/S de las sesiones de Claude Code**. Esto significa:
 > - Los registros de sesión pueden contener **claves API, tokens o información personal** de tus prompts y la salida de herramientas. El enmascaramiento cubre los patrones principales pero no es exhaustivo — consulta [SECURITY.md](SECURITY.md)
 > - Si `.gitignore` está mal configurado, los registros de sesión podrían ser **enviados accidentalmente a GitHub**
 > - El pipeline de auto-ingest envía el contenido de los registros de sesión a Claude a través de `claude -p` para la extracción al Wiki
@@ -83,17 +83,17 @@ Ya no necesitas repetir las mismas explicaciones una y otra vez. Un 'second brai
 
 ### 1. Crear un Vault y conectarlo a un repositorio Git (manual)
 
-1. Crea un nuevo Vault en Obsidian (por ejemplo, `~/claude-brain/main-claude-brain`)
-2. Crea un repositorio privado en GitHub (por ejemplo, `claude-brain`)
+1. Crea un nuevo Vault en Obsidian (por ejemplo, `~/kioku-vault/main`)
+2. Crea un repositorio privado en GitHub (por ejemplo, `kioku-vault`)
 3. En el directorio del Vault: `git init && git remote add origin ...` (o `gh repo create --private --source=. --push`)
 
-Este paso no está automatizado por los scripts de claude-brain. La autenticación con GitHub (gh CLI / claves SSH) depende de tu entorno.
+Este paso no está automatizado por los scripts de KIOKU. La autenticación con GitHub (gh CLI / claves SSH) depende de tu entorno.
 
 ### 2. Configurar la variable de entorno
 
 ```bash
 # Añadir a ~/.zshrc o ~/.bashrc
-export OBSIDIAN_VAULT="$HOME/claude-brain/main-claude-brain"
+export OBSIDIAN_VAULT="$HOME/kioku-vault/main"
 ```
 
 ### 3. Inicializar el Vault
@@ -101,18 +101,18 @@ export OBSIDIAN_VAULT="$HOME/claude-brain/main-claude-brain"
 ```bash
 # Crea raw-sources/, session-logs/, wiki/, templates/ dentro del Vault,
 # coloca CLAUDE.md / .gitignore / plantillas iniciales (nunca sobrescribe archivos existentes)
-bash tools/claude-brain/scripts/setup-vault.sh
+bash scripts/setup-vault.sh
 ```
 
 ### 4. Instalar los Hooks
 
 ```bash
 # Opción A: Fusión automática (recomendado, requiere jq)
-bash tools/claude-brain/scripts/install-hooks.sh --apply
+bash scripts/install-hooks.sh --apply
 # Crea respaldo → muestra diff → solicita confirmación → añade entradas de hooks preservando la configuración existente
 
 # Opción B: Fusión manual
-bash tools/claude-brain/scripts/install-hooks.sh
+bash scripts/install-hooks.sh
 # Muestra el fragmento JSON en stdout para fusionar manualmente en ~/.claude/settings.json
 ```
 
@@ -127,11 +127,11 @@ Configura Ingest automático (diario) y Lint (mensual).
 
 ```bash
 # Detecta automáticamente el SO: macOS → LaunchAgent, Linux → cron
-bash tools/claude-brain/scripts/install-schedule.sh
+bash scripts/install-schedule.sh
 
 # Prueba primero con DRY RUN
-KIOKU_DRY_RUN=1 bash tools/claude-brain/scripts/auto-ingest.sh
-KIOKU_DRY_RUN=1 bash tools/claude-brain/scripts/auto-lint.sh
+KIOKU_DRY_RUN=1 bash scripts/auto-ingest.sh
+KIOKU_DRY_RUN=1 bash scripts/auto-lint.sh
 ```
 
 > **Nota para macOS**: Colocar el repositorio en `~/Documents/` o `~/Desktop/` puede hacer que TCC (Transparency, Consent, Control) bloquee el acceso en segundo plano con EPERM. Usa una ruta fuera de los directorios protegidos (por ejemplo, `~/_PROJECT/`).
@@ -141,21 +141,21 @@ KIOKU_DRY_RUN=1 bash tools/claude-brain/scripts/auto-lint.sh
 Habilita la búsqueda de texto completo y semántica del Wiki mediante MCP.
 
 ```bash
-bash tools/claude-brain/scripts/setup-qmd.sh
-bash tools/claude-brain/scripts/install-qmd-daemon.sh
+bash scripts/setup-qmd.sh
+bash scripts/install-qmd-daemon.sh
 ```
 
 ### 8. Instalar los skills de Wiki Ingest (opcional)
 
 ```bash
-bash tools/claude-brain/scripts/install-skills.sh
+bash scripts/install-skills.sh
 ```
 
 ### 9. Desplegar en máquinas adicionales
 
 ```bash
-git clone git@github.com:<USERNAME>/claude-brain.git ~/claude-brain/main-claude-brain
-# Abre ~/claude-brain/main-claude-brain/ como Vault en Obsidian
+git clone git@github.com:<USERNAME>/kioku-vault.git ~/kioku-vault/main
+# Abre ~/kioku-vault/main/ como Vault en Obsidian
 # Repite los pasos 2–6
 ```
 
@@ -164,7 +164,7 @@ git clone git@github.com:<USERNAME>/claude-brain.git ~/claude-brain/main-claude-
 ## Estructura de directorios
 
 ```
-tools/claude-brain/
+kioku/
 ├── README.md                        ← Este archivo
 ├── context/                         ← Implementación actual (INDEX + documentos por funcionalidad)
 ├── handoff/                         ← Notas de traspaso para la próxima sesión
@@ -203,7 +203,7 @@ tools/claude-brain/
 
 | Variable | Valor predeterminado | Propósito |
 |---|---|---|
-| `OBSIDIAN_VAULT` | ninguno (requerido) | Raíz del Vault. auto-ingest/lint recurren a `${HOME}/claude-brain/main-claude-brain` como alternativa |
+| `OBSIDIAN_VAULT` | ninguno (requerido) | Raíz del Vault. auto-ingest/lint recurren a `${HOME}/kioku-vault/main` como alternativa |
 | `KIOKU_DRY_RUN` | `0` | `1` para omitir llamadas a `claude -p` (solo verificación de rutas) |
 | `KIOKU_NO_LOG` | no definido | `1` para suprimir session-logger.mjs (previene el registro recursivo desde subprocesos de cron) |
 | `KIOKU_DEBUG` | no definido | `1` para emitir información de depuración a stderr y `session-logs/.claude-brain/errors.log` |
@@ -236,7 +236,7 @@ export PATH="${HOME}/.local/share/fnm/aliases/default/bin:${PATH}"
 
 ## Seguridad
 
-claude-brain es un sistema de Hooks que accede a **toda la E/S de las sesiones de Claude Code**.
+KIOKU es un sistema de Hooks que accede a **toda la E/S de las sesiones de Claude Code**.
 Consulta [SECURITY.md](SECURITY.md) para el diseño de seguridad completo.
 
 ### Capas de defensa
@@ -317,7 +317,7 @@ v0.6.0 consolida Phase C: canales de distribucion, dashboards nativos de Obsidia
 - Para instrucciones detalladas consulta [README.md](README.md) o [README.ja.md](README.ja.md)
 
 ### 2026-04-17 — Fase M: servidor MCP kioku-wiki
-- Servidor MCP local stdio (`tools/claude-brain/mcp/`) que expone seis herramientas — `kioku_search`, `kioku_read`, `kioku_list`, `kioku_write_note`, `kioku_write_wiki`, `kioku_delete`
+- Servidor MCP local stdio (`mcp/`) que expone seis herramientas — `kioku_search`, `kioku_read`, `kioku_list`, `kioku_write_note`, `kioku_write_wiki`, `kioku_delete`
 - Tanto Claude Desktop como Claude Code pueden ahora navegar, buscar y actualizar el Wiki sin salir del chat
 - Para instrucciones de configuración consulta [README.md](README.md) o [README.ja.md](README.ja.md)
 

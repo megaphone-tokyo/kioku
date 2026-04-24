@@ -11,7 +11,7 @@
 <sub>*KIOKU means "memory" in Japanese*</sub>
 
 Claude Code는 세션이 끝나면 과거의 지식을 잊어버립니다.
-claude-brain은 **대화를 자동으로 Wiki에 축적**하고 **다음 세션에서 이를 기억**합니다.
+KIOKU은 **대화를 자동으로 Wiki에 축적**하고 **다음 세션에서 이를 기억**합니다.
 
 같은 설명을 반복할 필요가 없습니다. 매번 사용할 때마다 성장하는 "세컨드 브레인" — 당신의 Claude를 위해.
 
@@ -45,7 +45,7 @@ Claude Code 세션을 자동으로 기록하고, Obsidian Vault 위에 구조화
 ## 주의사항
 
 > [!CAUTION]
-> claude-brain은 현재 **Claude Code (Max 플랜)**이 필요합니다. Hook 시스템(L0)과 Wiki 컨텍스트 주입은 Claude Code 전용 기능입니다. Ingest/Lint 파이프라인(L1/L2)은 `claude -p` 호출을 교체하면 다른 LLM API와 함께 사용할 수 있습니다 -- 이는 향후 개선으로 계획되어 있습니다.
+> KIOKU은 현재 **Claude Code (Max 플랜)**이 필요합니다. Hook 시스템(L0)과 Wiki 컨텍스트 주입은 Claude Code 전용 기능입니다. Ingest/Lint 파이프라인(L1/L2)은 `claude -p` 호출을 교체하면 다른 LLM API와 함께 사용할 수 있습니다 -- 이는 향후 개선으로 계획되어 있습니다.
 
 > [!IMPORTANT]
 > 이 소프트웨어는 어떠한 종류의 보증도 없이 **"있는 그대로"** 제공됩니다. 저자는 이 도구의 사용으로 인해 발생하는 데이터 손실, 보안 사고 또는 손해에 대해 **어떠한 책임도 지지 않습니다**. 사용에 따른 위험은 본인이 부담합니다. 전체 약관은 [LICENSE](../../LICENSE)를 참조하세요.
@@ -71,7 +71,7 @@ Claude Code 세션을 자동으로 기록하고, Obsidian Vault 위에 구조화
 ## 빠른 시작
 
 > [!WARNING]
-> **설치 전에 이해하세요:** claude-brain은 **모든 Claude Code 세션 I/O**에 hook됩니다. 이는 다음을 의미합니다:
+> **설치 전에 이해하세요:** KIOKU은 **모든 Claude Code 세션 I/O**에 hook됩니다. 이는 다음을 의미합니다:
 > - 세션 로그에는 프롬프트와 도구 출력의 **API 키, 토큰 또는 개인 정보**가 포함될 수 있습니다. 마스킹은 주요 패턴을 커버하지만 완전하지는 않습니다 -- [SECURITY.md](SECURITY.md)를 참조하세요
 > - `.gitignore`가 잘못 설정되면 세션 로그가 **실수로 GitHub에 푸시**될 수 있습니다
 > - 자동 Ingest 파이프라인은 Wiki 추출을 위해 `claude -p`를 통해 세션 로그 내용을 Claude에 전송합니다
@@ -84,7 +84,7 @@ Claude Code 세션을 자동으로 기록하고, Obsidian Vault 위에 구조화
 > Claude Code에서 다음을 입력하면 인터랙티브 가이드 설정이 시작됩니다. 각 단계의 목적을 설명하고 환경에 맞게 조정합니다.
 
 ```
-Please read tools/claude-brain/skills/setup-guide/SKILL.md and guide me through the claude-brain installation.
+Please read skills/setup-guide/SKILL.md and guide me through the KIOKU installation.
 ```
 
 ### 🛠️ 수동 설정
@@ -94,17 +94,17 @@ Please read tools/claude-brain/skills/setup-guide/SKILL.md and guide me through 
 
 #### 1. Vault를 만들고 Git 리포지토리에 연결 (수동)
 
-1. Obsidian에서 새 Vault 생성 (예: `~/claude-brain/main-claude-brain`)
-2. GitHub에 Private 리포지토리 생성 (예: `claude-brain`)
+1. Obsidian에서 새 Vault 생성 (예: `~/kioku-vault/main`)
+2. GitHub에 Private 리포지토리 생성 (예: `kioku-vault`)
 3. Vault 디렉터리에서: `git init && git remote add origin ...` (또는 `gh repo create --private --source=. --push`)
 
-이 단계는 claude-brain 스크립트로 자동화되지 않습니다. GitHub 인증(gh CLI / SSH 키)은 사용자 환경에 따라 다릅니다.
+이 단계는 KIOKU 스크립트로 자동화되지 않습니다. GitHub 인증(gh CLI / SSH 키)은 사용자 환경에 따라 다릅니다.
 
 #### 2. 환경 변수 설정
 
 ```bash
 # ~/.zshrc 또는 ~/.bashrc에 추가
-export OBSIDIAN_VAULT="$HOME/claude-brain/main-claude-brain"
+export OBSIDIAN_VAULT="$HOME/kioku-vault/main"
 ```
 
 #### 3. Vault 초기화
@@ -112,18 +112,18 @@ export OBSIDIAN_VAULT="$HOME/claude-brain/main-claude-brain"
 ```bash
 # Vault 하위에 raw-sources/, session-logs/, wiki/, templates/를 생성하고
 # CLAUDE.md / .gitignore / 초기 템플릿을 배치 (기존 파일은 절대 덮어쓰지 않음)
-bash tools/claude-brain/scripts/setup-vault.sh
+bash scripts/setup-vault.sh
 ```
 
 #### 4. Hook 설치
 
 ```bash
 # 옵션 A: 자동 병합 (권장, jq 필요)
-bash tools/claude-brain/scripts/install-hooks.sh --apply
+bash scripts/install-hooks.sh --apply
 # 백업 생성 → diff 표시 → 확인 프롬프트 → 기존 설정을 유지하면서 Hook 항목 추가
 
 # 옵션 B: 수동 병합
-bash tools/claude-brain/scripts/install-hooks.sh
+bash scripts/install-hooks.sh
 # JSON 스니펫을 stdout에 출력하여 ~/.claude/settings.json에 수동으로 병합
 ```
 
@@ -140,11 +140,11 @@ Claude Code를 재시작한 뒤, 대화를 한 번 진행합니다.
 
 ```bash
 # OS 자동 감지: macOS → LaunchAgent, Linux → cron
-bash tools/claude-brain/scripts/install-schedule.sh
+bash scripts/install-schedule.sh
 
 # 먼저 DRY RUN으로 테스트
-KIOKU_DRY_RUN=1 bash tools/claude-brain/scripts/auto-ingest.sh
-KIOKU_DRY_RUN=1 bash tools/claude-brain/scripts/auto-lint.sh
+KIOKU_DRY_RUN=1 bash scripts/auto-ingest.sh
+KIOKU_DRY_RUN=1 bash scripts/auto-lint.sh
 ```
 
 > **macOS 참고**: 리포를 `~/Documents/`나 `~/Desktop/` 아래에 두면 TCC(Transparency, Consent, Control)가 백그라운드 접근을 EPERM으로 차단할 수 있습니다. 보호된 디렉터리 밖의 경로(예: `~/_PROJECT/`)를 사용하세요.
@@ -154,21 +154,21 @@ KIOKU_DRY_RUN=1 bash tools/claude-brain/scripts/auto-lint.sh
 Wiki에 대한 MCP 기반 전문 검색 및 시맨틱 검색을 활성화합니다.
 
 ```bash
-bash tools/claude-brain/scripts/setup-qmd.sh
-bash tools/claude-brain/scripts/install-qmd-daemon.sh
+bash scripts/setup-qmd.sh
+bash scripts/install-qmd-daemon.sh
 ```
 
 #### 8. Wiki Ingest 스킬 설치 (선택 사항)
 
 ```bash
-bash tools/claude-brain/scripts/install-skills.sh
+bash scripts/install-skills.sh
 ```
 
 #### 9. 추가 머신에 배포
 
 ```bash
-git clone git@github.com:<USERNAME>/claude-brain.git ~/claude-brain/main-claude-brain
-# ~/claude-brain/main-claude-brain/을 Obsidian에서 Vault로 열기
+git clone git@github.com:<USERNAME>/kioku-vault.git ~/kioku-vault/main
+# ~/kioku-vault/main/을 Obsidian에서 Vault로 열기
 # 2~6단계를 반복
 ```
 
@@ -177,7 +177,7 @@ git clone git@github.com:<USERNAME>/claude-brain.git ~/claude-brain/main-claude-
 ## 디렉터리 구조
 
 ```
-tools/claude-brain/
+kioku/
 ├── README.md                        ← 이 파일
 ├── context/                         ← 현재 구현 (INDEX + 기능별 문서)
 ├── handoff/                         ← 다음 세션을 위한 인수인계 노트
@@ -216,7 +216,7 @@ tools/claude-brain/
 
 | 변수 | 기본값 | 용도 |
 |---|---|---|
-| `OBSIDIAN_VAULT` | 없음 (필수) | Vault 루트. auto-ingest/lint는 `${HOME}/claude-brain/main-claude-brain`으로 폴백 |
+| `OBSIDIAN_VAULT` | 없음 (필수) | Vault 루트. auto-ingest/lint는 `${HOME}/kioku-vault/main`으로 폴백 |
 | `KIOKU_DRY_RUN` | `0` | `1`로 설정 시 `claude -p` 호출을 건너뜀 (경로 확인만 수행) |
 | `KIOKU_NO_LOG` | 미설정 | `1`로 설정 시 session-logger.mjs를 비활성화 (cron 하위 프로세스의 재귀 로깅 방지) |
 | `KIOKU_DEBUG` | 미설정 | `1`로 설정 시 stderr와 `session-logs/.claude-brain/errors.log`에 디버그 정보 출력 |
@@ -249,7 +249,7 @@ export PATH="${HOME}/.local/share/fnm/aliases/default/bin:${PATH}"
 
 ## 멀티 머신 설정
 
-claude-brain은 Git 동기화를 통해 **여러 머신에서 하나의 Wiki를 공유**하도록 설계되었습니다.
+KIOKU은 Git 동기화를 통해 **여러 머신에서 하나의 Wiki를 공유**하도록 설계되었습니다.
 저자는 두 대의 Mac 설정을 사용합니다: MacBook(주 개발 머신)과 Mac mini(Claude Code bypass permission 모드용).
 
 멀티 머신 운영의 핵심 사항:
@@ -275,7 +275,7 @@ claude-brain은 Git 동기화를 통해 **여러 머신에서 하나의 Wiki를 
 
 ## 보안
 
-claude-brain은 **모든 Claude Code 세션 입출력**에 접근하는 Hook 시스템입니다.
+KIOKU은 **모든 Claude Code 세션 입출력**에 접근하는 Hook 시스템입니다.
 전체 보안 설계는 [SECURITY.md](SECURITY.md)를 참조하세요.
 
 ### 방어 계층
@@ -320,7 +320,7 @@ claude-brain은 **모든 Claude Code 세션 입출력**에 접근하는 Hook 시
 - [ ] **스택 추천 스킬 (`/wiki-suggest-stack`)** — 축적된 Wiki 지식을 기반으로 새 프로젝트의 기술 스택 제안
 - [ ] **팀 Wiki** — 다인 Wiki 공유 (각 멤버의 session-logs는 로컬 유지; wiki/만 Git으로 공유)
 
-> **참고**: claude-brain은 현재 **Claude Code (Max 플랜)**이 필요합니다. Hook 시스템(L0)과 Wiki 컨텍스트 주입은 Claude Code 전용입니다. Ingest/Lint 파이프라인(L1/L2)은 `claude -p` 호출을 교체하면 다른 LLM API와 함께 사용할 수 있습니다 -- 이는 향후 개선으로 계획되어 있습니다.
+> **참고**: KIOKU은 현재 **Claude Code (Max 플랜)**이 필요합니다. Hook 시스템(L0)과 Wiki 컨텍스트 주입은 Claude Code 전용입니다. Ingest/Lint 파이프라인(L1/L2)은 `claude -p` 호출을 교체하면 다른 LLM API와 함께 사용할 수 있습니다 -- 이는 향후 개선으로 계획되어 있습니다.
 
 <br>
 
@@ -380,7 +380,7 @@ v0.6.0는 Phase C를 한 번에 land.
 - 자세한 설치 방법은 [README.md](README.md) 또는 [README.ja.md](README.ja.md) 참조
 
 ### 2026-04-17 — Phase M: kioku-wiki MCP 서버
-- 로컬 stdio MCP 서버 (`tools/claude-brain/mcp/`)가 6개의 도구를 제공 — `kioku_search`, `kioku_read`, `kioku_list`, `kioku_write_note`, `kioku_write_wiki`, `kioku_delete`
+- 로컬 stdio MCP 서버 (`mcp/`)가 6개의 도구를 제공 — `kioku_search`, `kioku_read`, `kioku_list`, `kioku_write_note`, `kioku_write_wiki`, `kioku_delete`
 - Claude Desktop과 Claude Code 모두 채팅을 떠나지 않고 Wiki를 검색·열람·편집 가능
 - 설정 방법은 [README.md](README.md) 또는 [README.ja.md](README.ja.md) 참조
 

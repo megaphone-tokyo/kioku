@@ -16,7 +16,7 @@
 [![Follow @megaphone_tokyo](https://img.shields.io/twitter/follow/megaphone_tokyo?style=social)](https://x.com/megaphone_tokyo)
 
 Claude Code forgets knowledge from past sessions as they go.
-claude-brain **automatically accumulates your conversations into a Wiki** and **recalls them in the next session**.
+KIOKU **automatically accumulates your conversations into a Wiki** and **recalls them in the next session**.
 
 No more repeating the same explanations over and over.
 A "second brain" that grows with every use — for your Claude.
@@ -53,7 +53,7 @@ Combines Andrej Karpathy's LLM Wiki pattern with auto-logging and Git sync acros
 ## Important Notes
 
 > [!CAUTION]
-> claude-brain currently requires **Claude Code (Max plan)**. The Hook system (L0) and Wiki context injection are Claude Code-specific features. The Ingest/Lint pipeline (L1/L2) can work with other LLM APIs by swapping the `claude -p` call — this is planned as a future enhancement.
+> KIOKU currently requires **Claude Code (Max plan)**. The Hook system (L0) and Wiki context injection are Claude Code-specific features. The Ingest/Lint pipeline (L1/L2) can work with other LLM APIs by swapping the `claude -p` call — this is planned as a future enhancement.
 
 > [!IMPORTANT]
 > This software is provided **"as is"**, without warranty of any kind. The authors assume **no responsibility** for any data loss, security incidents, or damages arising from the use of this tool. Use at your own risk. See [LICENSE](../../LICENSE) for full terms.
@@ -80,7 +80,7 @@ Combines Andrej Karpathy's LLM Wiki pattern with auto-logging and Git sync acros
 ## Quick Start
 
 > [!WARNING]
-> **Understand before you install:** claude-brain hooks into **all Claude Code session I/O**. This means:
+> **Understand before you install:** KIOKU hooks into **all Claude Code session I/O**. This means:
 > - Session logs may contain **API keys, tokens, or personal information** from your prompts and tool output. Masking covers major patterns but is not exhaustive — review [SECURITY.md](SECURITY.md)
 > - If `.gitignore` is misconfigured, session logs could be **accidentally pushed to GitHub**
 > - The auto-ingest pipeline sends session log content to Claude via `claude -p` for Wiki extraction
@@ -93,7 +93,7 @@ Combines Andrej Karpathy's LLM Wiki pattern with auto-logging and Git sync acros
 > Enter the following in Claude Code to start an interactive, guided setup. It explains each step's purpose and adapts to your environment.
 
 ```
-Please read tools/claude-brain/skills/setup-guide/SKILL.md and guide me through the claude-brain installation.
+Please read skills/setup-guide/SKILL.md and guide me through the KIOKU installation.
 ```
 
 ### 🛠️ Manual Setup
@@ -103,17 +103,17 @@ Please read tools/claude-brain/skills/setup-guide/SKILL.md and guide me through 
 
 #### 1. Create a Vault and connect it to a Git repository (manual)
 
-1. Create a new Vault in Obsidian (e.g., `~/claude-brain/main-claude-brain`)
-2. Create a Private repository on GitHub (e.g., `claude-brain`)
+1. Create a new Vault in Obsidian (e.g., `~/kioku-vault/main`)
+2. Create a Private repository on GitHub (e.g., `kioku-vault`)
 3. In the Vault directory: `git init && git remote add origin ...` (or `gh repo create --private --source=. --push`)
 
-This step is not automated by claude-brain scripts. GitHub authentication (gh CLI / SSH keys) depends on your environment.
+This step is not automated by KIOKU scripts. GitHub authentication (gh CLI / SSH keys) depends on your environment.
 
 #### 2. Set the environment variable
 
 ```bash
 # Add to ~/.zshrc or ~/.bashrc
-export OBSIDIAN_VAULT="$HOME/claude-brain/main-claude-brain"
+export OBSIDIAN_VAULT="$HOME/kioku-vault/main"
 ```
 
 #### 3. Initialize the Vault
@@ -121,18 +121,18 @@ export OBSIDIAN_VAULT="$HOME/claude-brain/main-claude-brain"
 ```bash
 # Creates raw-sources/, session-logs/, wiki/, templates/ under the Vault,
 # places CLAUDE.md / .gitignore / initial templates (never overwrites existing files)
-bash tools/claude-brain/scripts/setup-vault.sh
+bash scripts/setup-vault.sh
 ```
 
 #### 4. Install Hooks
 
 ```bash
 # Option A: Auto-merge (recommended, requires jq)
-bash tools/claude-brain/scripts/install-hooks.sh --apply
+bash scripts/install-hooks.sh --apply
 # Creates backup → shows diff → confirmation prompt → adds hook entries preserving existing config
 
 # Option B: Manual merge
-bash tools/claude-brain/scripts/install-hooks.sh
+bash scripts/install-hooks.sh
 # Outputs JSON snippet to stdout for manual merge into ~/.claude/settings.json
 ```
 
@@ -149,11 +149,11 @@ Configure automatic Ingest (daily) and Lint (monthly).
 
 ```bash
 # Auto-detects OS: macOS → LaunchAgent, Linux → cron
-bash tools/claude-brain/scripts/install-schedule.sh
+bash scripts/install-schedule.sh
 
 # Test with DRY RUN first
-KIOKU_DRY_RUN=1 bash tools/claude-brain/scripts/auto-ingest.sh
-KIOKU_DRY_RUN=1 bash tools/claude-brain/scripts/auto-lint.sh
+KIOKU_DRY_RUN=1 bash scripts/auto-ingest.sh
+KIOKU_DRY_RUN=1 bash scripts/auto-lint.sh
 ```
 
 > **macOS note**: Placing the repo under `~/Documents/` or `~/Desktop/` may cause TCC (Transparency, Consent, Control) to block background access with EPERM. Use a path outside protected directories (e.g., `~/_PROJECT/`).
@@ -163,21 +163,21 @@ KIOKU_DRY_RUN=1 bash tools/claude-brain/scripts/auto-lint.sh
 Enable MCP-powered full-text and semantic search for the Wiki.
 
 ```bash
-bash tools/claude-brain/scripts/setup-qmd.sh
-bash tools/claude-brain/scripts/install-qmd-daemon.sh
+bash scripts/setup-qmd.sh
+bash scripts/install-qmd-daemon.sh
 ```
 
 #### 8. Install Wiki Ingest skills (optional)
 
 ```bash
-bash tools/claude-brain/scripts/install-skills.sh
+bash scripts/install-skills.sh
 ```
 
 #### 9. Deploy to additional machines
 
 ```bash
-git clone git@github.com:<USERNAME>/claude-brain.git ~/claude-brain/main-claude-brain
-# Open ~/claude-brain/main-claude-brain/ as a Vault in Obsidian
+git clone git@github.com:<USERNAME>/kioku-vault.git ~/kioku-vault/main
+# Open ~/kioku-vault/main/ as a Vault in Obsidian
 # Repeat steps 2–6
 ```
 
@@ -188,20 +188,20 @@ The **`kioku-wiki` MCP server** lets both Claude Desktop and Claude Code search,
 
 ```bash
 # 1. Install dependency (only inside mcp/, parent repo stays package.json-free)
-bash tools/claude-brain/scripts/setup-mcp.sh
+bash scripts/setup-mcp.sh
 
 # 2. Smoke test with the official Inspector
-npx @modelcontextprotocol/inspector node tools/claude-brain/mcp/server.mjs
+npx @modelcontextprotocol/inspector node mcp/server.mjs
 
 # 3. Preview client-config changes
-bash tools/claude-brain/scripts/install-mcp-client.sh --dry-run
+bash scripts/install-mcp-client.sh --dry-run
 
 # 4. Apply (merges into ~/Library/Application Support/Claude/claude_desktop_config.json)
-bash tools/claude-brain/scripts/install-mcp-client.sh --apply
+bash scripts/install-mcp-client.sh --apply
 
 # 5. Register with Claude Code (CLI / VSCode) via the printed stdio command
 claude mcp add --scope user --transport stdio kioku \
-  "$(command -v node)" "$(pwd)/tools/claude-brain/mcp/server.mjs"
+  "$(command -v node)" "$(pwd)/mcp/server.mjs"
 ```
 
 Nine tools provided:
@@ -240,8 +240,8 @@ Re-run the steps only in these specific cases:
 Uninstall:
 
 ```bash
-bash tools/claude-brain/scripts/install-mcp-client.sh --uninstall
-rm -rf tools/claude-brain/mcp/node_modules
+bash scripts/install-mcp-client.sh --uninstall
+rm -rf mcp/node_modules
 ```
 
 #### 11. MCPB bundle for Claude Desktop (one-file install)
@@ -266,14 +266,14 @@ If you only use **Claude Desktop** and want the shortest install path, install t
 
 ```bash
 # 1. Build the .mcpb bundle (writes mcp/dist/kioku-wiki-<version>.mcpb, ~3.2 MB)
-bash tools/claude-brain/scripts/build-mcpb.sh
+bash scripts/build-mcpb.sh
 
 # 2. (Optional) validate manifest + inspect contents
-bash tools/claude-brain/scripts/build-mcpb.sh --validate
-npx --yes @anthropic-ai/mcpb info tools/claude-brain/mcp/dist/kioku-wiki-0.1.0.mcpb
+bash scripts/build-mcpb.sh --validate
+npx --yes @anthropic-ai/mcpb info mcp/dist/kioku-wiki-0.1.0.mcpb
 
 # 3. Clean build artifacts
-bash tools/claude-brain/scripts/build-mcpb.sh --clean
+bash scripts/build-mcpb.sh --clean
 ```
 
 The bundle is **gitignored** (`mcp/build/`, `mcp/dist/`). To publish a new release: run `build-mcpb.sh`, then attach the resulting `.mcpb` to a new [GitHub Release](https://github.com/megaphone-tokyo/kioku/releases) of the [megaphone-tokyo/kioku](https://github.com/megaphone-tokyo/kioku) repo. End users will then download it via Option A.
@@ -316,7 +316,7 @@ If you also use Claude Code, its conversations are captured **automatically** wi
 ## Directory Structure
 
 ```
-tools/claude-brain/
+kioku/
 ├── README.md                        ← This file
 ├── context/                         ← Current implementation (INDEX + per-feature docs)
 ├── handoff/                         ← Handoff notes for next session
@@ -355,7 +355,7 @@ tools/claude-brain/
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `OBSIDIAN_VAULT` | none (required) | Vault root. auto-ingest/lint fall back to `${HOME}/claude-brain/main-claude-brain` |
+| `OBSIDIAN_VAULT` | none (required) | Vault root. auto-ingest/lint fall back to `${HOME}/kioku-vault/main` |
 | `KIOKU_DRY_RUN` | `0` | `1` to skip `claude -p` calls (path verification only) |
 | `KIOKU_NO_LOG` | unset | `1` to suppress session-logger.mjs (prevents recursive logging from cron subprocesses) |
 | `KIOKU_DEBUG` | unset | `1` to emit debug info to stderr and `session-logs/.claude-brain/errors.log` |
@@ -388,7 +388,7 @@ export PATH="${HOME}/.local/share/fnm/aliases/default/bin:${PATH}"
 
 ## Multi-Machine Setup
 
-claude-brain is designed to **share a single Wiki across multiple machines** via Git sync.
+KIOKU is designed to **share a single Wiki across multiple machines** via Git sync.
 The author runs a two-Mac setup: a MacBook (primary dev machine) and a Mac mini (for Claude Code bypass permission mode).
 
 Key points for multi-machine operation:
@@ -414,7 +414,7 @@ Reference: author's two-Mac configuration
 
 ## Security
 
-claude-brain is a Hook system that accesses **all Claude Code session I/O**.
+KIOKU is a Hook system that accesses **all Claude Code session I/O**.
 See [SECURITY.md](SECURITY.md) for the full security design.
 
 ### Defense Layers
@@ -459,7 +459,7 @@ If you find a security issue, please report it via [SECURITY.md](SECURITY.md) �
 - [ ] **Stack recommendation skill (`/wiki-suggest-stack`)** — Suggest tech stacks for new projects based on accumulated Wiki knowledge
 - [ ] **Team Wiki** — Multi-person Wiki sharing (each member's session-logs stay local; only wiki/ is shared via Git)
 
-> **Note**: claude-brain currently requires **Claude Code (Max plan)**. The Hook system (L0) and Wiki context injection are Claude Code-specific. The Ingest/Lint pipeline (L1/L2) can work with other LLM APIs by swapping the `claude -p` call — this is planned as a future enhancement.
+> **Note**: KIOKU currently requires **Claude Code (Max plan)**. The Hook system (L0) and Wiki context injection are Claude Code-specific. The Ingest/Lint pipeline (L1/L2) can work with other LLM APIs by swapping the `claude -p` call — this is planned as a future enhancement.
 
 <br>
 
@@ -520,7 +520,7 @@ v0.6.0 lands Phase C in one shot: distribution channels (Claude Code plugin + mu
 - See **§ 11** above for build / install steps
 
 ### 2026-04-17 — Phase M: kioku-wiki MCP server
-- Local stdio MCP server (`tools/claude-brain/mcp/`) exposing six tools — `kioku_search`, `kioku_read`, `kioku_list`, `kioku_write_note`, `kioku_write_wiki`, `kioku_delete`
+- Local stdio MCP server (`mcp/`) exposing six tools — `kioku_search`, `kioku_read`, `kioku_list`, `kioku_write_note`, `kioku_write_wiki`, `kioku_delete`
 - Both Claude Desktop and Claude Code can now browse, search, and update the Wiki on demand without leaving the chat
 - See **§ 10** above for setup
 
