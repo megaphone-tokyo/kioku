@@ -25,7 +25,7 @@ views:
     limit: 5
     filters:
       and:
-        - file.name == "hot.md"
+        - 'file.name == "hot"'
     order:
       - file.name
       - updated
