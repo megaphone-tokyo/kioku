@@ -326,6 +326,22 @@ claude-brain은 **모든 Claude Code 세션 입출력**에 접근하는 Hook 시
 
 ## 변경 이력
 
+### 2026-04-24 — v0.6.0: 에코시스템 확장 — multi-agent + plugin marketplace + Bases dashboard + delta tracking + security hardening
+
+v0.6.0는 Phase C를 한 번에 land.
+
+- **멀티 에이전트 cross-platform (C-1)** — `scripts/setup-multi-agent.sh`로 Codex / OpenCode / Gemini CLI에 KIOKU skills symlink. 19/19 Bash assertions
+- **Claude Code plugin marketplace (C-2)** — `claude marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo`
+- **Raw MD sha256 delta tracking (C-3)** — `raw-sources/<subdir>/*.md` MD도 sha256 delta 검출 대상. 82/82 auto-ingest assertions
+- **Obsidian Bases dashboard (C-4)** — `templates/wiki/meta/dashboard.base` 9 view
+- **Visualizer 기반 (V-1, v0.7 α 준비)** — `mcp/lib/git-history.mjs` + `mcp/lib/wiki-snapshot.mjs` + 14/14 Node assertions
+- **Security policy 강화 (C-5a)** — `SECURITY.md`에 CVE Classification / Safe Harbor / Coordinated Disclosure Timeline. `SECURITY.ja.md` 4/7 section
+- **Community channel 전환** — 전용 Discord 미채택, GitHub Discussions로 통일
+- **조직 지식** — LEARN#10 (PM handoff script line verify 필수화)
+- **v0.7+로 defer** — Visualizer HTML UI, LP β, GitHub Discussions enable, SECURITY.ja 나머지 3 section
+- 테스트: **Node 264/264 + Bash 400+/400+ green**
+- [Release v0.6.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.6.0) — `kioku-wiki-0.6.0.mcpb` (~9 MB)
+
 ### 2026-04-23 — v0.5.1: Hot cache + PostCompact hook + opt-in Stop prompt
 
 - **Hot cache 패턴** — 새로운 `wiki/hot.md` (<=500 단어, hard cap 4000자) 가 **SessionStart** 시 자동 주입되고, **PostCompact** (context compaction) 이후 재주입되어 LLM이 session 및 compaction 간에 단기 작업 context를 유지할 수 있음. claude-obsidian의 UX 패턴에서 영감을 받음

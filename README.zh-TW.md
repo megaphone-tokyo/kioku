@@ -331,6 +331,22 @@ claude-brain 是一個存取**所有 Claude Code 工作階段 I/O** 的 Hook 系
 
 ## 更新歷史
 
+### 2026-04-24 — v0.6.0：生態系統擴展 — 多代理 + 插件 marketplace + Bases 儀表板 + delta tracking + 安全強化
+
+v0.6.0 整合 Phase C。
+
+- **多代理 cross-platform (C-1)** — `scripts/setup-multi-agent.sh` 將 KIOKU skills 符號連結到 Codex / OpenCode / Gemini CLI。19/19 Bash 斷言
+- **Claude Code plugin marketplace (C-2)** — `claude marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo`
+- **Raw MD sha256 delta tracking (C-3)** — `raw-sources/<subdir>/*.md` 的 MD 參與 sha256 delta 檢測。82/82 auto-ingest 斷言
+- **Obsidian Bases 儀表板 (C-4)** — `templates/wiki/meta/dashboard.base` 9 種視圖
+- **Visualizer 基礎 (V-1，v0.7 α 準備)** — `mcp/lib/git-history.mjs` + `mcp/lib/wiki-snapshot.mjs`，14/14 Node 斷言
+- **安全策略升級 (C-5a)** — `SECURITY.md` 新增 CVE Classification / Safe Harbor / Coordinated Disclosure Timeline。`SECURITY.ja.md` 4/7 小節
+- **社群管道轉向** — 專用 Discord 不採用，GitHub Discussions 官方管道
+- **組織知識** — LEARN#10（PM handoff 建立時 script line verify 必須化）
+- **延後到 v0.7+** — Visualizer HTML UI、LP β、GitHub Discussions 啟用、SECURITY.ja 剩餘 3 小節
+- 測試：**Node 264/264 + Bash 400+/400+ 斷言全綠**
+- [Release v0.6.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.6.0) — `kioku-wiki-0.6.0.mcpb` (~9 MB)
+
 ### 2026-04-23 — v0.5.1：熱快取 + PostCompact hook + opt-in Stop prompt
 
 - **熱快取模式** — 新增 `wiki/hot.md`（≤500 字，硬上限 4000 字元），在 **SessionStart** 時自動注入,並在 **PostCompact**（context 壓縮）後重新注入,讓 LLM 在 session 和 compaction 之間保留短期工作 context。靈感來自 claude-obsidian 的 UX 模式

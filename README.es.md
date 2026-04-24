@@ -263,6 +263,22 @@ Si encuentras un problema de seguridad, repórtalo a través de [SECURITY.md](SE
 
 ## Cambios
 
+### 2026-04-24 — v0.6.0: Expansion del ecosistema — multi-agente + marketplace de plugins + dashboard Bases + delta tracking + endurecimiento de seguridad
+
+v0.6.0 consolida Phase C: canales de distribucion, dashboards nativos de Obsidian, ingest resistente a regresiones, y actualizacion de politica de seguridad.
+
+- **Multi-agente cross-platform (C-1)** — `scripts/setup-multi-agent.sh` crea symlinks en Codex / OpenCode / Gemini CLI. 19/19 aserciones Bash
+- **Marketplace Claude Code (C-2)** — `claude marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo`
+- **Delta tracking sha256 (C-3)** — Archivos MD colocados en `raw-sources/<subdir>/*.md` ahora participan en la deteccion delta. 82/82 aserciones auto-ingest
+- **Dashboard Obsidian Bases (C-4)** — `templates/wiki/meta/dashboard.base` con 9 vistas
+- **Cimientos Visualizer (V-1, v0.7)** — `mcp/lib/git-history.mjs` + `mcp/lib/wiki-snapshot.mjs`, 14/14 aserciones Node
+- **Politica de seguridad (C-5a)** — CVE Classification / Safe Harbor / Coordinated Disclosure Timeline. `SECURITY.ja.md` 4/7 secciones
+- **Canal comunitario** — Discord dedicado descartado, GitHub Discussions canonico
+- **LEARN organizacional** — LEARN#10 (script verify en handoff PM)
+- **Diferido v0.7+** — UI HTML Visualizer, LP β, GitHub Discussions, 3 secciones SECURITY.ja restantes
+- Tests: **Node 264/264 + Bash 400+/400+ verdes**
+- [Release v0.6.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.6.0) — `kioku-wiki-0.6.0.mcpb` (~9 MB)
+
 ### 2026-04-23 — v0.5.1: Hot cache + hook PostCompact + prompt Stop opt-in
 
 - **Patron hot cache** — Nuevo `wiki/hot.md` (<=500 palabras, limite rigido 4000 caracteres) se inyecta automaticamente en **SessionStart** y se reinyecta tras **PostCompact** (compactacion de contexto), para que el LLM conserve el contexto de trabajo a corto plazo entre sesiones y compactaciones. Inspirado en el patron UX de claude-obsidian
