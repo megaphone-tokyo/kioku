@@ -946,6 +946,203 @@ else
 fi
 
 # -----------------------------------------------------------------------------
+# v0.6 Phase C-3 (Raw MD sha256 delta detection) — F23 / F24 / F25 / F26 / F27
+# -----------------------------------------------------------------------------
+# F23: raw MD frontmatter source_sha256 が summary と一致 → 再 Ingest しない
+# F24: raw MD frontmatter source_sha256 が summary と不一致 → UNPROCESSED_SOURCES++
+# F25: raw MD に frontmatter 無し + summary の source_sha256 が file binary sha256 と
+#      一致 → 再 Ingest しない (file-binary fallback 成功経路)
+# F26: raw MD に frontmatter 無し + summary の source_sha256 が file binary sha256 と
+#      不一致 (raw MD 改変後) → UNPROCESSED_SOURCES++
+# F27: raw MD に frontmatter 無しの場合 sidecar `.cache/raw-md-sha/<subdir>-<flat>.sha256`
+#      が生成される (LLM 向け受け渡し経路) / fetched/ 配下は sidecar 不生成
+# -----------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Helper: raw MD の file binary sha256 を計算 (test fixture 用)
+# ---------------------------------------------------------------------------
+sha256_of_file() {
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" 2>/dev/null | awk '{print $1}'
+  else
+    sha256sum "$1" 2>/dev/null | awk '{print $1}'
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Test F23: raw MD frontmatter source_sha256 一致 → 再 Ingest しない
+# ---------------------------------------------------------------------------
+echo "test F23: raw MD frontmatter sha256 match → skip"
+VAULT_F23="$(make_vault vault-f23)"
+mkdir -p "${VAULT_F23}/raw-sources/articles" "${VAULT_F23}/wiki/summaries"
+cat > "${VAULT_F23}/raw-sources/articles/karpathy-note.md" <<'EOF'
+---
+title: "Karpathy Note"
+source_sha256: "1111111111111111111111111111111111111111111111111111111111111111"
+---
+body
+EOF
+cat > "${VAULT_F23}/wiki/summaries/articles-karpathy-note.md" <<'EOF'
+---
+title: "Karpathy Note summary"
+source_sha256: "1111111111111111111111111111111111111111111111111111111111111111"
+---
+summary
+EOF
+set +e
+out_f23="$(
+  PATH="${STUB_DIR}:${PATH}" \
+  OBSIDIAN_VAULT="${VAULT_F23}" \
+  KIOKU_DRY_RUN=1 \
+  bash "${AUTO_INGEST}" 2>&1
+)"
+rc=$?
+set -e
+assert_eq "0" "${rc}" "F23 exit code 0"
+assert_contains "${out_f23}" "No unprocessed logs or raw-sources" "F23 matching frontmatter sha256 not re-ingested"
+
+# ---------------------------------------------------------------------------
+# Test F24: raw MD frontmatter source_sha256 不一致 → UNPROCESSED_SOURCES++
+# ---------------------------------------------------------------------------
+echo "test F24: raw MD frontmatter sha256 mismatch → re-ingest"
+VAULT_F24="$(make_vault vault-f24)"
+mkdir -p "${VAULT_F24}/raw-sources/articles" "${VAULT_F24}/wiki/summaries"
+cat > "${VAULT_F24}/raw-sources/articles/note.md" <<'EOF'
+---
+title: "Note"
+source_sha256: "2222222222222222222222222222222222222222222222222222222222222222"
+---
+new body
+EOF
+cat > "${VAULT_F24}/wiki/summaries/articles-note.md" <<'EOF'
+---
+title: "Note (stale summary)"
+source_sha256: "3333333333333333333333333333333333333333333333333333333333333333"
+---
+old summary
+EOF
+set +e
+out_f24="$(
+  PATH="${STUB_DIR}:${PATH}" \
+  OBSIDIAN_VAULT="${VAULT_F24}" \
+  KIOKU_DRY_RUN=1 \
+  bash "${AUTO_INGEST}" 2>&1
+)"
+rc=$?
+set -e
+assert_eq "0" "${rc}" "F24 exit code 0"
+assert_contains "${out_f24}" "Found 0 unprocessed log(s) and 1 unprocessed raw-source" "F24 mismatched frontmatter sha256 re-ingested"
+
+# ---------------------------------------------------------------------------
+# Test F25: raw MD 無 frontmatter + summary の sha256 が file binary と一致 → skip
+# ---------------------------------------------------------------------------
+echo "test F25: raw MD without frontmatter + summary sha matches file-binary → skip"
+VAULT_F25="$(make_vault vault-f25)"
+mkdir -p "${VAULT_F25}/raw-sources/articles" "${VAULT_F25}/wiki/summaries"
+# frontmatter なしの raw MD を配置
+cat > "${VAULT_F25}/raw-sources/articles/plain.md" <<'EOF'
+# plain markdown
+
+no frontmatter here
+EOF
+# file の binary sha256 を summary に書き込む
+RAW_SHA_F25="$(sha256_of_file "${VAULT_F25}/raw-sources/articles/plain.md")"
+cat > "${VAULT_F25}/wiki/summaries/articles-plain.md" <<EOF
+---
+title: "Plain summary"
+source_sha256: "${RAW_SHA_F25}"
+---
+summary
+EOF
+set +e
+out_f25="$(
+  PATH="${STUB_DIR}:${PATH}" \
+  OBSIDIAN_VAULT="${VAULT_F25}" \
+  KIOKU_DRY_RUN=1 \
+  bash "${AUTO_INGEST}" 2>&1
+)"
+rc=$?
+set -e
+assert_eq "0" "${rc}" "F25 exit code 0"
+assert_contains "${out_f25}" "No unprocessed logs or raw-sources" "F25 file-binary sha256 fallback matches → skip"
+
+# ---------------------------------------------------------------------------
+# Test F26: raw MD 無 frontmatter + summary の sha256 が file binary と不一致 → re-ingest
+# ---------------------------------------------------------------------------
+echo "test F26: raw MD without frontmatter + summary sha stale → re-ingest"
+VAULT_F26="$(make_vault vault-f26)"
+mkdir -p "${VAULT_F26}/raw-sources/articles" "${VAULT_F26}/wiki/summaries"
+# raw MD (frontmatter なし) + 古い summary に (意図的に) 異なる sha
+cat > "${VAULT_F26}/raw-sources/articles/plain.md" <<'EOF'
+# updated content
+
+first line changed
+EOF
+cat > "${VAULT_F26}/wiki/summaries/articles-plain.md" <<'EOF'
+---
+title: "Plain (stale)"
+source_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+---
+summary
+EOF
+set +e
+out_f26="$(
+  PATH="${STUB_DIR}:${PATH}" \
+  OBSIDIAN_VAULT="${VAULT_F26}" \
+  KIOKU_DRY_RUN=1 \
+  bash "${AUTO_INGEST}" 2>&1
+)"
+rc=$?
+set -e
+assert_eq "0" "${rc}" "F26 exit code 0"
+assert_contains "${out_f26}" "Found 0 unprocessed log(s) and 1 unprocessed raw-source" "F26 file-binary sha256 mismatch → re-ingest"
+
+# ---------------------------------------------------------------------------
+# Test F27: sidecar `.cache/raw-md-sha/<subdir>-<flat>.sha256` 生成
+# ---------------------------------------------------------------------------
+echo "test F27: raw MD sha256 sidecar generation"
+VAULT_F27="$(make_vault vault-f27)"
+mkdir -p "${VAULT_F27}/raw-sources/articles" "${VAULT_F27}/raw-sources/ideas/fetched"
+# 直接配置の raw MD (sidecar 生成対象)
+cat > "${VAULT_F27}/raw-sources/articles/note.md" <<'EOF'
+# raw md direct
+
+no frontmatter
+EOF
+# fetched/ 配下 (sidecar 不生成、既存 MED-c1 経路)
+cat > "${VAULT_F27}/raw-sources/ideas/fetched/host-slug.md" <<'EOF'
+---
+title: "fetched"
+source_sha256: "4444444444444444444444444444444444444444444444444444444444444444"
+---
+body
+EOF
+set +e
+PATH="${STUB_DIR}:${PATH}" \
+  OBSIDIAN_VAULT="${VAULT_F27}" \
+  KIOKU_DRY_RUN=1 \
+  bash "${AUTO_INGEST}" >/dev/null 2>&1
+rc=$?
+set -e
+assert_eq "0" "${rc}" "F27 exit code 0"
+EXPECTED_SHA_F27="$(sha256_of_file "${VAULT_F27}/raw-sources/articles/note.md")"
+SIDECAR_F27="${VAULT_F27}/.cache/raw-md-sha/articles-note.md.sha256"
+if [[ -f "${SIDECAR_F27}" ]]; then
+  pass "F27 sidecar created for non-fetched raw MD"
+  ACTUAL_SHA_F27="$(tr -d '[:space:]' < "${SIDECAR_F27}")"
+  assert_eq "${EXPECTED_SHA_F27}" "${ACTUAL_SHA_F27}" "F27 sidecar content matches file binary sha256"
+else
+  fail "F27 sidecar NOT created for non-fetched raw MD at ${SIDECAR_F27}"
+fi
+# fetched/ には sidecar を作らない
+FETCHED_SIDECAR_F27="${VAULT_F27}/.cache/raw-md-sha/ideas-fetched-host-slug.md.sha256"
+if [[ -f "${FETCHED_SIDECAR_F27}" ]]; then
+  fail "F27 sidecar should NOT be created for fetched/ MD"
+else
+  pass "F27 no sidecar for fetched/ MD (frontmatter path preferred)"
+fi
+
+# -----------------------------------------------------------------------------
 # サマリ
 # -----------------------------------------------------------------------------
 echo

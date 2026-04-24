@@ -34,6 +34,36 @@ elapsed_seconds() {
 }
 
 # -----------------------------------------------------------------------------
+# Raw MD sha256 計算 helper (v0.6 Phase C-3)
+# -----------------------------------------------------------------------------
+# raw-sources/<subdir>/<name>.md (fetched/ 以外、ユーザー直接配置) の source_sha256 を
+# 決定する。優先順位:
+#   1. raw MD の frontmatter に `source_sha256: "<64hex>"` があれば、その値を返す
+#   2. 無ければ file binary の sha256 を shasum -a 256 (macOS/BSD) または
+#      sha256sum (Linux) で計算して返す
+#   3. どちらも利用できなければ空文字列 (無判定 = 旧挙動)
+# PDF chunk / EPUB 章 / DOCX / fetched/ は既に source_sha256 を frontmatter に持つため
+# この helper は使わない (既存 .cache/extracted/ loop と fetched/ branch で別 awk)。
+compute_raw_md_sha() {
+  local file="$1"
+  local fm_sha
+  fm_sha="$(awk -F'"' '
+    /^source_sha256:[[:space:]]+"[0-9a-f]{64}"/ { print $2; exit }
+  ' "${file}" 2>/dev/null || true)"
+  if [[ -n "${fm_sha}" ]]; then
+    printf '%s' "${fm_sha}"
+    return 0
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "${file}" 2>/dev/null | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "${file}" 2>/dev/null | awk '{print $1}'
+  else
+    printf ''
+  fi
+}
+
+# -----------------------------------------------------------------------------
 # Lockfile (機能 2.1 / VULN-012 完全版)
 # -----------------------------------------------------------------------------
 # MCP (mcp/lib/lock.mjs) と同じ `.kioku-mcp.lock` を共有して cron × MCP の排他を成立させる。
@@ -378,6 +408,45 @@ if [[ -d "${RAW_SOURCES_DIR}" ]] && [[ -f "${EXTRACT_URL_SCRIPT}" ]]; then
   done < <(find "${RAW_SOURCES_DIR}" -type f -name "urls.txt" 2>/dev/null)
 fi
 
+# -----------------------------------------------------------------------------
+# Raw MD sha256 sidecar 生成 (v0.6 Phase C-3)
+# -----------------------------------------------------------------------------
+#
+# raw-sources/<subdir>/<name>.md (fetched/ 以外) の sha256 を .cache/raw-md-sha/ に
+# sidecar として書き出す。LLM は `--allowedTools Write,Read,Edit` で起動されるため
+# shasum を実行できない。raw MD に source_sha256 frontmatter が無いケースでも summary
+# に正しい sha256 を設定できるよう、cron がここで計算した値を sidecar 経由で LLM に渡す。
+#
+# 命名規約: .cache/raw-md-sha/<subdir>-<flat_name>.sha256
+#   - <flat_name> は raw MD の subdir 配下パス (例: nested/foo.md) の `/` を `-` に
+#     変換した形 (raw-sources MD 集計ループの flat_name と同じ規約)
+#   - summary ファイル名 (wiki/summaries/<subdir>-<flat_name>) と 1:1 対応
+#
+# 内容: 64hex + 改行 1 つの 1 行テキスト。LLM が Read してそのまま source_sha256 に
+# コピーしやすい最小フォーマット。
+#
+# 削除: raw MD が削除されても sidecar は残る (後続 PR で GC 検討)。現状は害なし
+# (orphan sidecar は summary 側 sha256 と照合されないだけ)。
+RAW_MD_SHA_DIR="${OBSIDIAN_VAULT}/.cache/raw-md-sha"
+if [[ -d "${RAW_SOURCES_DIR}" ]]; then
+  mkdir -p "${RAW_MD_SHA_DIR}"
+  chmod 0700 "${RAW_MD_SHA_DIR}" 2>/dev/null || true
+  while IFS= read -r f; do
+    [[ -z "${f}" ]] && continue
+    rel="${f#${RAW_SOURCES_DIR}/}"
+    [[ "${rel}" != */* ]] && continue
+    name="${rel#*/}"
+    # fetched/ 配下は extract-url.sh が frontmatter に source_sha256 を書くので sidecar 不要
+    [[ "${name}" == fetched/* ]] && continue
+    subdir="${rel%%/*}"
+    flat_name="${name//\//-}"
+    sha="$(compute_raw_md_sha "${f}" 2>/dev/null || true)"
+    if [[ -n "${sha}" ]]; then
+      printf '%s\n' "${sha}" > "${RAW_MD_SHA_DIR}/${subdir}-${flat_name}.sha256"
+    fi
+  done < <(find "${RAW_SOURCES_DIR}" -type f -name "*.md" 2>/dev/null)
+fi
+
 # `ingested: false` を含む session-log ファイル数をカウント。
 # session-logs/ 直下の *.md のみ対象 (.claude-brain/ 等のサブディレクトリは除外)。
 UNPROCESSED_LOGS=0
@@ -426,6 +495,22 @@ if [[ -d "${RAW_SOURCES_DIR}" ]]; then
       src_sha="$(awk -F'"' '
         /^source_sha256:[[:space:]]+"[0-9a-f]{64}"/ { print $2; exit }
       ' "${f}" 2>/dev/null || true)"
+      if [[ -n "${src_sha}" ]]; then
+        sum_sha="$(awk -F'"' '
+          /^source_sha256:[[:space:]]+"[0-9a-f]{64}"/ { print $2; exit }
+        ' "${summary}" 2>/dev/null || true)"
+        if [[ -z "${sum_sha}" || "${src_sha}" != "${sum_sha}" ]]; then
+          UNPROCESSED_SOURCES=$((UNPROCESSED_SOURCES + 1))
+        fi
+      fi
+    else
+      # v0.6 Phase C-3: fetched/ 以外の raw MD (ユーザー直接配置 / handler 経由でない .md)
+      # にも sha256-based delta detection を適用する。
+      # src_sha = raw MD の frontmatter source_sha256 があればそれ、無ければ file binary
+      #           sha256 (compute_raw_md_sha が 2 段で決定)。
+      # sum_sha = summary の frontmatter source_sha256。
+      # 不一致なら再 Ingest 対象。LLM は後段プロンプトで sidecar 経由に sha256 を書き戻す。
+      src_sha="$(compute_raw_md_sha "${f}")"
       if [[ -n "${src_sha}" ]]; then
         sum_sha="$(awk -F'"' '
           /^source_sha256:[[:space:]]+"[0-9a-f]{64}"/ { print $2; exit }
@@ -524,6 +609,11 @@ CLAUDE.md のスキーマに従って、session-logs/ にある ingested: false 
 - サマリーのフォーマットは templates/notes/source-summary.md または Vault の CLAUDE.md の規約に従う (要約 / 重要なポイント / Wiki への影響)
 - 関連する既存 wiki ページには相互リンクを追加 (raw-sources/ からの事実で既存ページを補強または矛盾を指摘)
 - raw-sources/ は読み取り専用。raw-sources/ のファイルそのものを編集しないこと
+- **source_sha256 の記録 (v0.6 Phase C-3)**: raw-sources/<subdir>/<name>.md から summary を新規作成または更新するときは、対応する wiki/summaries/<subdir>-<flat_name>.md の frontmatter に `source_sha256: "<64hex>"` を必ず設定すること。値は以下の順序で決定する:
+  1. raw MD の frontmatter に `source_sha256: "<64hex>"` があれば、その値を 1 文字違わずコピー
+  2. raw MD に frontmatter source_sha256 が無い場合は、cron が事前計算した sidecar `.cache/raw-md-sha/<subdir>-<flat_name>.sha256` を Read して、中身の 64hex (末尾改行は除く) をコピー。`<flat_name>` は raw MD の subdir 配下パスの `/` を `-` に置換した形 (例: `nested/foo.md` → `nested-foo.md`)
+  3. sidecar も見つからない場合は source_sha256 を設定しない (冪等判定が効かず毎回 re-ingest されるが、副作用はない)
+  この source_sha256 は次回 cron の冪等判定に使われるため正確にコピーすること。raw MD の内容が変わらない限り同じ値が再利用され、LLM の無駄呼び出しを防ぐ。fetched/ 配下の MD は既存通り raw MD の frontmatter から直接コピー (sidecar は生成されない)
 
 追加の取り込み対象 (PDF 由来の .cache/extracted/):
 - .cache/extracted/<subdir>--<stem>-pp<NNN>-<MMM>.md は raw-sources/<subdir>/<stem>.pdf から shell で抽出された中間 MD。raw-sources/ の .md と同等の扱いで Ingest すること
