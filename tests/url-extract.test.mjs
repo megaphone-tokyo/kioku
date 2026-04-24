@@ -37,7 +37,10 @@ describe('url-extract orchestrator', () => {
     assert.equal(r.status, 'fetched_and_summarized_pending');
     assert.match(r.path, /raw-sources\/articles\/fetched\/127\.0\.0\.1-article-normal\.md$/);
     const content = await readFile(join(vault, r.path), 'utf8');
-    assert.match(content, /title: "Attention Is All You Need"/);
+    // 2026-04-24 (open-issues.md §18): sanitizedJsdom (GAP-D005) が <meta> を strip
+    // するため og:title が見えず、Readability は <title> raw 文字列を採用する。
+    // 詳細は readability-extract.test.mjs の UE1 コメント参照。
+    assert.match(content, /title: "Attention Is All You Need — Normal Article"/);
     assert.match(content, /source_url: "/);
     assert.match(content, /^source_sha256: "[0-9a-f]{64}"$/m);
     assert.match(content, /fallback_used: "readability"/);
@@ -145,8 +148,9 @@ describe('url-extract orchestrator', () => {
     assert.ok(['skipped_within_refresh', 'skipped_same_sha'].includes(r2.status));
     // HIGH-1 回帰確認: orchestrator が parseFrontmatter → bumpFetchedAt で
     // title を JSON-escape して再書込 → 再度読ませても corrupt していないこと。
+    // 2026-04-24 (open-issues.md §18): title は <title> raw 文字列 (UE1 コメント参照)。
     const reread = await readFile(r1Path, 'utf8');
-    assert.match(reread, /title: "Attention Is All You Need"/);
+    assert.match(reread, /title: "Attention Is All You Need — Normal Article"/);
   });
 
   test('robots Disallow returns skipped_robots', async () => {

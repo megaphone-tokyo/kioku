@@ -29,6 +29,53 @@ Instead, please report them via **GitHub Security Advisories**:
 - **Initial assessment**: Within 1 week
 - **Fix or mitigation**: Depends on severity (critical: ASAP, high: 1 week, medium: 2 weeks)
 
+### CVE Classification
+
+KIOKU は以下の重大度フレームワークを採用する (内部の `security-review/` 用語と整合):
+
+| 重大度 | 基準 | SLA |
+|---|---|---|
+| **Critical** | リモートコード実行、Vault 全体の流出、Vault 境界外への不正な任意書き込み、配布 `.mcpb` または plugin marketplace エントリのサプライチェーン侵害 | 即時対応 (当日中の hotfix を目標、out-of-band release) |
+| **High** | ローカル特権昇格、Vault の部分的流出、不正なツール使用に至る prompt injection、SSRF / DNS rebind バイパス、本番トークン形式に対する masking 失敗、fail-open のセキュリティガード | 1 週間以内 (patch release) |
+| **Medium** | 非機密ログでの情報露出、データ消失を伴わない DoS、検知が容易な完全性問題、明確な前提条件下でのみ悪用可能な多層防御の隙 | 2 週間以内 (次回 release に同梱) |
+| **Low** | 直接の悪用経路がない多層防御の弱点、ハードニング機会、セキュリティ指針に影響するドキュメント不足 | 4 週間以内または次回スケジュール release |
+| **Info** | 設計上の所見、PoC を伴わない「仮説的」懸念、ハードニング提案 | トリアージ済、release SLA なし |
+
+**本番に露出する攻撃面** (MCP サーバー、Hook スクリプト、抽出パイプライン、auto-ingest cron、plugin marketplace 配布物) に影響する脆弱性は、**開発者向けの問題** (test fixture、ローカル限定の harness、開発スクリプト) よりも優先する。
+
+### Safe Harbor
+
+セキュリティ研究者コミュニティを支援する。以下の条件を満たす研究者に対して、当方は法的措置を取らない:
+
+- プライバシー侵害、データ破壊、サービス中断を回避する善意の努力をしていること
+- 上記のプライベートチャネル (GitHub Security Advisory または maintainer への直接メール) のみを通じて脆弱性を報告すること
+- 公開前に修正対応の合理的な時間を与えること (初回報告から 90 日、または修正リリースのいずれか早い方)
+- 脆弱性の実証に必要な最小限を超えて悪用しないこと
+- 他ユーザーのデータ (他の KIOKU インストールのローカル Vault 内容を含む) にアクセスしないこと
+
+特定の行為がスコープ内かどうか不明な場合は、**テスト前に当方へ連絡すること**。個別案件として研究を許可することを歓迎する。
+
+### Coordinated Disclosure Timeline
+
+標準プロセス:
+
+1. 報告受領 → 48 時間以内に確認応答 (GitHub Security Advisory またはメール)
+2. 1 週間以内に初期評価完了 (上記表に基づく重大度分類)
+3. 重大度 SLA に従って修正を開発・展開
+4. **Medium 以上** で公開配布物 (GitHub Releases の `.mcpb`、Claude Code plugin marketplace エントリ) に影響する場合、CVE を申請
+5. 修正展開後に公開アドバイザリを発行 — 報告者は advisory・commit message・`security-review/findings/` で credit (匿名希望の場合を除く)
+
+特に機微な事案 (複数の下流コンシューマーにまたがる連鎖脆弱性等) の場合、研究者は embargo 延長を要請できる。責任ある公開日について研究者と協議の上で合意する。
+
+### Out of Scope
+
+以下は本ポリシー上の脆弱性として**扱わない** (ただし GitHub Issues での bug 報告は歓迎):
+
+- ローカルシェルアクセスを必要とする意図的なリソース枯渇による DoS (例: `session-logs/` でディスクを埋める)
+- 開発専用フラグや test fixture に関する findings (`KIOKU_URL_ALLOW_LOOPBACK=1`、`KIOKU_DRY_RUN=1` 等 — これらは test 専用としてドキュメント化済)
+- ユーザーが**明示的に ingest を選択した**攻撃者制御 HTML が原因で発生する `raw-sources/<subdir>/fetched/` の問題 (脅威モデルとして、ユーザーは `kioku_ingest_url` 実行前にソースを検証することを前提とする)
+- 既に Vault への完全な書き込み権限を持つマシンが侵害されている前提を必要とする理論的攻撃
+
 ## Security Design
 
 claude-brain is a Hook system that accesses **all Claude Code session I/O**. This section documents the security architecture.

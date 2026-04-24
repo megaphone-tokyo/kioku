@@ -293,6 +293,17 @@ describe('kioku_ingest_url', () => {
     // 旧実装では url-extract.mjs#buildFrontmatterObject で setRaw だったため
     // `og_image: "https://.../?ghp_..."` のような secret-bearing meta が frontmatter に
     // そのまま残り、git push で commit history に永続化する欠陥があった。
+    //
+    // 2026-04-24 (open-issues.md §18 triage):
+    //   sanitizedJsdom (mcp/lib/html-sanitize.mjs, GAP-D005 hotfix 2026-04-22) が
+    //   <meta> tag を strip するため、`extractArticle` の metaContent() lookup は
+    //   常に null を返す。結果として `buildFrontmatterObject` の `setStr('og_image', null)`
+    //   / `setStr('published_time', null)` 経路は早期 return し、両 field は
+    //   frontmatter に出力されない。M-1 の脅威 (meta secret の commit history 残留) は
+    //   field の不在で同等以上に satisfy されているため、本 test は
+    //   「mask placeholder が入る」から「field 自体が出力されない」へと強化する。
+    //   実装側で meta extraction を sanitize 前に行う方針に戻したら、本 test を
+    //   元の `assert.match(content, /ghp_\*\*\*/)` 形に戻すこと。
     const v = await makeVault('mcp39b');
     const r = await handleIngestUrl(
       v,
@@ -301,10 +312,13 @@ describe('kioku_ingest_url', () => {
     );
     const content = await readFile(join(v, r.path), 'utf8');
     // og:image と published_time の secret sentinel は frontmatter から消えている
-    assert.doesNotMatch(content, /METAPUBTIMESECRET/, 'published_time sentinel must be masked');
-    assert.doesNotMatch(content, /METAOGIMGSECRET/, 'og_image sentinel must be masked');
-    // mask placeholder が入っていることも確認 (applyMasks は ghp_ → ghp_***)
-    assert.match(content, /ghp_\*\*\*/, 'mask placeholder applied to meta frontmatter');
+    assert.doesNotMatch(content, /METAPUBTIMESECRET/, 'published_time sentinel must not leak');
+    assert.doesNotMatch(content, /METAOGIMGSECRET/, 'og_image sentinel must not leak');
+    // 加えて、og_image / published_time field 自体が frontmatter に登場しないこと
+    // (sanitizedJsdom の meta strip により null になり、buildFrontmatterObject が出力しない)。
+    // これは absence-by-stripping の保証で M-1 の original 脅威モデルを満たす。
+    assert.doesNotMatch(content, /^og_image: /m, 'og_image field absent from frontmatter');
+    assert.doesNotMatch(content, /^published_time: /m, 'published_time field absent from frontmatter');
   });
 
   test('MCP40 refresh_days arg overrides global default', async () => {
