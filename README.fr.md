@@ -326,6 +326,22 @@ Si vous trouvez un probleme de securite, veuillez le signaler via [SECURITY.md](
 
 ## Journal des modifications
 
+### 2026-04-24 — v0.6.0 : Expansion de l'ecosysteme — multi-agent + marketplace de plugins + dashboard Bases + delta tracking + durcissement de la securite
+
+v0.6.0 consolide Phase C : canaux de distribution, dashboards natifs Obsidian, ingest resistant aux regressions, et mise a jour de la politique de securite.
+
+- **Multi-agent cross-platform (C-1)** — `scripts/setup-multi-agent.sh` cree des symlinks dans Codex / OpenCode / Gemini CLI. 19/19 assertions Bash
+- **Marketplace Claude Code (C-2)** — `claude marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo`
+- **Delta tracking sha256 (C-3)** — Les fichiers MD places dans `raw-sources/<subdir>/*.md` participent a la detection delta. 82/82 assertions auto-ingest
+- **Dashboard Obsidian Bases (C-4)** — `templates/wiki/meta/dashboard.base` avec 9 vues
+- **Fondations Visualizer (V-1, v0.7)** — `mcp/lib/git-history.mjs` + `mcp/lib/wiki-snapshot.mjs`, 14/14 assertions Node
+- **Politique de securite (C-5a)** — CVE Classification / Safe Harbor / Coordinated Disclosure Timeline. `SECURITY.ja.md` 4/7 sections
+- **Canal communautaire** — Discord dedie abandonne, GitHub Discussions canonique
+- **Apprentissage organisationnel** — LEARN#10 (verification de script dans handoff PM)
+- **Reporte v0.7+** — UI HTML Visualizer, LP β, GitHub Discussions, 3 sections SECURITY.ja restantes
+- Tests : **Node 264/264 + Bash 400+/400+ vertes**
+- [Release v0.6.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.6.0) — `kioku-wiki-0.6.0.mcpb` (~9 Mo)
+
 ### 2026-04-23 — v0.5.1 : Hot cache + hook PostCompact + prompt Stop opt-in
 
 - **Pattern hot cache** — Nouveau `wiki/hot.md` (<=500 mots, plafond strict 4000 caracteres) injecte automatiquement au **SessionStart** et reinjecte apres **PostCompact** (compaction du contexte), ce qui permet au LLM de conserver le contexte de travail a court terme entre sessions et compactions. Inspire du pattern UX de claude-obsidian

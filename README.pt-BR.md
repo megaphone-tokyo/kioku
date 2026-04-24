@@ -326,6 +326,22 @@ Se voce encontrar um problema de seguranca, por favor reporte via [SECURITY.md](
 
 ## Histórico de mudanças
 
+### 2026-04-24 — v0.6.0: Expansao do ecossistema — multi-agente + marketplace de plugins + dashboard Bases + delta tracking + endurecimento de seguranca
+
+v0.6.0 consolida Phase C.
+
+- **Multi-agente cross-platform (C-1)** — `scripts/setup-multi-agent.sh` cria symlinks no Codex / OpenCode / Gemini CLI. 19/19 asserções Bash
+- **Marketplace Claude Code (C-2)** — `claude marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo`
+- **Delta tracking sha256 (C-3)** — Arquivos MD em `raw-sources/<subdir>/*.md` participam da deteccao delta. 82/82 asserções auto-ingest
+- **Dashboard Obsidian Bases (C-4)** — `templates/wiki/meta/dashboard.base` com 9 views
+- **Fundacoes Visualizer (V-1, v0.7)** — `mcp/lib/git-history.mjs` + `mcp/lib/wiki-snapshot.mjs`, 14/14 asserções Node
+- **Politica de seguranca (C-5a)** — CVE Classification / Safe Harbor / Coordinated Disclosure Timeline. `SECURITY.ja.md` 4/7 secoes
+- **Canal comunitario** — Discord dedicado descartado, GitHub Discussions canonico
+- **Aprendizado organizacional** — LEARN#10 (verificacao de script no handoff PM)
+- **Adiado v0.7+** — UI HTML Visualizer, LP β, GitHub Discussions, 3 secoes SECURITY.ja restantes
+- Testes: **Node 264/264 + Bash 400+/400+ verdes**
+- [Release v0.6.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.6.0) — `kioku-wiki-0.6.0.mcpb` (~9 MB)
+
 ### 2026-04-23 — v0.5.1: Hot cache + hook PostCompact + prompt Stop opt-in
 
 - **Padrão hot cache** — Novo `wiki/hot.md` (<=500 palavras, limite rígido de 4000 caracteres) injetado automaticamente no **SessionStart** e reinjetado após **PostCompact** (compactação de contexto), para que o LLM retenha o contexto de trabalho de curto prazo entre sessões e compactações. Inspirado no padrão UX do claude-obsidian

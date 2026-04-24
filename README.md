@@ -465,6 +465,22 @@ If you find a security issue, please report it via [SECURITY.md](SECURITY.md) �
 
 ## Changelog
 
+### 2026-04-24 — v0.6.0: Ecosystem expansion — multi-agent + plugin marketplace + Bases dashboard + delta tracking + security hardening
+
+v0.6.0 lands Phase C in one shot: distribution channels (Claude Code plugin + multi-agent skills), Obsidian-native dashboards, silent-regression-proof ingest, and security policy upgrades. Visualizer foundations are also land-ready for v0.7.
+
+- **Multi-agent cross-platform (C-1)** — `scripts/setup-multi-agent.sh` symlinks KIOKU skills into Codex CLI / OpenCode / Gemini CLI. 19/19 Bash assertions (SMA-1..8)
+- **Claude Code plugin marketplace (C-2)** — `claude marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo`. `docs/install-guide-plugin.md` compares 3 install paths
+- **Raw MD sha256 delta tracking (C-3)** — User-placed `raw-sources/<subdir>/*.md` files now participate in sha256-based delta detection. 82/82 auto-ingest assertions (new F23-F27)
+- **Obsidian Bases dashboard (C-4)** — `templates/wiki/meta/dashboard.base` ships 9 views tailored to KIOKU's wiki structure
+- **Visualizer foundation (V-1, preparing v0.7)** — `mcp/lib/git-history.mjs` + `mcp/lib/wiki-snapshot.mjs` with 14/14 Node assertions. No user-facing surface yet
+- **Security policy upgrade (C-5a)** — `SECURITY.md` gains CVE Classification / Safe Harbor / Coordinated Disclosure Timeline / Out of Scope. `SECURITY.ja.md` partial i18n parity (4/7 sections)
+- **Community channel pivot** — Dedicated Discord dropped, GitHub Discussions will be the canonical channel
+- **Organizational learnings** — LEARN#10 (PM handoff script verify mandatory) added to workflow rules
+- **Deferred for v0.7+** — Visualizer HTML UI (V-2..V-5), LP β narrative, GitHub Discussions enable, SECURITY.ja remaining 3 sections
+- Tests: **Node 264/264 + Bash 400+/400+ assertions green**
+- [Release v0.6.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.6.0) — `kioku-wiki-0.6.0.mcpb` attached (~9 MB)
+
 ### 2026-04-23 — v0.5.1: Hot cache + PostCompact hook + opt-in Stop prompt
 
 - **Hot cache pattern** — New `wiki/hot.md` (<=500 words, hard cap 4000 chars) is auto-injected at **SessionStart** and re-injected after **PostCompact** (context compaction), so the LLM retains short-term working context across sessions and compactions. Inspired by the claude-obsidian UX pattern

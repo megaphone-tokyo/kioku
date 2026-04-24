@@ -263,6 +263,22 @@ claude-brain एक Hook सिस्टम है जो **सभी Claude Cod
 
 ## परिवर्तन इतिहास
 
+### 2026-04-24 — v0.6.0: Ecosystem expansion — multi-agent + plugin marketplace + Bases dashboard + delta tracking + security hardening
+
+v0.6.0 Phase C को consolidate करता है।
+
+- **Multi-agent cross-platform (C-1)** — `scripts/setup-multi-agent.sh` Codex CLI / OpenCode / Gemini CLI में KIOKU skills symlink। 19/19 Bash assertions
+- **Claude Code plugin marketplace (C-2)** — `claude marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo` से install
+- **Raw MD sha256 delta tracking (C-3)** — `raw-sources/<subdir>/*.md` के MD files भी sha256 delta detection में participate। 82/82 auto-ingest assertions
+- **Obsidian Bases dashboard (C-4)** — `templates/wiki/meta/dashboard.base` में 9 views
+- **Visualizer foundations (V-1, v0.7 preparation)** — `mcp/lib/git-history.mjs` + `mcp/lib/wiki-snapshot.mjs`, 14/14 Node assertions
+- **Security policy upgrade (C-5a)** — `SECURITY.md` में CVE Classification / Safe Harbor / Coordinated Disclosure Timeline। `SECURITY.ja.md` 4/7 sections
+- **Community channel pivot** — Dedicated Discord dropped, GitHub Discussions canonical
+- **Organizational learnings** — LEARN#10 (PM handoff script verify mandatory)
+- **v0.7+ deferred** — Visualizer HTML UI, LP β, GitHub Discussions enable, SECURITY.ja remaining 3 sections
+- परीक्षण: **Node 264/264 + Bash 400+/400+ green**
+- [Release v0.6.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.6.0) — `kioku-wiki-0.6.0.mcpb` (~9 MB)
+
 ### 2026-04-23 — v0.5.1: Hot cache + PostCompact hook + opt-in Stop prompt
 
 - **Hot cache pattern** — नया `wiki/hot.md` (<=500 शब्द, hard cap 4000 वर्ण) **SessionStart** पर auto-inject होता है और **PostCompact** (context compaction) के बाद फिर से inject होता है, ताकि LLM sessions और compactions के बीच अल्पकालिक कार्य context बनाए रखे। claude-obsidian के UX pattern से प्रेरित
