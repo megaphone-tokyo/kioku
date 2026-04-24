@@ -6,7 +6,7 @@
   },
   "metadata": {
     "description": "KIOKU: Hardened LLM Wiki for Claude Code / Claude Desktop by megaphone-tokyo",
-    "version": "0.5.1"
+    "version": "0.6.0"
   },
   "plugins": [
     {
@@ -17,7 +17,7 @@
         "ref": "main"
       },
       "description": "Hardened LLM Wiki for Claude Code + Claude Desktop. Automatic conversation → Obsidian Vault knowledge base. Hot cache + PostCompact hook + secret masking + Git sync.",
-      "version": "0.5.1",
+      "version": "0.6.0",
       "author": {
         "name": "megaphone-tokyo",
         "url": "https://github.com/megaphone-tokyo"
