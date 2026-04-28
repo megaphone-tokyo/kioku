@@ -19,6 +19,7 @@ import { DELETE_TOOL_DEF, handleDelete } from './tools/delete.mjs';
 import { INGEST_PDF_TOOL_DEF, handleIngestPdf } from './tools/ingest-pdf.mjs';
 import { INGEST_DOCUMENT_TOOL_DEF, handleIngestDocument } from './tools/ingest-document.mjs';
 import { INGEST_URL_TOOL_DEF, handleIngestUrl } from './tools/ingest-url.mjs';
+import { VISUALIZER_TOOL_DEF, handleGenerateViz } from './tools/visualizer.mjs';
 
 const VAULT = process.env.OBSIDIAN_VAULT;
 if (!VAULT) {
@@ -121,6 +122,7 @@ register(DELETE_TOOL_DEF, handleDelete);
 register(INGEST_PDF_TOOL_DEF, handleIngestPdf);
 register(INGEST_DOCUMENT_TOOL_DEF, handleIngestDocument);
 register(INGEST_URL_TOOL_DEF, handleIngestUrl);
+register(VISUALIZER_TOOL_DEF, handleGenerateViz);
 
 // 致命エラーでもプロセスを生かしてエラー応答できるようにする
 process.on('uncaughtException', (err) => {

@@ -1,14 +1,17 @@
-// wiki-snapshot.test.mjs — lib/wiki-snapshot.mjs のユニットテスト (Phase D α V-1)
+// wiki-snapshot.test.mjs — lib/wiki-snapshot.mjs のユニットテスト (Phase D α V-1 + V-2 hotfix)
 //
 // 実行: node --test tools/claude-brain/tests/mcp/wiki-snapshot.test.mjs
 //
-// ケース (VIZ-WS-1 〜 6):
-//   VIZ-WS-1: 単一 commit snapshot が pages + links を正しく抽出
-//   VIZ-WS-2: frontmatter 値が applyMasks() で伏字化される
-//   VIZ-WS-3: wikilinks が findWikilinks と同じ結果 (extension なし target)
-//   VIZ-WS-4: diffSnapshots 追加 page を added に計上
-//   VIZ-WS-5: diffSnapshots 削除 page を removed に計上
-//   VIZ-WS-6: diffSnapshots wikilink の追加/削除を linkAdded / linkRemoved に分離
+// 既存ケース (VIZ-WS-1 〜 8) + V-2 hotfix 新規 (VIZ-WS-9 〜 11):
+//   VIZ-WS-1:  単一 commit snapshot が pages + links を正しく抽出
+//   VIZ-WS-2:  frontmatter 値が applyMasks() で伏字化される (value pattern)
+//   VIZ-WS-3:  wikilinks が空本文 / alias 付きも処理
+//   VIZ-WS-4/5/6: diffSnapshots (追加 / modified / link diff)
+//   VIZ-WS-7:  diffSnapshots — page 削除を正しく記録
+//   VIZ-WS-8:  invalid sha は throw
+//   VIZ-WS-9:  M2 wikilink target allow-list — `[[../../etc/passwd]]` / `[[<script>]]` は filter
+//   VIZ-WS-10: M3 frontmatter key-name redaction — `password:` value が 素通り pattern でも '***'
+//   VIZ-WS-11: truncated/error propagation — listFilesAtCommit の結果が snapshot に伝わる
 
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
@@ -48,7 +51,7 @@ async function makeFixtureRepo() {
   return root;
 }
 
-describe('wiki-snapshot (Phase D α V-1)', () => {
+describe('wiki-snapshot (Phase D α V-1 + V-2 hotfix)', () => {
   let gitAvailable = true;
 
   before(async () => {
@@ -97,11 +100,13 @@ tags: [auth]
       await runCmd(root, 'git', ['add', '-A']);
       await runCmd(root, 'git', ['commit', '-m', 'init wiki']);
 
-      const commits = await getFileHistory(root, { subPath: 'wiki/' });
+      const { commits } = await getFileHistory(root, { subPath: 'wiki/' });
       const sha = commits[0].sha;
       const snap = await buildWikiSnapshot(root, sha);
 
       assert.equal(snap.sha, sha);
+      assert.equal(snap.error, null);
+      assert.equal(snap.truncated, false);
       assert.equal(snap.pages.length, 3);
 
       const byName = new Map(snap.pages.map((p) => [p.name, p]));
@@ -133,6 +138,8 @@ tags: [auth]
     const root = await makeFixtureRepo();
     try {
       // frontmatter に fake API key を入れる (applyMasks が検出する pattern)
+      // key 名 'debug_key' は M3 の SECRET_KEY_RE にも含まれるため、
+      // masked 結果は '***' 固定になる (value pattern でも伏字化されるのと同等に秘匿)
       await writeFile(
         join(root, 'wiki', 'leaky.md'),
         `---
@@ -146,7 +153,7 @@ debug_key: "sk-ant-api03-0123456789abcdefghij0123456789abcdefghij"
       await runCmd(root, 'git', ['add', '-A']);
       await runCmd(root, 'git', ['commit', '-m', 'leaky']);
 
-      const commits = await getFileHistory(root, { subPath: 'wiki/' });
+      const { commits } = await getFileHistory(root, { subPath: 'wiki/' });
       const snap = await buildWikiSnapshot(root, commits[0].sha);
       const page = snap.pages.find((p) => p.name === 'leaky');
       assert.ok(page);
@@ -170,7 +177,7 @@ debug_key: "sk-ant-api03-0123456789abcdefghij0123456789abcdefghij"
       await runCmd(root, 'git', ['add', '-A']);
       await runCmd(root, 'git', ['commit', '-m', 'alias']);
 
-      const commits = await getFileHistory(root, { subPath: 'wiki/' });
+      const { commits } = await getFileHistory(root, { subPath: 'wiki/' });
       const snap = await buildWikiSnapshot(root, commits[0].sha);
 
       const empty = snap.pages.find((p) => p.name === 'empty');
@@ -198,7 +205,7 @@ debug_key: "sk-ant-api03-0123456789abcdefghij0123456789abcdefghij"
       );
       await runCmd(root, 'git', ['add', '-A']);
       await runCmd(root, 'git', ['commit', '-m', 'v1']);
-      const commits1 = await getFileHistory(root, { subPath: 'wiki/' });
+      const { commits: commits1 } = await getFileHistory(root, { subPath: 'wiki/' });
       const sha1 = commits1[0].sha;
 
       // commit 2: add c (new page + new link), modify b (tags 追加), delete nothing
@@ -213,20 +220,16 @@ debug_key: "sk-ant-api03-0123456789abcdefghij0123456789abcdefghij"
       );
       await runCmd(root, 'git', ['add', '-A']);
       await runCmd(root, 'git', ['commit', '-m', 'v2']);
-      const commits2 = await getFileHistory(root, { subPath: 'wiki/' });
+      const { commits: commits2 } = await getFileHistory(root, { subPath: 'wiki/' });
       const sha2 = commits2[0].sha;
 
       const snap1 = await buildWikiSnapshot(root, sha1);
       const snap2 = await buildWikiSnapshot(root, sha2);
       const d = diffSnapshots(snap1, snap2);
 
-      // added: c
       assert.deepEqual(d.added, ['c']);
-      // modified: b (tags 追加 + wikilink 追加)
       assert.ok(d.modified.includes('b'));
-      // removed: なし
       assert.deepEqual(d.removed, []);
-      // linkAdded: b→c
       assert.ok(d.linkAdded.some((l) => l.from === 'b' && l.to === 'c'));
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -241,13 +244,13 @@ debug_key: "sk-ant-api03-0123456789abcdefghij0123456789abcdefghij"
       await writeFile(join(root, 'wiki', 'deleteme.md'), '# DeleteMe\n');
       await runCmd(root, 'git', ['add', '-A']);
       await runCmd(root, 'git', ['commit', '-m', 'v1']);
-      const commits1 = await getFileHistory(root, { subPath: 'wiki/' });
+      const { commits: commits1 } = await getFileHistory(root, { subPath: 'wiki/' });
 
       await new Promise((r) => setTimeout(r, 1100));
       await rm(join(root, 'wiki', 'deleteme.md'));
       await runCmd(root, 'git', ['add', '-A']);
       await runCmd(root, 'git', ['commit', '-m', 'v2 deleted']);
-      const commits2 = await getFileHistory(root, { subPath: 'wiki/' });
+      const { commits: commits2 } = await getFileHistory(root, { subPath: 'wiki/' });
 
       const snap1 = await buildWikiSnapshot(root, commits1[0].sha);
       const snap2 = await buildWikiSnapshot(root, commits2[0].sha);
@@ -265,5 +268,95 @@ debug_key: "sk-ant-api03-0123456789abcdefghij0123456789abcdefghij"
       () => buildWikiSnapshot('/tmp', 'not-a-sha'),
       /invalid sha/,
     );
+  });
+
+  test('VIZ-WS-9: M2 wikilink target allow-list — traversal / HTML tag は filter', async () => {
+    if (!gitAvailable) return;
+    const root = await makeFixtureRepo();
+    try {
+      await writeFile(
+        join(root, 'wiki', 'attacker.md'),
+        `---
+type: note
+---
+
+# Attacker
+
+- [[../../../etc/passwd]]
+- [[<script>alert(1)</script>]]
+- [[/absolute/evil]]
+- [[normal-page]]
+- [[日本語ページ]]
+`,
+      );
+      await runCmd(root, 'git', ['add', '-A']);
+      await runCmd(root, 'git', ['commit', '-m', 'attacker']);
+
+      const { commits } = await getFileHistory(root, { subPath: 'wiki/' });
+      const snap = await buildWikiSnapshot(root, commits[0].sha);
+      const page = snap.pages.find((p) => p.name === 'attacker');
+      assert.ok(page);
+      // traversal / HTML / absolute path は除外、normal + 日本語 は通過
+      assert.ok(!page.wikilinks.includes('../../../etc/passwd'));
+      assert.ok(!page.wikilinks.some((t) => t.includes('<script>')));
+      assert.ok(!page.wikilinks.includes('/absolute/evil'));
+      assert.ok(page.wikilinks.includes('normal-page'));
+      assert.ok(page.wikilinks.includes('日本語ページ'));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('VIZ-WS-10: M3 frontmatter key-name redaction — 素通り value でも key で catch', async () => {
+    if (!gitAvailable) return;
+    const root = await makeFixtureRepo();
+    try {
+      // value は applyMasks の pattern に一切マッチしない任意文字列。
+      // key 名で SECRET_KEY_RE にマッチするため、M3 で '***' 固定のはず。
+      await writeFile(
+        join(root, 'wiki', 'keys.md'),
+        `---
+type: note
+password: "simpleword"
+api_key: "0000000000000000"
+webhook: "https://example.com/hooks/generic"
+email: "alice@example.com"
+token: "short"
+normal_field: "visible"
+---
+
+# keys
+`,
+      );
+      await runCmd(root, 'git', ['add', '-A']);
+      await runCmd(root, 'git', ['commit', '-m', 'keys']);
+
+      const { commits } = await getFileHistory(root, { subPath: 'wiki/' });
+      const snap = await buildWikiSnapshot(root, commits[0].sha);
+      const page = snap.pages.find((p) => p.name === 'keys');
+      assert.ok(page);
+      assert.equal(page.frontmatter.password, '***');
+      assert.equal(page.frontmatter.api_key, '***');
+      assert.equal(page.frontmatter.webhook, '***');
+      assert.equal(page.frontmatter.email, '***');
+      assert.equal(page.frontmatter.token, '***');
+      // 非 secret key は素通り
+      assert.equal(page.frontmatter.normal_field, 'visible');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('VIZ-WS-11: truncated/error propagation — 非 git dir で error 明示', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'kioku-snap-nonrepo-'));
+    try {
+      // 有効形式の sha を渡すが non-git dir なので listFilesAtCommit が error 返す
+      const snap = await buildWikiSnapshot(root, 'a'.repeat(40));
+      assert.deepEqual(snap.pages, []);
+      assert.deepEqual(snap.links, []);
+      assert.ok(snap.error, 'error field should be populated');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<!--
+  KIOKU Wiki Visualizer (Phase D α v0.7)
+  正典: tools/claude-brain/plan/claude/26042402_visualizer-concept-sketch.md
+
+  Security / Trust posture:
+    - self-contained HTML (外部 network 呼び出し 0)
+    - data は frontmatter + wikilink のみ、page body は含まない (plan P1 絶対契約)
+    - innerHTML 一切使用しない (clearing は while-removeChild、追加は createElement + textContent)
+    - data は <script type="application/json"> に inline、tool 側で </  / U+2028 / U+2029 escape 済
+-->
+<title>KIOKU Wiki Visualizer</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --fg: #e6e8ee;
+    --muted: #8a95a6;
+    --accent: #6ea8ff;
+    --added: #4cd07d;
+    --removed: #ff6b6b;
+    --modified: #ffcc5c;
+    --node: #6ea8ff;
+    --node-added: #4cd07d;
+    --node-removed: #ff6b6b;
+    --panel: #171a21;
+    --panel-edge: #262a33;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Hiragino Sans", "Hiragino Kaku Gothic ProN", Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  header { padding: 16px 20px; border-bottom: 1px solid var(--panel-edge); }
+  header h1 { margin: 0 0 4px 0; font-size: 16px; font-weight: 600; }
+  header .meta { color: var(--muted); font-size: 12px; }
+  nav.tabs { display: flex; gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--panel-edge); }
+  nav.tabs button {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid transparent;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  nav.tabs button.active { color: var(--fg); border-color: var(--panel-edge); background: var(--panel); }
+  nav.tabs button:hover { color: var(--fg); }
+
+  main { padding: 16px 20px; }
+  .view { display: none; }
+  .view.active { display: block; }
+
+  .controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 8px 12px;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 8px;
+    margin-bottom: 12px;
+  }
+  .controls button, .controls select {
+    background: #22262f;
+    color: var(--fg);
+    border: 1px solid var(--panel-edge);
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  .controls button:hover { border-color: var(--accent); }
+  .controls input[type=range] { flex: 1; min-width: 200px; accent-color: var(--accent); }
+  .controls .counter { color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+  .canvas-wrap {
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 8px;
+    min-height: 420px;
+    position: relative;
+    overflow: hidden;
+  }
+  svg.graph { display: block; width: 100%; height: 520px; }
+  svg.graph .link { stroke: #3b4355; stroke-width: 1; opacity: 0.6; }
+  svg.graph .link.added { stroke: var(--added); stroke-width: 2; opacity: 0.9; }
+  svg.graph .link.removed { stroke: var(--removed); stroke-width: 2; stroke-dasharray: 4 2; opacity: 0.9; }
+  svg.graph .node circle { fill: var(--node); stroke: #0f1115; stroke-width: 1.5; cursor: pointer; }
+  svg.graph .node.added circle { fill: var(--node-added); }
+  svg.graph .node.removed circle { fill: var(--node-removed); }
+  svg.graph .node.modified circle { fill: var(--modified); }
+  svg.graph .node text { fill: var(--muted); font-size: 10px; pointer-events: none; }
+  svg.graph .node:hover text { fill: var(--fg); }
+
+  .legend { display: flex; gap: 12px; font-size: 11px; color: var(--muted); padding: 4px 12px; }
+  .legend .chip { display: inline-flex; align-items: center; gap: 4px; }
+  .legend .chip::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+  .legend .chip.added::before { background: var(--added); }
+  .legend .chip.removed::before { background: var(--removed); }
+  .legend .chip.modified::before { background: var(--modified); }
+
+  .detail {
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 8px;
+    font-size: 13px;
+    min-height: 60px;
+  }
+  .detail .muted { color: var(--muted); }
+  .detail a { color: var(--accent); text-decoration: none; }
+  .detail a:hover { text-decoration: underline; }
+  .detail dl { display: grid; grid-template-columns: max-content 1fr; column-gap: 10px; row-gap: 4px; margin: 0; }
+  .detail dt { color: var(--muted); }
+
+  .warning {
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    background: #3a2618;
+    border: 1px solid #a65a1a;
+    border-radius: 6px;
+    font-size: 12px;
+    color: #ffcc9a;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>KIOKU Wiki Visualizer</h1>
+  <div class="meta" id="meta"></div>
+</header>
+
+<nav class="tabs">
+  <button id="tab-timeline" class="active" data-view="view-timeline">Timeline Player</button>
+  <button id="tab-diff" data-view="view-diff">Diff Viewer</button>
+</nav>
+
+<main>
+  <div id="warnings"></div>
+
+  <!-- View 1: Timeline Player -->
+  <section id="view-timeline" class="view active">
+    <div class="controls">
+      <button id="tp-prev" title="1 つ前の snapshot へ">← Prev</button>
+      <button id="tp-play">▶ Play</button>
+      <button id="tp-next" title="1 つ先の snapshot へ">Next →</button>
+      <input type="range" id="tp-slider" min="0" max="0" value="0" step="1" />
+      <span class="counter" id="tp-counter"></span>
+    </div>
+    <div class="canvas-wrap">
+      <svg class="graph" id="tp-svg" viewBox="0 0 800 520" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+    <div class="detail" id="tp-detail"></div>
+  </section>
+
+  <!-- View 2: Diff Viewer -->
+  <section id="view-diff" class="view">
+    <div class="controls">
+      <label>起点 <select id="dv-from"></select></label>
+      <label>終点 <select id="dv-to"></select></label>
+      <button id="dv-diff">Diff</button>
+      <span class="counter" id="dv-counter"></span>
+    </div>
+    <div class="legend">
+      <span class="chip added">Added</span>
+      <span class="chip removed">Removed</span>
+      <span class="chip modified">Modified</span>
+    </div>
+    <div class="canvas-wrap">
+      <svg class="graph" id="dv-svg" viewBox="0 0 800 520" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+    <div class="detail" id="dv-detail"></div>
+  </section>
+</main>
+
+<!-- data blob: tool 側で `</`, U+2028/9 escape 済 -->
+<script type="application/json" id="kioku-data">__KIOKU_VIZ_DATA__</script>
+
+<script>
+(function () {
+  "use strict";
+
+  // ───────────── safe DOM helpers (innerHTML 不使用) ─────────────
+  function clearNode(el) { while (el.firstChild) el.removeChild(el.firstChild); }
+  function addMuted(el, text) {
+    const span = document.createElement("span");
+    span.className = "muted";
+    span.textContent = text;
+    el.appendChild(span);
+  }
+  function addDl(el, rows) {
+    const dl = document.createElement("dl");
+    for (let i = 0; i < rows.length; i += 1) {
+      const k = rows[i][0]; const v = rows[i][1];
+      const dt = document.createElement("dt"); dt.textContent = k;
+      const dd = document.createElement("dd"); dd.textContent = v;
+      dl.appendChild(dt); dl.appendChild(dd);
+    }
+    el.appendChild(dl);
+  }
+  function addObsidianLink(el, vaultName, path) {
+    if (!path) return;
+    const p = document.createElement("p");
+    const a = document.createElement("a");
+    a.href = "obsidian://open?vault=" + encodeURIComponent(vaultName || "")
+          + "&file=" + encodeURIComponent(path);
+    a.textContent = "Open in Obsidian";
+    p.appendChild(a);
+    el.appendChild(p);
+  }
+
+  // ───────────────────────── data load ─────────────────────────
+  const dataText = document.getElementById("kioku-data").textContent;
+  let data;
+  try {
+    data = JSON.parse(dataText);
+  } catch (e) {
+    const w = document.getElementById("warnings");
+    clearNode(w);
+    const div = document.createElement("div");
+    div.className = "warning";
+    div.textContent = "kioku-data JSON parse 失敗: " + e.message;
+    w.appendChild(div);
+    return;
+  }
+  const snapshots = Array.isArray(data.snapshots) ? data.snapshots : [];
+
+  // meta
+  const meta = document.getElementById("meta");
+  meta.textContent = [
+    "vault: " + (data.vault_name || "—"),
+    "since: " + (data.since || "—"),
+    "commits: " + (data.commits_total || 0),
+    "snapshots: " + snapshots.length,
+    "generated: " + (data.generated_at || "").slice(0, 19).replace("T", " "),
+  ].join("  ·  ");
+
+  // warnings
+  if (data.history_truncated) {
+    const w = document.createElement("div");
+    w.className = "warning";
+    w.textContent = "git history が 16MiB cap で truncate されました。古い commit は一部欠落している可能性があります。";
+    document.getElementById("warnings").appendChild(w);
+  }
+
+  // ───────────────────────── tab switch ─────────────────────────
+  const tabs = document.querySelectorAll("nav.tabs button");
+  tabs.forEach(function (b) {
+    b.addEventListener("click", function () {
+      tabs.forEach(function (x) { x.classList.remove("active"); });
+      b.classList.add("active");
+      document.querySelectorAll(".view").forEach(function (v) { v.classList.remove("active"); });
+      document.getElementById(b.dataset.view).classList.add("active");
+    });
+  });
+
+  // ───────────────────────── minimal force layout ─────────────────────────
+  // vanilla JS の single-file force-directed 実装。~300 ノードまで快適。
+  // d3-force embed は open-issue §27 DEP-D3-EMBED に defer (Phase D β 想定)。
+  function forceLayout(nodes, links, opts) {
+    const W = opts.width, H = opts.height;
+    const rnd = mulberry32(42);
+    nodes.forEach(function (n) {
+      n.x = W / 2 + (rnd() - 0.5) * W * 0.5;
+      n.y = H / 2 + (rnd() - 0.5) * H * 0.5;
+      n.vx = 0; n.vy = 0;
+    });
+    const idx = new Map(nodes.map(function (n, i) { return [n.name, i]; }));
+    const edges = links
+      .map(function (l) { return { s: idx.get(l.from), t: idx.get(l.to), className: l.className || "" }; })
+      .filter(function (e) { return e.s !== undefined && e.t !== undefined; });
+    const iters = 200;
+    const k = Math.sqrt((W * H) / Math.max(nodes.length, 1)) * 0.6;
+    for (let i = 0; i < iters; i += 1) {
+      const t = Math.max(0.5, 8 * (1 - i / iters));
+      for (let a = 0; a < nodes.length; a += 1) {
+        let fx = 0, fy = 0;
+        for (let b = 0; b < nodes.length; b += 1) {
+          if (a === b) continue;
+          const dx = nodes[a].x - nodes[b].x;
+          const dy = nodes[a].y - nodes[b].y;
+          const d2 = dx * dx + dy * dy + 0.01;
+          const f = (k * k) / d2;
+          fx += dx * f;
+          fy += dy * f;
+        }
+        nodes[a].vx = fx; nodes[a].vy = fy;
+      }
+      for (const e of edges) {
+        const dx = nodes[e.s].x - nodes[e.t].x;
+        const dy = nodes[e.s].y - nodes[e.t].y;
+        const d = Math.sqrt(dx * dx + dy * dy) + 0.01;
+        const f = (d * d) / k * 0.5;
+        const ux = dx / d, uy = dy / d;
+        nodes[e.s].vx -= ux * f;
+        nodes[e.s].vy -= uy * f;
+        nodes[e.t].vx += ux * f;
+        nodes[e.t].vy += uy * f;
+      }
+      for (const n of nodes) {
+        const d = Math.sqrt(n.vx * n.vx + n.vy * n.vy) + 0.01;
+        n.x += (n.vx / d) * Math.min(d, t);
+        n.y += (n.vy / d) * Math.min(d, t);
+        n.x = Math.max(20, Math.min(W - 20, n.x));
+        n.y = Math.max(20, Math.min(H - 20, n.y));
+      }
+    }
+    return edges;
+  }
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function () {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // ───────────────────────── SVG render ─────────────────────────
+  const NS = "http://www.w3.org/2000/svg";
+  function renderGraph(svg, pages, links, diff, onNodeClick) {
+    clearNode(svg);
+    const nodes = pages.map(function (p) {
+      return {
+        name: p.name, type: p.type, tags: p.tags, title: p.title, path: p.path, state: "present",
+      };
+    });
+    if (diff) {
+      const addedSet = new Set(diff.added);
+      const removedSet = new Set(diff.removed);
+      const modifiedSet = new Set(diff.modified);
+      nodes.forEach(function (n) {
+        if (addedSet.has(n.name)) n.state = "added";
+        else if (modifiedSet.has(n.name)) n.state = "modified";
+      });
+      removedSet.forEach(function (name) {
+        nodes.push({ name: name, type: null, tags: [], title: null, path: null, state: "removed" });
+      });
+    }
+    const linkNodes = links.map(function (l) { return { from: l.from, to: l.to, className: "" }; });
+    if (diff) {
+      const la = new Set((diff.linkAdded || []).map(function (l) { return l.from + "→" + l.to; }));
+      const lr = (diff.linkRemoved || []).map(function (l) { return { from: l.from, to: l.to, className: "removed" }; });
+      linkNodes.forEach(function (l) {
+        if (la.has(l.from + "→" + l.to)) l.className = "added";
+      });
+      linkNodes.push.apply(linkNodes, lr);
+    }
+    const edges = forceLayout(nodes, linkNodes, { width: 800, height: 520 });
+
+    const gLinks = document.createElementNS(NS, "g");
+    for (const e of edges) {
+      const line = document.createElementNS(NS, "line");
+      line.setAttribute("class", "link " + (e.className || ""));
+      line.setAttribute("x1", nodes[e.s].x);
+      line.setAttribute("y1", nodes[e.s].y);
+      line.setAttribute("x2", nodes[e.t].x);
+      line.setAttribute("y2", nodes[e.t].y);
+      gLinks.appendChild(line);
+    }
+    svg.appendChild(gLinks);
+
+    const gNodes = document.createElementNS(NS, "g");
+    for (const n of nodes) {
+      const g = document.createElementNS(NS, "g");
+      g.setAttribute("class", "node " + (n.state === "present" ? "" : n.state));
+      g.setAttribute("transform", "translate(" + n.x.toFixed(1) + "," + n.y.toFixed(1) + ")");
+      const c = document.createElementNS(NS, "circle");
+      c.setAttribute("r", "5");
+      g.appendChild(c);
+      const t = document.createElementNS(NS, "text");
+      t.setAttribute("x", "8");
+      t.setAttribute("y", "3");
+      t.textContent = n.name;
+      g.appendChild(t);
+      if (onNodeClick) {
+        g.style.cursor = "pointer";
+        g.addEventListener("click", function () { onNodeClick(n); });
+      }
+      gNodes.appendChild(g);
+    }
+    svg.appendChild(gNodes);
+  }
+
+  // ───────────────────────── View 1: Timeline Player ─────────────────────────
+  const tpSvg = document.getElementById("tp-svg");
+  const tpSlider = document.getElementById("tp-slider");
+  const tpCounter = document.getElementById("tp-counter");
+  const tpDetail = document.getElementById("tp-detail");
+  const tpPlay = document.getElementById("tp-play");
+  const tpPrev = document.getElementById("tp-prev");
+  const tpNext = document.getElementById("tp-next");
+
+  if (snapshots.length === 0) {
+    addMuted(tpDetail, "snapshot が 0 件です。vault が git repository で、since 範囲内に wiki/ の commit が必要です。");
+    tpSlider.disabled = true;
+    tpPlay.disabled = true;
+  } else {
+    const ordered = snapshots.slice().reverse();
+    tpSlider.max = String(ordered.length - 1);
+    tpSlider.value = String(ordered.length - 1);
+
+    function renderTimelineAt(idx) {
+      const snap = ordered[idx];
+      renderGraph(tpSvg, snap.pages, snap.links, null, function (node) { showTimelineNodeDetail(snap, node); });
+      const date = new Date(snap.timestamp).toISOString().slice(0, 19).replace("T", " ");
+      tpCounter.textContent = "[" + (idx + 1) + "/" + ordered.length + "]  " + date
+        + "  pages=" + snap.pages.length + "  links=" + snap.links.length;
+      clearNode(tpDetail);
+      addDl(tpDetail, [
+        ["commit", snap.shortSha + "  " + snap.subject],
+        ["author", snap.author],
+        ["pages", String(snap.pages.length)],
+        ["wikilinks", String(snap.links.length)],
+      ]);
+      if (snap.truncated || snap.error) {
+        const warn = document.createElement("div");
+        warn.style.color = "var(--modified)";
+        warn.style.marginTop = "6px";
+        warn.textContent = snap.error
+          ? "snapshot error: " + snap.error
+          : "snapshot truncated — 一部 page が欠落している可能性があります";
+        tpDetail.appendChild(warn);
+      }
+    }
+    function showTimelineNodeDetail(snap, node) {
+      clearNode(tpDetail);
+      addDl(tpDetail, [
+        ["page", node.name],
+        ["type", node.type || "—"],
+        ["title", node.title || "—"],
+        ["tags", (node.tags || []).join(", ") || "—"],
+        ["path", node.path || "—"],
+      ]);
+      addObsidianLink(tpDetail, data.vault_name, node.path);
+    }
+    let playing = false;
+    let playTimer = null;
+    function stopPlay() {
+      playing = false;
+      tpPlay.textContent = "▶ Play";
+      if (playTimer) { clearInterval(playTimer); playTimer = null; }
+    }
+    function startPlay() {
+      if (snapshots.length <= 1) return;
+      playing = true;
+      tpPlay.textContent = "❚❚ Pause";
+      playTimer = setInterval(function () {
+        const cur = Number(tpSlider.value);
+        if (cur >= ordered.length - 1) { stopPlay(); return; }
+        tpSlider.value = String(cur + 1);
+        renderTimelineAt(cur + 1);
+      }, 900);
+    }
+    tpPlay.addEventListener("click", function () { playing ? stopPlay() : startPlay(); });
+    tpPrev.addEventListener("click", function () {
+      const cur = Number(tpSlider.value);
+      if (cur > 0) { tpSlider.value = String(cur - 1); renderTimelineAt(cur - 1); stopPlay(); }
+    });
+    tpNext.addEventListener("click", function () {
+      const cur = Number(tpSlider.value);
+      if (cur < ordered.length - 1) { tpSlider.value = String(cur + 1); renderTimelineAt(cur + 1); stopPlay(); }
+    });
+    tpSlider.addEventListener("input", function () {
+      renderTimelineAt(Number(tpSlider.value));
+      stopPlay();
+    });
+    renderTimelineAt(Number(tpSlider.value));
+  }
+
+  // ───────────────────────── View 2: Diff Viewer ─────────────────────────
+  const dvFrom = document.getElementById("dv-from");
+  const dvTo = document.getElementById("dv-to");
+  const dvDiff = document.getElementById("dv-diff");
+  const dvSvg = document.getElementById("dv-svg");
+  const dvCounter = document.getElementById("dv-counter");
+  const dvDetail = document.getElementById("dv-detail");
+
+  snapshots.slice().reverse().forEach(function (s, i) {
+    const label = new Date(s.timestamp).toISOString().slice(0, 10) + " · " + s.shortSha + " · " + s.subject.slice(0, 40);
+    const o1 = document.createElement("option"); o1.value = String(i); o1.textContent = label;
+    const o2 = document.createElement("option"); o2.value = String(i); o2.textContent = label;
+    dvFrom.appendChild(o1); dvTo.appendChild(o2);
+  });
+  if (snapshots.length > 1) {
+    dvFrom.value = "0";
+    dvTo.value = String(snapshots.length - 1);
+    addMuted(dvDetail, "ノードをクリックすると frontmatter と Obsidian リンクが表示されます。");
+  } else {
+    dvDiff.disabled = true;
+    dvCounter.textContent = "snapshot が 2 つ以上必要です";
+    addMuted(dvDetail, "Diff は snapshot が 2 以上必要です。");
+  }
+
+  function computeDiff(before, after) {
+    const beforeByName = new Map(before.pages.map(function (p) { return [p.name, p]; }));
+    const afterByName = new Map(after.pages.map(function (p) { return [p.name, p]; }));
+    const added = []; const removed = []; const modified = [];
+    for (const entry of afterByName) {
+      const name = entry[0]; const p = entry[1];
+      if (!beforeByName.has(name)) added.push(name);
+      else {
+        const prev = beforeByName.get(name);
+        const a = (prev.tags || []).slice().sort().join("|");
+        const b = (p.tags || []).slice().sort().join("|");
+        const wa = (prev.wikilinks || []).slice().sort().join("|");
+        const wb = (p.wikilinks || []).slice().sort().join("|");
+        if (prev.type !== p.type || prev.title !== p.title || a !== b || wa !== wb) {
+          modified.push(name);
+        }
+      }
+    }
+    for (const entry of beforeByName) {
+      const name = entry[0];
+      if (!afterByName.has(name)) removed.push(name);
+    }
+    const edgeKey = function (l) { return l.from + "→" + l.to; };
+    const beforeEdges = new Set((before.links || []).map(edgeKey));
+    const afterEdges = new Set((after.links || []).map(edgeKey));
+    const linkAdded = []; const linkRemoved = [];
+    afterEdges.forEach(function (k) {
+      if (!beforeEdges.has(k)) {
+        const parts = k.split("→");
+        linkAdded.push({ from: parts[0], to: parts[1] });
+      }
+    });
+    beforeEdges.forEach(function (k) {
+      if (!afterEdges.has(k)) {
+        const parts = k.split("→");
+        linkRemoved.push({ from: parts[0], to: parts[1] });
+      }
+    });
+    return { added: added, removed: removed, modified: modified, linkAdded: linkAdded, linkRemoved: linkRemoved };
+  }
+
+  function showDiffNodeDetail(node, beforePage, afterPage) {
+    clearNode(dvDetail);
+    const rows = [
+      ["page", node.name],
+      ["state", node.state],
+      ["type", (afterPage && afterPage.type) || (beforePage && beforePage.type) || "—"],
+      ["title", (afterPage && afterPage.title) || (beforePage && beforePage.title) || "—"],
+      ["tags (after)", ((afterPage && afterPage.tags) || []).join(", ") || "—"],
+      ["tags (before)", ((beforePage && beforePage.tags) || []).join(", ") || "—"],
+    ];
+    addDl(dvDetail, rows);
+    const path = (afterPage && afterPage.path) || (beforePage && beforePage.path);
+    addObsidianLink(dvDetail, data.vault_name, path);
+  }
+
+  function runDiff() {
+    if (snapshots.length < 2) return;
+    const ordered = snapshots.slice().reverse();
+    const before = ordered[Number(dvFrom.value)];
+    const after = ordered[Number(dvTo.value)];
+    if (!before || !after) return;
+    const d = computeDiff(before, after);
+    const beforeMap = new Map(before.pages.map(function (p) { return [p.name, p]; }));
+    const afterMap = new Map(after.pages.map(function (p) { return [p.name, p]; }));
+    renderGraph(dvSvg, after.pages, after.links, d, function (node) {
+      showDiffNodeDetail(node, beforeMap.get(node.name), afterMap.get(node.name));
+    });
+    dvCounter.textContent = "added=" + d.added.length
+      + "  removed=" + d.removed.length
+      + "  modified=" + d.modified.length
+      + "  link+=" + d.linkAdded.length
+      + "  link-=" + d.linkRemoved.length;
+  }
+  dvDiff.addEventListener("click", runDiff);
+  if (snapshots.length >= 2) runDiff();
+})();
+</script>
+</body>
+</html>
