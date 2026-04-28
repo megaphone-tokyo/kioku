@@ -3,9 +3,9 @@
   "manifest_version": "0.4",
   "name": "kioku-wiki",
   "display_name": "KIOKU Wiki",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Read, search, and write your KIOKU Obsidian Wiki from Claude Desktop or Claude Code.",
-  "long_description": "KIOKU is a personal knowledge base ('second brain') built on top of an Obsidian Vault. This MCP server exposes eight tools (kioku_search, kioku_read, kioku_list, kioku_write_note, kioku_write_wiki, kioku_delete, kioku_ingest_pdf, kioku_ingest_url) so that Claude Desktop and Claude Code can browse and update the Wiki without leaving the chat. All operations are local stdio — nothing leaves your machine. See https://github.com/megaphone-tokyo/kioku for the full project.",
+  "long_description": "KIOKU is a personal knowledge base ('second brain') built on top of an Obsidian Vault. This MCP server exposes ten tools (kioku_search, kioku_read, kioku_list, kioku_write_note, kioku_write_wiki, kioku_delete, kioku_ingest_pdf, kioku_ingest_url, kioku_ingest_document, kioku_generate_viz) so that Claude Desktop and Claude Code can browse and update the Wiki without leaving the chat. All operations are local stdio — nothing leaves your machine. See https://github.com/megaphone-tokyo/kioku for the full project.",
   "author": {
     "name": "megaphone-tokyo",
     "url": "https://github.com/megaphone-tokyo/kioku"
@@ -77,6 +77,14 @@
     {
       "name": "kioku_ingest_url",
       "description": "Fetch an HTTP/HTTPS URL, extract article body (Mozilla Readability with LLM fallback), save Markdown + images under raw-sources/<subdir>/fetched/. PDF URLs auto-dispatch to kioku_ingest_pdf. Long PDFs return status: dispatched_to_pdf_queued while summary is produced in the background."
+    },
+    {
+      "name": "kioku_ingest_document",
+      "description": "Trigger immediate ingest for a non-PDF document (EPUB/DOCX/HTML/Markdown) already placed under raw-sources/. Auto-dispatches to the appropriate extractor (feature 2.4 Phases 1-3). Returns status: extracted_and_summarized for short docs or queued_for_summary for longer ones."
+    },
+    {
+      "name": "kioku_generate_viz",
+      "description": "Generate a visualization from a markdown note (mermaid / PlantUML / graph) and save under wiki/viz/. Used by V-2 Visualizer tool (v0.6.0)."
     }
   ]
 }

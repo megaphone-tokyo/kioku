@@ -2,19 +2,31 @@
 //
 // 使い方:
 //   const snap = await buildWikiSnapshot(vaultDir, sha);
-//   // snap = { sha, timestamp, pages: [...], links: [...] }
+//   // snap = { sha, timestamp, pages: [...], links: [...], truncated, error }
 //
 // Visualizer (Phase D α) が時系列 animation / diff を生成するための input。
 //
-// 設計原則 (plan/claude/26042402 §Security / Trust boundary):
-//   - 本文 (body) は snapshot に含めない (frontmatter + wikilink のみ、漏洩 blast radius 限定)
-//   - applyMasks() を frontmatter 値に適用 (secret 漏洩防御、既存 KIOKU pattern)
-//   - git-history.mjs の spawn-based safe command 経由で read-only
+// 設計原則 (plan/claude/26042402 §Security boundary 絶対契約):
+//   1. 本文 (body) は snapshot に含めない (frontmatter + wikilink のみ、漏洩 blast radius 限定)
+//   2. wikilink target は allow-list validator 通過値のみ (M2: XSS / path traversal 防御)
+//   3. git は SAFE_CONFIG 付きで呼ぶ (git-history.mjs で吸収、H1)
+//   4. frontmatter は key-name redaction + value masking の 2 段 (M3: 値無マッチ secret を catch)
 
 import { parseFrontmatter } from './frontmatter.mjs';
 import { findWikilinks } from './wikilinks.mjs';
 import { maskText as applyMasks } from '../../scripts/lib/masking.mjs';
 import { getFileContentAtCommit, listFilesAtCommit } from './git-history.mjs';
+
+// M2: wikilink target allow-list。Obsidian ページ名想定の文字集合のみ通す。
+// 外部 URL / HTML tag / path traversal を reject。
+const SAFE_WIKILINK_TARGET_RE = /^[\p{L}\p{N}_\-./ ]+$/u;
+
+// M3: frontmatter key 名ベースの強制 redaction。value pattern でマッチしない形の秘匿情報を catch。
+// 一致した key の value は '***' で固定 (applyMasks の value pattern は素通りしても key で遮断)。
+const SECRET_KEY_RE = /^(password|passwd|pwd|secret|token|api[_\-]?key|access[_\-]?key|auth|credential|bearer|private[_\-]?key|webhook|dsn|connection[_\-]?string|email|phone|debug[_\-]?key)$/i;
+
+// M5: SHA-1 (40 hex) + SHA-256 (64 hex) 許容
+const SHA_RE = /^[0-9a-f]{4,64}$/;
 
 export class WikiSnapshotError extends Error {
   constructor(message, code = 'snapshot_error') {
@@ -37,27 +49,41 @@ export class WikiSnapshotError extends Error {
 //     type: 'concept',                       // frontmatter type
 //     tags: ['auth', 'security'],            // frontmatter tags
 //     title: 'JWT Authentication',           // frontmatter title (あれば)
-//     wikilinks: ['oauth2', 'session-token'],// [[wikilink]] targets (extension なし)
-//     frontmatter: { ... applyMasks 適用済 } // all frontmatter, secret masked
+//     wikilinks: ['oauth2', 'session-token'],// [[wikilink]] targets (extension なし、M2 validator 通過済)
+//     frontmatter: { ... applyMasks + key-name redaction 適用済 } // secret masked
 //   }, ...],
-//   links: [{ from: 'jwt', to: 'oauth2' }, ...]  // edges (derived from wikilinks)
+//   links: [{ from: 'jwt', to: 'oauth2' }, ...],  // edges (derived from wikilinks)
+//   truncated: boolean,  // listFilesAtCommit が 16MiB cap に達したか
+//   error: string | null,
 // }
 export async function buildWikiSnapshot(vaultDir, sha, options = {}) {
   if (typeof vaultDir !== 'string' || vaultDir.length === 0) {
     throw new WikiSnapshotError('vaultDir required', 'invalid_args');
   }
-  if (typeof sha !== 'string' || !/^[0-9a-f]{4,40}$/.test(sha)) {
+  if (typeof sha !== 'string' || !SHA_RE.test(sha)) {
     throw new WikiSnapshotError('invalid sha', 'invalid_args');
   }
   const { subPath = 'wiki/', timestamp = null } = options;
 
-  const files = await listFilesAtCommit(vaultDir, sha, { subPath });
-  const mdFiles = files.filter((p) => p.endsWith('.md'));
+  const listing = await listFilesAtCommit(vaultDir, sha, { subPath });
+  if (listing.error) {
+    return {
+      sha,
+      timestamp,
+      pages: [],
+      links: [],
+      truncated: listing.truncated,
+      error: listing.error,
+    };
+  }
+  const mdFiles = listing.files.filter((p) => p.endsWith('.md'));
 
   const pages = [];
   const linkSet = new Set(); // 重複 edges を除くため Set of "from\x1fto"
   for (const relPath of mdFiles) {
-    const content = await getFileContentAtCommit(vaultDir, sha, relPath);
+    const content = await getFileContentAtCommit(vaultDir, sha, relPath, {
+      allowedPrefixes: [subPath], // M4: wiki/ (or 指定 subPath) 配下限定
+    });
     if (content === null) continue; // 取得失敗 (rename etc.) は skip
     const page = parsePage(relPath, content);
     pages.push(page);
@@ -71,23 +97,35 @@ export async function buildWikiSnapshot(vaultDir, sha, options = {}) {
     return { from, to };
   });
 
-  return { sha, timestamp, pages, links };
+  return { sha, timestamp, pages, links, truncated: listing.truncated, error: null };
 }
 
 // 内部: 1 page を parse
-// frontmatter + wikilinks 抽出、applyMasks で secret 伏字化
+// frontmatter + wikilinks 抽出、applyMasks + key-name redaction で secret 伏字化
 function parsePage(relPath, content) {
   const parsed = parseFrontmatter(content);
   // parseFrontmatter() は { data, body } を返す (mcp/lib/frontmatter.mjs 正典)
   const rawFrontmatter = parsed?.data ?? {};
   const body = parsed?.body ?? content;
 
-  // frontmatter values に applyMasks を適用
+  // frontmatter values に applyMasks + key-name redaction を適用
   const masked = maskFrontmatter(rawFrontmatter);
 
   const name = basenameWithoutExt(relPath);
   const folder = parentFolder(relPath);
-  const wikilinks = findWikilinks(body);
+
+  // M2: wikilink target は allow-list validator 通過値のみ。HTML tag / traversal を遮断。
+  const rawWikilinks = findWikilinks(body);
+  const wikilinks = rawWikilinks.filter(
+    (t) =>
+      typeof t === 'string'
+      && t.length > 0
+      && t.length <= 512
+      && !t.includes('..')
+      && !t.startsWith('/')
+      && !t.includes('\0')
+      && SAFE_WIKILINK_TARGET_RE.test(t),
+  );
 
   return {
     path: relPath,
@@ -104,7 +142,7 @@ function parsePage(relPath, content) {
 }
 
 // frontmatter の各 string value に applyMasks を適用 (shallow)
-// array / nested object は再帰で walk
+// array / nested object は再帰で walk。M3: key 名が SECRET_KEY_RE にマッチしたら value 全体を '***' に固定。
 function maskFrontmatter(obj) {
   if (obj === null || typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) {
@@ -112,7 +150,11 @@ function maskFrontmatter(obj) {
   }
   const out = {};
   for (const [k, v] of Object.entries(obj)) {
-    out[k] = maskValue(v);
+    if (SECRET_KEY_RE.test(k)) {
+      out[k] = '***'; // M3: key name で secret 疑いなら value を廃棄
+    } else {
+      out[k] = maskValue(v);
+    }
   }
   return out;
 }

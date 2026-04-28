@@ -9,6 +9,10 @@ session-logs/
 # .cache/ で既に除外されるが、意図を明示するため個別エントリを残す
 .cache/html/
 
+# v0.7 Phase D α: kioku_generate_viz の HTML 出力先 (マシンごとに再生成)
+# .cache/ で既に除外されるが、意図を明示するため個別エントリを残す
+.cache/viz/
+
 # Obsidian の設定ファイル（マシンごとに異なるため）
 .obsidian/
 

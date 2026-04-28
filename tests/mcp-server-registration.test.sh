@@ -16,4 +16,9 @@ grep -q 'register(INGEST_PDF_TOOL_DEF' "${SERVER_MJS}" || fail 'INGEST_PDF_TOOL_
 # 回帰: ingest-url も引き続き register されていること
 grep -q 'register(INGEST_URL_TOOL_DEF' "${SERVER_MJS}" || fail 'INGEST_URL_TOOL_DEF registration missing'
 
+# v0.7 Phase D α: kioku_generate_viz が register されていること (V-2)
+grep -q 'VISUALIZER_TOOL_DEF' "${SERVER_MJS}" || fail 'VISUALIZER_TOOL_DEF not imported in server.mjs'
+grep -q 'handleGenerateViz' "${SERVER_MJS}" || fail 'handleGenerateViz not imported in server.mjs'
+grep -q 'register(VISUALIZER_TOOL_DEF' "${SERVER_MJS}" || fail 'VISUALIZER_TOOL_DEF not registered'
+
 echo "PASS: mcp-server-registration"

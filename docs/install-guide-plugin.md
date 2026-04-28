@@ -153,6 +153,7 @@ rm ~/Library/LaunchAgents/com.kioku.*.plist
 - [SECURITY.md](../SECURITY.md) — セキュリティポリシー (CVE / Safe Harbor / Disclosure Timeline)
 - [context/context.md](../context/context.md) — 実装の INDEX
 - [app/README.md](../app/README.md) — 方法 3 manual setup 詳細
+- [install-guide-multi-agent.md](install-guide-multi-agent.md) — Codex CLI / Gemini CLI / OpenCode で kioku MCP を使う場合 ([日本語](install-guide-multi-agent.ja.md))
 
 ## リンク
 
