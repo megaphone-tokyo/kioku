@@ -350,7 +350,7 @@ v0.7.0 关闭了 v0.6.0 中打开的 narrative-implementation gap。v0.6.0 让 K
 v0.6.0 整合 Phase C。
 
 - **多代理 cross-platform (C-1)** — `scripts/setup-multi-agent.sh` 将 KIOKU skills 符号链接到 Codex / OpenCode / Gemini CLI。19/19 Bash 断言
-- **Claude Code plugin marketplace (C-2)** — `claude marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo`
+- **Claude Code plugin marketplace (C-2)** — `claude plugin marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo`
 - **Raw MD sha256 delta tracking (C-3)** — `raw-sources/<subdir>/*.md` 的 MD 参与 sha256 delta 检测。82/82 auto-ingest 断言
 - **Obsidian Bases 仪表板 (C-4)** — `templates/wiki/meta/dashboard.base` 9 种视图
 - **Visualizer 基础 (V-1，v0.7 α 准备)** — `mcp/lib/git-history.mjs` + `mcp/lib/wiki-snapshot.mjs`，14/14 Node 断言

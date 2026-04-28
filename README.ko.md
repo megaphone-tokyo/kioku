@@ -345,7 +345,7 @@ v0.7.0는 v0.6.0에서 열린 narrative-implementation gap을 닫는 release. v0
 v0.6.0는 Phase C를 한 번에 land.
 
 - **멀티 에이전트 cross-platform (C-1)** — `scripts/setup-multi-agent.sh`로 Codex / OpenCode / Gemini CLI에 KIOKU skills symlink. 19/19 Bash assertions
-- **Claude Code plugin marketplace (C-2)** — `claude marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo`
+- **Claude Code plugin marketplace (C-2)** — `claude plugin marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo`
 - **Raw MD sha256 delta tracking (C-3)** — `raw-sources/<subdir>/*.md` MD도 sha256 delta 검출 대상. 82/82 auto-ingest assertions
 - **Obsidian Bases dashboard (C-4)** — `templates/wiki/meta/dashboard.base` 9 view
 - **Visualizer 기반 (V-1, v0.7 α 준비)** — `mcp/lib/git-history.mjs` + `mcp/lib/wiki-snapshot.mjs` + 14/14 Node assertions

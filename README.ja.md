@@ -505,7 +505,7 @@ v0.7.0 は v0.6.0 で開けた "narrative-実装 gap" を完全に閉じる rele
 v0.6.0 は Phase C を一気に land: 配布チャネル拡大 (Claude Code plugin + multi-agent skills)、Obsidian 標準ダッシュボード、silent regression 防御 ingest、security policy 強化。Visualizer の土台 (v0.7 α 向け) も同時投入。
 
 - **マルチエージェント cross-platform (C-1)** — `scripts/setup-multi-agent.sh` で Codex CLI / OpenCode / Gemini CLI に KIOKU skills を symlink 配置。19/19 Bash アサーション (SMA-1..8)
-- **Claude Code plugin marketplace (C-2)** — `claude marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo` で install 可能。`docs/install-guide-plugin.md` で 3 install 方法比較
+- **Claude Code plugin marketplace (C-2)** — `claude plugin marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo` で install 可能。`docs/install-guide-plugin.md` で 3 install 方法比較
 - **Raw MD sha256 delta tracking (C-3)** — user が `raw-sources/<subdir>/*.md` に直接配置した MD も sha256 delta 検出対象に。82/82 auto-ingest assertions (新規 F23-F27)
 - **Obsidian Bases dashboard (C-4)** — `templates/wiki/meta/dashboard.base` に KIOKU wiki 構造に合わせた 9 view (Hot Cache / Active Projects / Recent Activity / Concepts / Design Decisions / Analyses / Patterns / Bugs / Stale Pages)
 - **Visualizer 土台 (V-1、v0.7 α 準備)** — `mcp/lib/git-history.mjs` + `mcp/lib/wiki-snapshot.mjs`、14/14 Node アサーション。user 可視効果はまだなし

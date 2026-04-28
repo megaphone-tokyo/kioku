@@ -486,7 +486,7 @@ v0.7.0 closes the narrative-implementation gap that v0.6.0 opened: where v0.6.0 
 v0.6.0 lands Phase C in one shot: distribution channels (Claude Code plugin + multi-agent skills), Obsidian-native dashboards, silent-regression-proof ingest, and security policy upgrades. Visualizer foundations are also land-ready for v0.7.
 
 - **Multi-agent cross-platform (C-1)** — `scripts/setup-multi-agent.sh` symlinks KIOKU skills into Codex CLI / OpenCode / Gemini CLI. 19/19 Bash assertions (SMA-1..8)
-- **Claude Code plugin marketplace (C-2)** — `claude marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo`. `docs/install-guide-plugin.md` compares 3 install paths
+- **Claude Code plugin marketplace (C-2)** — `claude plugin marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo`. `docs/install-guide-plugin.md` compares 3 install paths
 - **Raw MD sha256 delta tracking (C-3)** — User-placed `raw-sources/<subdir>/*.md` files now participate in sha256-based delta detection. 82/82 auto-ingest assertions (new F23-F27)
 - **Obsidian Bases dashboard (C-4)** — `templates/wiki/meta/dashboard.base` ships 9 views tailored to KIOKU's wiki structure
 - **Visualizer foundation (V-1, preparing v0.7)** — `mcp/lib/git-history.mjs` + `mcp/lib/wiki-snapshot.mjs` with 14/14 Node assertions. No user-facing surface yet

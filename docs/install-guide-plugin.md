@@ -25,7 +25,7 @@ KIOKU は 3 つのインストール方法があります:
 
 ```bash
 # 1. marketplace を登録 (初回のみ)
-claude marketplace add megaphone-tokyo/kioku
+claude plugin marketplace add megaphone-tokyo/kioku
 
 # 2. plugin install
 claude plugin install kioku@megaphone-tokyo
@@ -141,7 +141,7 @@ rm ~/Library/LaunchAgents/com.kioku.*.plist
 
 | 症状 | 原因 | 解決 |
 |---|---|---|
-| `claude plugin install` で not found | marketplace 未登録 | `claude marketplace add megaphone-tokyo/kioku` を先に実行 |
+| `claude plugin install` で not found | marketplace 未登録 | `claude plugin marketplace add megaphone-tokyo/kioku` を先に実行 |
 | session log が生成されない | Hook が `~/.claude/settings.json` に入っていない | `install-hooks.sh --apply` を再実行 |
 | hot.md が LLM に届かない | `$OBSIDIAN_VAULT` env 未設定 / Vault 外シムリンク escape | `echo $OBSIDIAN_VAULT` で確認、`realpath` で link 先確認 |
 | auto-ingest が動かない | LaunchAgent / cron 未インストール | `install-schedule.sh` を実行 / `launchctl list | grep kioku` で確認 |

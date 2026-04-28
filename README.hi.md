@@ -282,7 +282,7 @@ v0.7.0 v0.6.0 के narrative-implementation gap को बंद करता 
 v0.6.0 Phase C को consolidate करता है।
 
 - **Multi-agent cross-platform (C-1)** — `scripts/setup-multi-agent.sh` Codex CLI / OpenCode / Gemini CLI में KIOKU skills symlink। 19/19 Bash assertions
-- **Claude Code plugin marketplace (C-2)** — `claude marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo` से install
+- **Claude Code plugin marketplace (C-2)** — `claude plugin marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo` से install
 - **Raw MD sha256 delta tracking (C-3)** — `raw-sources/<subdir>/*.md` के MD files भी sha256 delta detection में participate। 82/82 auto-ingest assertions
 - **Obsidian Bases dashboard (C-4)** — `templates/wiki/meta/dashboard.base` में 9 views
 - **Visualizer foundations (V-1, v0.7 preparation)** — `mcp/lib/git-history.mjs` + `mcp/lib/wiki-snapshot.mjs`, 14/14 Node assertions
