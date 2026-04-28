@@ -331,6 +331,20 @@ KIOKU 是一個存取**所有 Claude Code 工作階段 I/O** 的 Hook 系統。
 
 ## 更新歷史
 
+### 2026-04-28 — v0.7.0：多代理完整支援 — Gemini / Codex Hook port + 自動 session log parity + Visualizer α
+
+v0.7.0 關閉了 v0.6.0 中開啟的 narrative-implementation gap。v0.6.0 讓 KIOKU **discoverable** (skill symlinks)，v0.7.0 讓它 **actively work** — automatic session logging、hot-cache pipeline、per-agent install scripts。
+
+- **Gemini / Codex Hook port (Q2)** — `hooks/session-logger.mjs` (591 行) 重構為 core + 3 adapters。`scripts/install-hooks-{gemini,codex}.sh` 一鍵 install
+- **Multi-agent MCP setup docs (Q1)** — `docs/install-guide-multi-agent.md` (EN+JA)
+- **Self-recursion guard agent-aware (§43 fix)** — Gemini/Codex 現在可在 vault dir 內正常運行
+- **Visualizer α (V-2)** — MCP 工具 `kioku_generate_viz`
+- **`verify-multi-agent-e2e.sh` helper** — 6 步互動式驗證器
+- **Manifest tools array reconcile (§32)** — `mcp/manifest.json` 更新為 10 tools
+- **README branding fix** — `claude-brain` → `KIOKU` / `kioku-vault` 涵蓋 10 種語言 (kioku PR #30)
+- Tests: **Node 136/136 hook suites + Bash all green**
+- [Release v0.7.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.0)
+
 ### 2026-04-24 — v0.6.0：生態系統擴展 — 多代理 + 插件 marketplace + Bases 儀表板 + delta tracking + 安全強化
 
 v0.6.0 整合 Phase C。

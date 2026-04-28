@@ -465,6 +465,22 @@ If you find a security issue, please report it via [SECURITY.md](SECURITY.md) �
 
 ## Changelog
 
+### 2026-04-28 — v0.7.0: Multi-agent complete — Hook port for Gemini / Codex + automatic session log parity + Visualizer α
+
+v0.7.0 closes the narrative-implementation gap that v0.6.0 opened: where v0.6.0 made KIOKU **discoverable** across non-Claude agents (skill symlinks), v0.7.0 makes KIOKU **actively work** across them — automatic session logging, hot-cache pipeline, and per-agent install scripts. Visualizer α also ships its first user-visible MCP tool.
+
+- **Hook port for Gemini / Codex (Q2)** — `hooks/session-logger.mjs` (591 lines, monolithic) refactored into `hooks/session-logger-core.mjs` (agent-agnostic core) + `hooks/adapters/{claude,gemini,codex}.mjs` (per-agent translators) + `hooks/adapters/_common.mjs` (`safeMain` exit-0 contract + `escapeForSystemMessage` XSS defense). `scripts/install-hooks-{gemini,codex}.sh` give one-command install per agent. **Result**: a Gemini or Codex session now produces session logs at `$OBSIDIAN_VAULT/session-logs/` byte-equivalent to Claude's, with masking applied through the same pipeline
+- **Multi-agent MCP setup docs (Q1)** — `docs/install-guide-multi-agent.md` (EN) + `.ja.md` (JA) document the per-agent MCP config (`~/.codex/config.toml`, `~/.gemini/settings.json`, `~/.config/opencode/opencode.json`) with verification commands and `Verification status: Unverified in our environment` banners on each agent section (LEARN#10 transparency, Q1 PR #54)
+- **Self-recursion guard agent-aware (§43 fix)** — `buildContext({ agent })` now narrows the cwd-in-vault no-op rule to `agent === 'claude'` only. Pre-fix, running `cd $OBSIDIAN_VAULT && codex` silently dropped session logs because the guard (originally for auto-ingest re-entrance) fired for all agents. Post-fix, Gemini and Codex log normally even when started from inside the vault. Caught and fixed during pre-release dogfood (PR #60)
+- **Visualizer α (V-2 + V-3/V-4)** — `kioku_generate_viz` MCP tool generates a static HTML page (`<vault>/wiki/<title>.html`) with embedded snapshot JSON, sanitized via `safeJsonForScript` (escapes `</`, U+2028/U+2029) + DOM-built rendering (zero `innerHTML`). The Timeline Player and Diff Viewer surfaces from V-1 lib (already in v0.6) become user-callable
+- **`verify-multi-agent-e2e.sh` helper** — Interactive 6-step verifier (`bash scripts/verify-multi-agent-e2e.sh --agent=<gemini|codex>`) walks through CLI install check → hook apply → user-driven session → session-log inspection (frontmatter agent tag + masking spot check + Codex per-turn git-sync count). Ships in this release for users to confirm their setup beyond the `.mcpb` install
+- **Manifest tools array reconciled (§32)** — `mcp/manifest.json` now lists all 10 MCP tools (was 8; `kioku_ingest_document` and `kioku_generate_viz` were missing since v0.5.0/v0.6.0). `long_description` updated to "ten tools". Catches via 製作 Claude's LEARN#4 precheck during Q1 delivery
+- **README branding fix** — Public READMEs (10 languages) had `claude-brain` (parent monorepo internal codename) leaking through into project descriptions, command paths (`tools/claude-brain/scripts/...`), and vault example names. All references corrected to `KIOKU` / `kioku-vault` / repo-root paths (kioku PR #30)
+- **Pre-release dogfood verify** — Gemini (2026-04-24) and Codex (2026-04-27 + 28) verified end-to-end on RYU's Mac mini before tag publication. §43 caught and fixed in the same release window. Details: `handoff/post-release-v0-7-0.md` Pre-release verification log
+- **Deferred for v0.7.1+** — V-1 hotfix (HIGH 4 + Medium 9 from V-1 review), §41 (`agent:` frontmatter field), §42 (Gemini adapter output duplication), §34 (`buildContext` realpath fallback), `SECURITY.ja.md` remaining 3 sections — all tracked in `handoff/open-issues.md`
+- Tests: **Node 136/136 hook suites + Bash all green**, `npm audit` clean
+- [Release v0.7.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.0) — `kioku-wiki-0.7.0.mcpb` attached
+
 ### 2026-04-24 — v0.6.0: Ecosystem expansion — multi-agent + plugin marketplace + Bases dashboard + delta tracking + security hardening
 
 v0.6.0 lands Phase C in one shot: distribution channels (Claude Code plugin + multi-agent skills), Obsidian-native dashboards, silent-regression-proof ingest, and security policy upgrades. Visualizer foundations are also land-ready for v0.7.

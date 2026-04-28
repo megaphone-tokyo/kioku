@@ -326,6 +326,20 @@ KIOKU은 **모든 Claude Code 세션 입출력**에 접근하는 Hook 시스템�
 
 ## 변경 이력
 
+### 2026-04-28 — v0.7.0: Multi-agent 완성 — Gemini / Codex Hook port + 자동 session log parity + Visualizer α
+
+v0.7.0는 v0.6.0에서 열린 narrative-implementation gap을 닫는 release. v0.6.0이 KIOKU를 **discoverable** (skill symlinks) 하게 만들었다면, v0.7.0은 **actively work** — automatic session logging, hot-cache pipeline, per-agent install scripts.
+
+- **Gemini / Codex Hook port (Q2)** — `hooks/session-logger.mjs` (591 줄)을 core + 3 adapters로 refactor. `scripts/install-hooks-{gemini,codex}.sh`로 one-command install
+- **Multi-agent MCP setup docs (Q1)** — `docs/install-guide-multi-agent.md` (EN+JA)
+- **Self-recursion guard agent-aware (§43 fix)** — Gemini/Codex가 vault dir 내에서도 정상 작동
+- **Visualizer α (V-2)** — `kioku_generate_viz` MCP tool
+- **`verify-multi-agent-e2e.sh` helper** — 6-step interactive verifier
+- **Manifest tools array reconcile (§32)** — `mcp/manifest.json` 10 tools로 업데이트
+- **README branding fix** — `claude-brain` → `KIOKU` / `kioku-vault` (10개 언어, kioku PR #30)
+- Tests: **Node 136/136 hook suites + Bash all green**
+- [Release v0.7.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.0)
+
 ### 2026-04-24 — v0.6.0: 에코시스템 확장 — multi-agent + plugin marketplace + Bases dashboard + delta tracking + security hardening
 
 v0.6.0는 Phase C를 한 번에 land.

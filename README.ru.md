@@ -331,6 +331,20 @@ KIOKU спроектирован для **совместного использ�
 
 ## История изменений
 
+### 2026-04-28 — v0.7.0: Multi-agent завершён — Hook port для Gemini / Codex + parity автоматического session log + Visualizer α
+
+v0.7.0 закрывает "narrative-implementation gap", открытый в v0.6.0. Где v0.6.0 сделал KIOKU **discoverable** (skill symlinks), v0.7.0 делает его **actively work** — automatic session logging, hot-cache pipeline, per-agent install scripts.
+
+- **Hook port для Gemini / Codex (Q2)** — `hooks/session-logger.mjs` (591 строка) рефакторен в core + 3 adapters. `scripts/install-hooks-{gemini,codex}.sh` для install в одну команду
+- **Multi-agent MCP setup docs (Q1)** — `docs/install-guide-multi-agent.md` (EN+JA)
+- **Self-recursion guard agent-aware (§43 fix)** — Gemini/Codex теперь работают внутри vault dir
+- **Visualizer α (V-2)** — MCP tool `kioku_generate_viz`
+- **`verify-multi-agent-e2e.sh` helper** — интерактивный 6-step verifier
+- **Manifest tools array reconcile (§32)** — `mcp/manifest.json` обновлён до 10 tools
+- **README branding fix** — `claude-brain` → `KIOKU` / `kioku-vault` на 10 языках (kioku PR #30)
+- Tests: **Node 136/136 hook suites + Bash all green**
+- [Release v0.7.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.0)
+
 ### 2026-04-24 — v0.6.0: Расширение экосистемы — multi-agent + plugin marketplace + Bases dashboard + delta tracking + усиление безопасности
 
 v0.6.0 объединяет Phase C.

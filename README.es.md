@@ -263,6 +263,21 @@ Si encuentras un problema de seguridad, repórtalo a través de [SECURITY.md](SE
 
 ## Cambios
 
+### 2026-04-28 — v0.7.0: Multi-agente completo — Hook port para Gemini / Codex + paridad de session log automatico + Visualizer α
+
+v0.7.0 cierra el "narrative-implementation gap" abierto en v0.6.0. Donde v0.6.0 hizo a KIOKU **discoverable** (skill symlinks), v0.7.0 lo hace **actively work** — automatic session logging, hot-cache pipeline, y per-agent install scripts.
+
+- **Hook port para Gemini / Codex (Q2)** — `hooks/session-logger.mjs` (591 lineas) refactorizado a core + 3 adapters (`hooks/adapters/{claude,gemini,codex}.mjs`). `scripts/install-hooks-{gemini,codex}.sh` para install de un comando
+- **Multi-agent MCP setup docs (Q1)** — `docs/install-guide-multi-agent.md` (EN+JA) con verify commands
+- **Self-recursion guard agent-aware (§43 fix)** — `buildContext({ agent })` solo aplica el guard para `agent === 'claude'`, Gemini/Codex funcionan dentro del vault dir
+- **Visualizer α (V-2)** — `kioku_generate_viz` MCP tool con `safeJsonForScript` XSS hardening
+- **`verify-multi-agent-e2e.sh` helper** — Verificador interactivo de 6 pasos
+- **Manifest tools array reconcile (§32)** — `mcp/manifest.json` actualizado a 10 tools
+- **README branding fix** — `claude-brain` (codename interno) → `KIOKU` / `kioku-vault` en 10 idiomas (kioku PR #30)
+- Pre-release dogfood: Gemini (2026-04-24) + Codex (2026-04-27/28) verificados end-to-end
+- Tests: **Node 136/136 hook suites + Bash all green**
+- [Release v0.7.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.0)
+
 ### 2026-04-24 — v0.6.0: Expansion del ecosistema — multi-agente + marketplace de plugins + dashboard Bases + delta tracking + endurecimiento de seguridad
 
 v0.6.0 consolida Phase C: canales de distribucion, dashboards nativos de Obsidian, ingest resistente a regresiones, y actualizacion de politica de seguridad.

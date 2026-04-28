@@ -326,6 +326,20 @@ Si vous trouvez un probleme de securite, veuillez le signaler via [SECURITY.md](
 
 ## Journal des modifications
 
+### 2026-04-28 — v0.7.0 : Multi-agent complet — Hook port pour Gemini / Codex + parite de session log automatique + Visualizer α
+
+v0.7.0 ferme le "narrative-implementation gap" ouvert dans v0.6.0. La ou v0.6.0 a rendu KIOKU **discoverable** (skill symlinks), v0.7.0 le rend **actively work** — automatic session logging, hot-cache pipeline, et per-agent install scripts.
+
+- **Hook port pour Gemini / Codex (Q2)** — `hooks/session-logger.mjs` (591 lignes) refactorise en core + 3 adapters. `scripts/install-hooks-{gemini,codex}.sh` pour install en une commande
+- **Multi-agent MCP setup docs (Q1)** — `docs/install-guide-multi-agent.md` (EN+JA)
+- **Self-recursion guard agent-aware (§43 fix)** — Gemini/Codex fonctionnent maintenant dans le vault dir
+- **Visualizer α (V-2)** — outil MCP `kioku_generate_viz`
+- **`verify-multi-agent-e2e.sh` helper** — verificateur interactif en 6 etapes
+- **Manifest tools array reconcile (§32)** — `mcp/manifest.json` mis a jour a 10 tools
+- **README branding fix** — `claude-brain` → `KIOKU` / `kioku-vault` dans 10 langues (kioku PR #30)
+- Tests : **Node 136/136 hook suites + Bash all green**
+- [Release v0.7.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.0)
+
 ### 2026-04-24 — v0.6.0 : Expansion de l'ecosysteme — multi-agent + marketplace de plugins + dashboard Bases + delta tracking + durcissement de la securite
 
 v0.6.0 consolide Phase C : canaux de distribution, dashboards natifs Obsidian, ingest resistant aux regressions, et mise a jour de la politique de securite.
