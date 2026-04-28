@@ -129,6 +129,27 @@ tool 名が見えるはずです。Codex の MCP tool 表示方法は活発に�
 schema 齟齬が見つかった場合は [Issues](https://github.com/megaphone-tokyo/kioku/issues)
 で報告お願いします。
 
+### Per-turn commit に関する注意 (Hook port も併用する場合のみ)
+
+`bash scripts/install-hooks-codex.sh --apply` (Q2 Hook port、v0.7.0) を
+実行した場合のみ該当します。**Codex CLI には `SessionEnd` event が無い** ため、
+KIOKU は Claude のセッション終了時 `git add/commit/push` を **`Stop` event (=
+turn 終了) で代替** しています。つまり **1 Codex session で数十 commit が
+発生し得る** — `wiki/` / `raw-sources/` / `templates/` / `CLAUDE.md` を
+変更した turn ごとに 1 commit。変更が無い turn は git が空 commit を拒否
+するので silent skip されます (turn 数ではなく実 edit 数で bound)。
+
+`git log` の noise が許容できない場合:
+
+- `git log --oneline` で定期的に実 churn を確認
+- 2 段目 git-sync hook のみを disable: `~/.codex/hooks.json` の `Stop`
+  配列 2 番目の shell one-liner entry を削除 (1 段目の
+  `node hooks/adapters/codex.mjs` entry は残す → session log local 記録は継続、
+  GitHub 自動 push のみ停止)
+- これは bug ではなく既知の設計トレードオフ。Codex CLI 側の SessionEnd
+  サポートは [issue #17333](https://github.com/openai/codex/issues/17333) で
+  追跡中
+
 ## Gemini CLI
 
 出典: [google-gemini/gemini-cli — `docs/tools/mcp-server.md`](https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md)

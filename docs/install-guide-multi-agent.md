@@ -128,6 +128,26 @@ listing is not obvious.
 report any schema mismatch observed against a specific Codex CLI version via
 [Issues](https://github.com/megaphone-tokyo/kioku/issues).
 
+### Note on per-turn commits (only if you also install the Hook port)
+
+If you have run `bash scripts/install-hooks-codex.sh --apply` (Q2 Hook port,
+v0.7.0), be aware that **Codex CLI lacks a `SessionEnd` event**, so KIOKU
+emulates the Claude end-of-session `git add/commit/push` step on the `Stop`
+event (= turn end). This means **a single Codex session can produce dozens of
+commits** — one per turn that touched `wiki/` / `raw-sources/` / `templates/` /
+`CLAUDE.md`. Turns with no changes are silently skipped (git refuses empty
+commits), so the count is bounded by actual edits, not by turn count alone.
+
+If the resulting `git log` noise is unacceptable for your workflow:
+
+- Inspect with `git log --oneline` periodically to gauge real churn.
+- Disable only the second-stage git-sync hook by removing the shell one-liner
+  entry from `~/.codex/hooks.json` (the `Stop` array's second element). The
+  first-stage `node hooks/adapters/codex.mjs` entry will continue to record
+  session logs locally — only the auto-push to GitHub stops.
+- This is a known design trade-off, not a bug. SessionEnd support is tracked
+  in Codex CLI [issue #17333](https://github.com/openai/codex/issues/17333).
+
 ## Gemini CLI
 
 Source: [google-gemini/gemini-cli — `docs/tools/mcp-server.md`](https://github.com/google-gemini/gemini-cli/blob/main/docs/tools/mcp-server.md)
