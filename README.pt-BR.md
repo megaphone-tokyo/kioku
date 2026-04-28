@@ -345,7 +345,7 @@ v0.7.0 fecha o "narrative-implementation gap" aberto em v0.6.0. Onde v0.6.0 torn
 v0.6.0 consolida Phase C.
 
 - **Multi-agente cross-platform (C-1)** — `scripts/setup-multi-agent.sh` cria symlinks no Codex / OpenCode / Gemini CLI. 19/19 asserções Bash
-- **Marketplace Claude Code (C-2)** — `claude marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo`
+- **Marketplace Claude Code (C-2)** — `claude plugin marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo`
 - **Delta tracking sha256 (C-3)** — Arquivos MD em `raw-sources/<subdir>/*.md` participam da deteccao delta. 82/82 asserções auto-ingest
 - **Dashboard Obsidian Bases (C-4)** — `templates/wiki/meta/dashboard.base` com 9 views
 - **Fundacoes Visualizer (V-1, v0.7)** — `mcp/lib/git-history.mjs` + `mcp/lib/wiki-snapshot.mjs`, 14/14 asserções Node

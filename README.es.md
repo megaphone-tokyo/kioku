@@ -283,7 +283,7 @@ v0.7.0 cierra el "narrative-implementation gap" abierto en v0.6.0. Donde v0.6.0 
 v0.6.0 consolida Phase C: canales de distribucion, dashboards nativos de Obsidian, ingest resistente a regresiones, y actualizacion de politica de seguridad.
 
 - **Multi-agente cross-platform (C-1)** — `scripts/setup-multi-agent.sh` crea symlinks en Codex / OpenCode / Gemini CLI. 19/19 aserciones Bash
-- **Marketplace Claude Code (C-2)** — `claude marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo`
+- **Marketplace Claude Code (C-2)** — `claude plugin marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo`
 - **Delta tracking sha256 (C-3)** — Archivos MD colocados en `raw-sources/<subdir>/*.md` ahora participan en la deteccion delta. 82/82 aserciones auto-ingest
 - **Dashboard Obsidian Bases (C-4)** — `templates/wiki/meta/dashboard.base` con 9 vistas
 - **Cimientos Visualizer (V-1, v0.7)** — `mcp/lib/git-history.mjs` + `mcp/lib/wiki-snapshot.mjs`, 14/14 aserciones Node

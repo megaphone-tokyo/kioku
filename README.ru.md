@@ -350,7 +350,7 @@ v0.7.0 закрывает "narrative-implementation gap", открытый в v0
 v0.6.0 объединяет Phase C.
 
 - **Multi-agent cross-platform (C-1)** — `scripts/setup-multi-agent.sh` создаёт symlinks в Codex / OpenCode / Gemini CLI. 19/19 Bash-утверждений
-- **Claude Code plugin marketplace (C-2)** — `claude marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo`
+- **Claude Code plugin marketplace (C-2)** — `claude plugin marketplace add megaphone-tokyo/kioku && claude plugin install kioku@megaphone-tokyo`
 - **Raw MD sha256 delta tracking (C-3)** — MD в `raw-sources/<subdir>/*.md` участвуют в sha256-дельта. 82/82 auto-ingest утверждений
 - **Obsidian Bases dashboard (C-4)** — `templates/wiki/meta/dashboard.base` с 9 видами
 - **Основы Visualizer (V-1, v0.7)** — `mcp/lib/git-history.mjs` + `mcp/lib/wiki-snapshot.mjs`, 14/14 Node-утверждений
