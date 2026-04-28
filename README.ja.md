@@ -484,6 +484,22 @@ KIOKU は Claude Code の**全セッション入出力にアクセスする Hook
 
 ## 更新履歴
 
+### 2026-04-28 — v0.7.0: マルチエージェント完全対応 — Gemini / Codex Hook port + 自動 session log parity + Visualizer α
+
+v0.7.0 は v0.6.0 で開けた "narrative-実装 gap" を完全に閉じる release。v0.6.0 で **discoverable** だった (skill symlink) KIOKU が、v0.7.0 では **actively work** する状態に。Gemini / Codex でも **自動 session log + masking pipeline + per-agent install script** が同等動作。Visualizer α の最初の user 可視 MCP tool も同時投入。
+
+- **Gemini / Codex Hook port (Q2)** — `hooks/session-logger.mjs` (591 行 monolithic) を `hooks/session-logger-core.mjs` (agent 非依存 core) + `hooks/adapters/{claude,gemini,codex}.mjs` (per-agent adapter) + `hooks/adapters/_common.mjs` (`safeMain` exit-0 contract + `escapeForSystemMessage` XSS 防御) に refactor。`scripts/install-hooks-{gemini,codex}.sh` で 1 コマンド install。**結果**: Gemini / Codex の session が `$OBSIDIAN_VAULT/session-logs/` に Claude と byte-equivalent な log を生成、masking pipeline も同等
+- **マルチエージェント MCP setup docs (Q1)** — `docs/install-guide-multi-agent.md` (EN) + `.ja.md` (JA) に 3 agent (Codex / Gemini / OpenCode) の MCP config 仕様 (`~/.codex/config.toml` / `~/.gemini/settings.json` / `~/.config/opencode/opencode.json`) と verify command を canonical 化。各 agent section に `Verification status: 未検証 (delegation 環境で install 不可)` banner 明示 (LEARN#10 transparency、Q1 PR #54)
+- **Self-recursion guard agent-aware 化 (§43 fix)** — `buildContext({ agent })` の cwd-in-vault 自動 no-op を `agent === 'claude'` のみに narrow。pre-fix では `cd $OBSIDIAN_VAULT && codex` で session log が silent fail (元々 auto-ingest の Claude 再帰防止 guard が all agent に誤適用)、post-fix では Gemini / Codex も vault 内 cwd で正常 log。pre-release dogfood で発見 + 即 fix (PR #60)
+- **Visualizer α (V-2 + V-3/V-4)** — `kioku_generate_viz` MCP tool が `<vault>/wiki/<title>.html` に snapshot JSON 埋め込み + `safeJsonForScript` (`</`, U+2028/U+2029 escape) + DOM-built 描画 (`innerHTML` 一切無し) で静的 HTML 生成。v0.6 で land した V-1 lib (Timeline Player + Diff Viewer) の user 可視化が完成
+- **`verify-multi-agent-e2e.sh` helper** — 6 step interactive verifier (`bash scripts/verify-multi-agent-e2e.sh --agent=<gemini|codex>`)、CLI install check → hook apply → user-driven session → session-log inspect (frontmatter agent tag + masking spot check + Codex per-turn git-sync 計上) を walk-through。本 release から user 自身が install 後 sanity check 可能
+- **Manifest tools array reconcile (§32)** — `mcp/manifest.json` の `tools` 配列を 8 → 10 (`kioku_ingest_document` + `kioku_generate_viz` 追加)、`long_description` も "ten tools" に更新。Q1 delivery 中の 製作 Claude LEARN#4 precheck で発見
+- **README ブランド統一** — 全 10 言語 README に混入していた `claude-brain` (parent monorepo の internal codename) を `KIOKU` (project name) / `kioku-vault` (user vault example) / repo-root path (`tools/claude-brain/scripts/...` → `scripts/...`) に正規化 (kioku PR #30)
+- **Pre-release dogfood verify** — Gemini (2026-04-24) と Codex (2026-04-27 + 28) を RYU 実機 (Mac mini) で end-to-end 動作確認、§43 を release window 内で発見 + fix。詳細: `handoff/post-release-v0-7-0.md` Pre-release verification log
+- **v0.7.1+ へ defer** — V-1 hotfix (HIGH 4 + Medium 9)、§41 (`agent:` frontmatter field)、§42 (Gemini adapter output duplication)、§34 (buildContext realpath fallback)、SECURITY.ja 残 3 section — `handoff/open-issues.md` で tracked
+- テスト: **Node 136/136 hook suites + Bash 全 suite green**、`npm audit` clean
+- [Release v0.7.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.0) — `kioku-wiki-0.7.0.mcpb` attached
+
 ### 2026-04-24 — v0.6.0: エコシステム拡張 — マルチエージェント + plugin marketplace + Bases dashboard + delta tracking + セキュリティ強化
 
 v0.6.0 は Phase C を一気に land: 配布チャネル拡大 (Claude Code plugin + multi-agent skills)、Obsidian 標準ダッシュボード、silent regression 防御 ingest、security policy 強化。Visualizer の土台 (v0.7 α 向け) も同時投入。

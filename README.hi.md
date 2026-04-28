@@ -263,6 +263,20 @@ KIOKU एक Hook सिस्टम है जो **सभी Claude Code स�
 
 ## परिवर्तन इतिहास
 
+### 2026-04-28 — v0.7.0: Multi-agent complete — Hook port for Gemini / Codex + automatic session log parity + Visualizer α
+
+v0.7.0 v0.6.0 के narrative-implementation gap को बंद करता है। जहां v0.6.0 ने KIOKU को **discoverable** बनाया (skill symlinks), v0.7.0 इसे **actively work** बनाता है — automatic session logging, hot-cache pipeline, और per-agent install scripts.
+
+- **Hook port for Gemini / Codex (Q2)** — `hooks/session-logger.mjs` (591 lines) को core + 3 adapters में refactor। `scripts/install-hooks-{gemini,codex}.sh` से एक command से install
+- **Multi-agent MCP setup docs (Q1)** — `docs/install-guide-multi-agent.md` (EN+JA)
+- **Self-recursion guard agent-aware (§43 fix)** — Gemini/Codex अब vault dir के अंदर भी काम करते हैं
+- **Visualizer α (V-2)** — `kioku_generate_viz` MCP tool
+- **`verify-multi-agent-e2e.sh` helper** — 6-step interactive verifier
+- **Manifest tools array reconcile (§32)** — `mcp/manifest.json` अब 10 tools
+- **README branding fix** — `claude-brain` → `KIOKU` / `kioku-vault` (10 भाषाओं में, kioku PR #30)
+- Tests: **Node 136/136 hook suites + Bash all green**
+- [Release v0.7.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.0)
+
 ### 2026-04-24 — v0.6.0: Ecosystem expansion — multi-agent + plugin marketplace + Bases dashboard + delta tracking + security hardening
 
 v0.6.0 Phase C को consolidate करता है।
