@@ -326,6 +326,25 @@ KIOKU은 **모든 Claude Code 세션 입출력**에 접근하는 Hook 시스템�
 
 ## 변경 이력
 
+### 2026-04-30 — v0.7.1: Polish — `agent:` frontmatter 필드 + 5건의 hardening + workflow 코드화
+
+v0.7.1은 v0.7.0에서 정착한 multi-agent narrative를 다듬는 release. 모든 session log가 frontmatter에 agent identity를 갖게 되었고, 다섯 개의 조용한 hardening (lock TOCTOU, realpath fallback, exit-reason masking, transcript-path boundary, listener accumulation), workflow rules에 양방향 drift codification이 추가됨.
+
+- **`agent:` frontmatter 필드 (§41)** — `buildFrontmatter`가 `type: session-log` 직후에 `agent: <claude|gemini|codex>` emit. 이전에는 Gemini와 Codex의 session log가 frontmatter만으로는 구별 불가능했음. 2026-04-30에 fresh codex (`019ddce8-...`)와 gemini (`f8b1aeb3-...`) session으로 end-to-end 검증
+- **5건의 hardening (§33-36, §38)** in `hooks/session-logger-core.mjs` + `hooks/adapters/_common.mjs`:
+  - **§33 INDEX-LOCK-TOCTOU-RACE** — 2단계 방어: PID alive check + post-acquire content re-verify with jitter retry
+  - **§34 BUILD-CONTEXT-REALPATH-FALLBACK** — `realpath` 실패 시 throw 대신 literal path 비교로 fallback
+  - **§35 EXIT-REASON-MASK-COVERAGE** — `sessionEnd.reason`이 frontmatter 쓰기 전에 `applyMasks()` + `yamlSafeValue()` 통과
+  - **§36 TRANSCRIPT-PATH-VAULT-BOUNDARY** — 새 helper `assertTranscriptInRoot(agent, path)` 가 `~/.{claude,gemini,codex}/{projects,chats,sessions}/`를 allowlist
+  - **§38 COMMON-MJS-GLOBAL-LISTENER-ACCUMULATION** — `safeMain` listener registration이 module-scope flag로 gated
+- **Install path hot fix (§44)** — `marketplace.json` `name`을 `kioku-marketplace` → `megaphone-tokyo`로 rename, 10개 README + `docs/install-guide-plugin.md` Claude Code v2.1.89 syntax (`claude plugin marketplace add ...`)로 통일
+- **Codex per-turn commit doc (§37)** — `docs/install-guide-multi-agent.{md,ja.md}` Codex section에 per-turn commit 주의 추가
+- **2개의 새 code-style rules (§39 LEARN#13 / §40 LEARN#14)** — regex literal control-char escape 필수화 + ESM entry gate pattern
+- **Workflow codification (parent-only)** — LEARN#10 reverse drift 코드화: `git log -10 origin/main --oneline`이 delegation handoff 작성 전 mandatory precheck로
+- **Verifier script 격상** — `scripts/verify-multi-agent-e2e.sh` Step 6 agent field check가 informational에서 fail signal (`exit 1`)로 격상
+- Tests: **Node 155/155 hook suites + 389 non-hook + Bash 모두 green**, `npm audit` clean
+- [Release v0.7.1](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.1)
+
 ### 2026-04-28 — v0.7.0: Multi-agent 완성 — Gemini / Codex Hook port + 자동 session log parity + Visualizer α
 
 v0.7.0는 v0.6.0에서 열린 narrative-implementation gap을 닫는 release. v0.6.0이 KIOKU를 **discoverable** (skill symlinks) 하게 만들었다면, v0.7.0은 **actively work** — automatic session logging, hot-cache pipeline, per-agent install scripts.

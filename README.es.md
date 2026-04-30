@@ -263,6 +263,25 @@ Si encuentras un problema de seguridad, repórtalo a través de [SECURITY.md](SE
 
 ## Cambios
 
+### 2026-04-30 — v0.7.1: Pulido — campo `agent:` en frontmatter + 5 endurecimientos + codificacion de workflow
+
+v0.7.1 pule la narrativa multi-agente que aterrizo en v0.7.0: cada session log ahora lleva su identidad de agente en el frontmatter, cinco endurecimientos discretos (lock TOCTOU, realpath fallback, exit-reason masking, transcript-path boundary, listener accumulation), y las reglas de workflow obtienen codificacion de drift bidireccional.
+
+- **Campo `agent:` en frontmatter (§41)** — `buildFrontmatter` ahora emite `agent: <claude|gemini|codex>` justo despues de `type: session-log`. Antes los session logs de Gemini y Codex eran indistinguibles por frontmatter solo. Verificado end-to-end el 2026-04-30 con sesiones fresh codex (`019ddce8-...`) y gemini (`f8b1aeb3-...`)
+- **5 endurecimientos (§33-36, §38)** en `hooks/session-logger-core.mjs` + `hooks/adapters/_common.mjs`:
+  - **§33 INDEX-LOCK-TOCTOU-RACE** — defensa de 2 etapas: PID alive check antes de robar lock stale + content re-verify post-acquire con jitter retry
+  - **§34 BUILD-CONTEXT-REALPATH-FALLBACK** — fallo de `realpath` ahora hace fallback a comparacion literal en vez de throw. `KIOKU_DEBUG=1` warns a stderr
+  - **§35 EXIT-REASON-MASK-COVERAGE** — `sessionEnd.reason` ahora pasa por `applyMasks()` + `yamlSafeValue()` antes del frontmatter
+  - **§36 TRANSCRIPT-PATH-VAULT-BOUNDARY** — nuevo `assertTranscriptInRoot(agent, path)` con allowlist `~/.{claude,gemini,codex}/{projects,chats,sessions}/`, rechaza paths externos al vault y symlink escapes
+  - **§38 COMMON-MJS-GLOBAL-LISTENER-ACCUMULATION** — registro de listener de `safeMain` ahora gated por flag de module-scope, eliminando `MaxListenersExceededWarning` en test harnesses
+- **Hot fix de install path (§44)** — `marketplace.json` `name` renombrado `kioku-marketplace` → `megaphone-tokyo` para que la sintaxis documentada `claude plugin install kioku@megaphone-tokyo` funcione. 10 README + `docs/install-guide-plugin.md` actualizados a sintaxis Claude Code v2.1.89 (`claude plugin marketplace add ...`)
+- **Doc Codex per-turn commit (§37)** — `docs/install-guide-multi-agent.{md,ja.md}` Codex section gana nota sobre per-turn commits (solo usuarios de Hook port)
+- **2 nuevas reglas de code-style (§39 LEARN#13 / §40 LEARN#14)** — `.claude/rules/code-style.md`: regex literal control-char escape mandatory + ESM entry gate pattern
+- **Codificacion de workflow (parent-only)** — LEARN#10 reverse drift codificado: PM mental-model drift puede ir en *cualquier* direccion. `git log -10 origin/main --oneline` ahora es precheck mandatorio
+- **Verificador script graduado** — `scripts/verify-multi-agent-e2e.sh` Step 6 agent field check pasa de informational a fail signal (`exit 1`)
+- Tests: **Node 155/155 hook suites + 389 non-hook + Bash todos green**, `npm audit` clean
+- [Release v0.7.1](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.1)
+
 ### 2026-04-28 — v0.7.0: Multi-agente completo — Hook port para Gemini / Codex + paridad de session log automatico + Visualizer α
 
 v0.7.0 cierra el "narrative-implementation gap" abierto en v0.6.0. Donde v0.6.0 hizo a KIOKU **discoverable** (skill symlinks), v0.7.0 lo hace **actively work** — automatic session logging, hot-cache pipeline, y per-agent install scripts.

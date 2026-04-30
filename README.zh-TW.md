@@ -331,6 +331,25 @@ KIOKU 是一個存取**所有 Claude Code 工作階段 I/O** 的 Hook 系統。
 
 ## 更新歷史
 
+### 2026-04-30 — v0.7.1：打磨 — frontmatter 中 `agent:` 欄位 + 5 項 hardening + workflow 編碼
+
+v0.7.1 打磨 v0.7.0 落地的 multi-agent narrative：每個 session log 現在在 frontmatter 中攜帶其 agent 身份，五項低調 hardening (lock TOCTOU、realpath fallback、exit-reason masking、transcript-path boundary、listener accumulation)，workflow 規則獲得雙向 drift codification。
+
+- **frontmatter 中 `agent:` 欄位 (§41)** — `buildFrontmatter` 現在在 `type: session-log` 之後立即 emit `agent: <claude|gemini|codex>`。之前 Gemini 和 Codex 的 session log 僅憑 frontmatter 無法區分。2026-04-30 在 fresh codex (`019ddce8-...`) 和 gemini (`f8b1aeb3-...`) session 上 end-to-end 驗證
+- **5 項 hardening (§33-36, §38)** in `hooks/session-logger-core.mjs` + `hooks/adapters/_common.mjs`：
+  - **§33 INDEX-LOCK-TOCTOU-RACE** — 兩階段防禦：PID alive check + post-acquire content re-verify with jitter retry
+  - **§34 BUILD-CONTEXT-REALPATH-FALLBACK** — `realpath` 失敗現在 fallback 到 literal path 比較，而非 throw
+  - **§35 EXIT-REASON-MASK-COVERAGE** — `sessionEnd.reason` 現在在寫入 frontmatter 前流經 `applyMasks()` + `yamlSafeValue()`
+  - **§36 TRANSCRIPT-PATH-VAULT-BOUNDARY** — 新 `assertTranscriptInRoot(agent, path)` 以 `~/.{claude,gemini,codex}/{projects,chats,sessions}/` allowlist
+  - **§38 COMMON-MJS-GLOBAL-LISTENER-ACCUMULATION** — `safeMain` listener 註冊現在由 module-scope flag gated
+- **Install path hot fix (§44)** — `marketplace.json` `name` 重命名 `kioku-marketplace` → `megaphone-tokyo`，10 個 README + `docs/install-guide-plugin.md` 更新到 Claude Code v2.1.89 syntax (`claude plugin marketplace add ...`)
+- **Codex per-turn commit doc (§37)** — `docs/install-guide-multi-agent.{md,ja.md}` Codex section 新增 per-turn commits 注意
+- **2 個新 code-style rules (§39 LEARN#13 / §40 LEARN#14)** — regex literal control-char 強制 escape + ESM entry gate pattern
+- **Workflow codification (parent-only)** — LEARN#10 reverse drift 編碼：`git log -10 origin/main --oneline` 現在是建立 delegation handoff 前的強制 precheck
+- **Verifier script 升級** — `scripts/verify-multi-agent-e2e.sh` Step 6 agent field check 從 informational 升級為 fail signal (`exit 1`)
+- Tests：**Node 155/155 hook suites + 389 non-hook + Bash 全部 green**，`npm audit` clean
+- [Release v0.7.1](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.1)
+
 ### 2026-04-28 — v0.7.0：多代理完整支援 — Gemini / Codex Hook port + 自動 session log parity + Visualizer α
 
 v0.7.0 關閉了 v0.6.0 中開啟的 narrative-implementation gap。v0.6.0 讓 KIOKU **discoverable** (skill symlinks)，v0.7.0 讓它 **actively work** — automatic session logging、hot-cache pipeline、per-agent install scripts。
