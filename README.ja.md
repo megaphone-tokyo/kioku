@@ -484,6 +484,25 @@ KIOKU は Claude Code の**全セッション入出力にアクセスする Hook
 
 ## 更新履歴
 
+### 2026-04-30 — v0.7.1: ポリッシュ — `agent:` frontmatter + 5 件のハードニング + workflow ルール codify
+
+v0.7.1 は v0.7.0 で完成したマルチエージェント narrative の磨き上げ。session log の frontmatter にエージェント識別子を追加、5 件の地味なハードニング (lock TOCTOU / realpath fallback / exit-reason masking / transcript-path boundary / listener accumulation)、運用ルールへの双方向 drift codify を入れた。
+
+- **`agent:` frontmatter フィールド (§41)** — `buildFrontmatter` が `type: session-log` の直後に `agent: <claude|gemini|codex>` を emit。v0.7.0 までは Gemini / Codex の session log が frontmatter だけでは識別不能だった (`session_id` namespace は独立だが)。v0.7.1 でマルチエージェント vault の indexing / filtering が grep 1 回で完結。2026-04-30 に fresh codex (`019ddce8-...`) と gemini (`f8b1aeb3-...`) session で end-to-end 検証済
+- **5 件のハードニング (§33-36, §38)**: `hooks/session-logger-core.mjs` + `hooks/adapters/_common.mjs`:
+  - **§33 INDEX-LOCK-TOCTOU-RACE** — lock 取得を 2 段防御に強化: (a) stale-mtime な lock を steal する前に PID alive check (`process.kill(pid, 0)`)、(b) 取得後に content re-verify + jitter retry で race-stolen を検出
+  - **§34 BUILD-CONTEXT-REALPATH-FALLBACK** — `realpath` 失敗 (EROFS / ENOENT / EACCES on dangling symlink) で throw せず literal path 比較に fallback。`KIOKU_DEBUG=1` で stderr に warn、production は silent
+  - **§35 EXIT-REASON-MASK-COVERAGE** — `sessionEnd.reason` を frontmatter 書き込み前に `applyMasks()` + `yamlSafeValue()` 経由に変更。将来 vendor schema drift で reason が free-form 化した場合の defense-in-depth
+  - **§36 TRANSCRIPT-PATH-VAULT-BOUNDARY** — 新 helper `assertTranscriptInRoot(agent, path)` が `~/.{claude,gemini,codex}/{projects,chats,sessions}/` を allowlist 化、vault 外パスと symlink escape を realpath 経由で reject。3 adapter 全部が `transcript_path` を core に渡す前に wire
+  - **§38 COMMON-MJS-GLOBAL-LISTENER-ACCUMULATION** — `safeMain` の listener 登録を module-scope flag で gate、複数 adapter を import する test harness で `MaxListenersExceededWarning` が発火していた risk を解消
+- **インストールパスの hot fix (§44、v0.7.0 → v0.7.1 期間に適用済)** — `marketplace.json` の `name` を `kioku-marketplace` → `megaphone-tokyo` に rename、ドキュメント通りの `claude plugin install kioku@megaphone-tokyo` で動くように。10 言語 README + `docs/install-guide-plugin.md` も Claude Code v2.1.89 syntax (`claude plugin marketplace add ...`) に統一 (旧 `claude marketplace add ...` から移行)
+- **Codex per-turn commit のドキュメント追加 (§37)** — `docs/install-guide-multi-agent.{md,ja.md}` の Codex section に「Hook port を併用する場合のみ該当する per-turn commit 注意」を追記。SessionEnd 不在 → Stop event での git-sync emulation → 1 session で数十 commit 発生し得る理由と disable 手順
+- **2 つの新コードスタイルルール (§39 LEARN#13 / §40 LEARN#14)** — `.claude/rules/code-style.md` に追加: regex literal の制御文字 escape 必須化 (U+2028/U+2029/U+200B/U+FEFF は `\uXXXX` 必須) と ESM entry gate パターン (`isEntry()` で adapter module の test import 時 stdin hang を回避)
+- **ワークフロー codify (parent-only)** — LEARN#10 の逆方向 drift を codify: PM mental-model drift は **両方向** に起き得る (phantom file paths も task already merged も)。delegation handoff 作成前の `git log -10 origin/main --oneline` check を mandatory 化、既存の `origin/main..main` empty check (LEARN#12 Rule 2) と pair で双方向 guard。2026-04-30 に duplicate-delegation を実時間で catch
+- **検証ヘルパースクリプトの昇格** — `scripts/verify-multi-agent-e2e.sh` の Step 6 agent field check を informational → fail signal (`exit 1`) に昇格、§41 ship 後の正式 check として
+- テスト: **Node 155/155 hook suites + 389 non-hook + Bash install-hooks 全 green**、`npm audit` clean
+- [Release v0.7.1](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.1) — `kioku-wiki-0.7.1.mcpb` attached
+
 ### 2026-04-28 — v0.7.0: マルチエージェント完全対応 — Gemini / Codex Hook port + 自動 session log parity + Visualizer α
 
 v0.7.0 は v0.6.0 で開けた "narrative-実装 gap" を完全に閉じる release。v0.6.0 で **discoverable** だった (skill symlink) KIOKU が、v0.7.0 では **actively work** する状態に。Gemini / Codex でも **自動 session log + masking pipeline + per-agent install script** が同等動作。Visualizer α の最初の user 可視 MCP tool も同時投入。

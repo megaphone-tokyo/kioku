@@ -263,6 +263,25 @@ KIOKU एक Hook सिस्टम है जो **सभी Claude Code स�
 
 ## परिवर्तन इतिहास
 
+### 2026-04-30 — v0.7.1: Polish — frontmatter में `agent:` field + 5 hardening + workflow codification
+
+v0.7.1 v0.7.0 में ship हुई multi-agent narrative को polish करता है: हर session log अब अपनी agent identity frontmatter में रखता है, पाँच quiet hardening fixes (lock TOCTOU, realpath fallback, exit-reason masking, transcript-path boundary, listener accumulation), और workflow rules में bidirectional drift codification।
+
+- **`agent:` frontmatter field (§41)** — `buildFrontmatter` अब `type: session-log` के तुरंत बाद `agent: <claude|gemini|codex>` emit करता है। पहले Gemini और Codex session logs frontmatter से distinguish नहीं हो सकते थे। 2026-04-30 को fresh codex (`019ddce8-...`) और gemini (`f8b1aeb3-...`) sessions के साथ end-to-end verified
+- **5 hardening fixes (§33-36, §38)** in `hooks/session-logger-core.mjs` + `hooks/adapters/_common.mjs`:
+  - **§33 INDEX-LOCK-TOCTOU-RACE** — 2-stage defense: PID alive check + post-acquire content re-verify with jitter retry
+  - **§34 BUILD-CONTEXT-REALPATH-FALLBACK** — `realpath` failure अब throw करने के बजाय literal path comparison पर fallback
+  - **§35 EXIT-REASON-MASK-COVERAGE** — `sessionEnd.reason` अब `applyMasks()` + `yamlSafeValue()` से होकर frontmatter में जाता है
+  - **§36 TRANSCRIPT-PATH-VAULT-BOUNDARY** — नया `assertTranscriptInRoot(agent, path)` allowlist `~/.{claude,gemini,codex}/{projects,chats,sessions}/`
+  - **§38 COMMON-MJS-GLOBAL-LISTENER-ACCUMULATION** — `safeMain` listener registration अब module-scope flag से gated
+- **Install path hot fix (§44)** — `marketplace.json` `name` को `kioku-marketplace` → `megaphone-tokyo` rename, 10 README + `docs/install-guide-plugin.md` Claude Code v2.1.89 syntax (`claude plugin marketplace add ...`) पर update
+- **Codex per-turn commit doc (§37)** — `docs/install-guide-multi-agent.{md,ja.md}` Codex section में per-turn commits notes जोड़ा गया
+- **2 नई code-style rules (§39 LEARN#13 / §40 LEARN#14)** — regex literal control-char escape mandatory + ESM entry gate pattern
+- **Workflow codification (parent-only)** — LEARN#10 reverse drift codify किया गया: `git log -10 origin/main --oneline` अब delegation handoff से पहले mandatory precheck है
+- **Verifier script graduated** — `scripts/verify-multi-agent-e2e.sh` Step 6 agent field check informational से fail signal (`exit 1`) में graduate
+- Tests: **Node 155/155 hook suites + 389 non-hook + Bash all green**, `npm audit` clean
+- [Release v0.7.1](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.1)
+
 ### 2026-04-28 — v0.7.0: Multi-agent complete — Hook port for Gemini / Codex + automatic session log parity + Visualizer α
 
 v0.7.0 v0.6.0 के narrative-implementation gap को बंद करता है। जहां v0.6.0 ने KIOKU को **discoverable** बनाया (skill symlinks), v0.7.0 इसे **actively work** बनाता है — automatic session logging, hot-cache pipeline, और per-agent install scripts.

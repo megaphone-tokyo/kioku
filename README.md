@@ -465,6 +465,25 @@ If you find a security issue, please report it via [SECURITY.md](SECURITY.md) �
 
 ## Changelog
 
+### 2026-04-30 — v0.7.1: Polish — `agent:` frontmatter + 5 hardening + workflow codification
+
+v0.7.1 polishes the multi-agent narrative landed in v0.7.0: every session log now carries its agent identity in the frontmatter, five quiet hardening fixes (lock TOCTOU, realpath fallback, exit-reason masking, transcript-path boundary, listener accumulation), and the workflow rules gain bidirectional-drift codification.
+
+- **`agent:` frontmatter field (§41)** — `buildFrontmatter` now emits `agent: <claude|gemini|codex>` immediately after `type: session-log`. Previously, Gemini and Codex session logs were indistinguishable by frontmatter alone (only `session_id` namespace was independent). With v0.7.1, indexing and filtering across multi-agent vaults work with a single grep. Verified end-to-end on 2026-04-30 against fresh codex (`019ddce8-...`) and gemini (`f8b1aeb3-...`) sessions
+- **5 hardening fixes (§33-36, §38)** in `hooks/session-logger-core.mjs` + `hooks/adapters/_common.mjs`:
+  - **§33 INDEX-LOCK-TOCTOU-RACE** — lock acquisition now uses 2-stage defense: (a) PID alive check (`process.kill(pid, 0)`) before stealing a stale-mtime lock, (b) post-acquire content re-verify with jitter retry to detect race-stolen locks
+  - **§34 BUILD-CONTEXT-REALPATH-FALLBACK** — `realpath` failure (EROFS / ENOENT / EACCES on dangling symlink) now falls back to literal path comparison instead of throwing. `KIOKU_DEBUG=1` warns to stderr; production stays silent
+  - **§35 EXIT-REASON-MASK-COVERAGE** — `sessionEnd.reason` now flows through `applyMasks()` + `yamlSafeValue()` before being written to frontmatter. Defense-in-depth against future vendor schema drift where reason might become free-form
+  - **§36 TRANSCRIPT-PATH-VAULT-BOUNDARY** — new `assertTranscriptInRoot(agent, path)` allowlists `~/.{claude,gemini,codex}/{projects,chats,sessions}/`, rejects vault-external paths and symlink escapes via realpath. All 3 adapters wire it before passing `transcript_path` to core
+  - **§38 COMMON-MJS-GLOBAL-LISTENER-ACCUMULATION** — `safeMain` listener registration is now gated by a module-scope flag, eliminating `MaxListenersExceededWarning` in test harnesses that import multiple adapters
+- **Install path hot fix (§44, applied during the v0.7.0 → v0.7.1 window)** — `marketplace.json` `name` renamed `kioku-marketplace` → `megaphone-tokyo` so the docs syntax `claude plugin install kioku@megaphone-tokyo` works as documented. All 10 README + `docs/install-guide-plugin.md` updated to Claude Code v2.1.89 marketplace syntax (`claude plugin marketplace add ...` instead of legacy `claude marketplace add ...`)
+- **Codex per-turn commit doc (§37)** — `docs/install-guide-multi-agent.{md,ja.md}` Codex section gains a "Note on per-turn commits" call-out (Hook port users only): SessionEnd absent → Stop event git-sync emulation → bounded commit count per session, with disable instructions
+- **Two new code-style rules (§39 LEARN#13 / §40 LEARN#14)** — `.claude/rules/code-style.md`: regex literal control-char escape mandate (U+2028/U+2029/U+200B/U+FEFF must use `\uXXXX`) and ESM entry gate pattern (`isEntry()` for adapter modules to avoid stdin-hang on test imports)
+- **Workflow codification (parent-only)** — LEARN#10 reverse drift codified: PM mental-model drift can run *either* direction (phantom file paths *or* tasks already merged). `git log -10 origin/main --oneline` is now a mandatory PM precheck before creating delegation handoffs, paired with the existing `origin/main..main` empty check (LEARN#12 Rule 2). Caught duplicate-delegation in real-time on 2026-04-30
+- **Verifier script graduation** — `scripts/verify-multi-agent-e2e.sh` Step 6 agent-field check graduates from informational to a fail signal (`exit 1`) now that §41 ships
+- Tests: **Node 155/155 hook suites + 389 non-hook + Bash install-hooks all green**, `npm audit` clean
+- [Release v0.7.1](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.1) — `kioku-wiki-0.7.1.mcpb` attached
+
 ### 2026-04-28 — v0.7.0: Multi-agent complete — Hook port for Gemini / Codex + automatic session log parity + Visualizer α
 
 v0.7.0 closes the narrative-implementation gap that v0.6.0 opened: where v0.6.0 made KIOKU **discoverable** across non-Claude agents (skill symlinks), v0.7.0 makes KIOKU **actively work** across them — automatic session logging, hot-cache pipeline, and per-agent install scripts. Visualizer α also ships its first user-visible MCP tool.
