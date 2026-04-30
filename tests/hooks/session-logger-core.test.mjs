@@ -10,7 +10,7 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile, readdir, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, readdir, mkdir, writeFile, symlink, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -231,6 +231,50 @@ describe('session-logger-core: BLUE-CORE-YAML-INJ frontmatter safety', () => {
     assert.match(fm, /cwd: '[^\n]*attacker[^\n]*'/);
     // The trailing `---\n` should still exist at the end as the closing fence
     assert.match(fm, /---\n$/);
+  });
+});
+
+// -----------------------------------------------------------------------------
+// BLUE-CORE-AGENT-FRONTMATTER (§41): buildFrontmatter agent field emission
+// -----------------------------------------------------------------------------
+
+describe('session-logger-core: BLUE-CORE-AGENT-FRONTMATTER buildFrontmatter agent field', () => {
+  const ts = {
+    iso: '2026-04-28T10:00:00+09:00',
+    compactDate: '20260428',
+    compactTime: '100000',
+    clock: '10:00:00',
+  };
+
+  test('BLUE-CORE-AGENT-FRONTMATTER-1: agent field emitted immediately after type: line for all 3 agents', () => {
+    for (const agent of ['claude', 'gemini', 'codex']) {
+      const normEv = makeNormEv({ agent });
+      const fm = buildFrontmatter(normEv, ts);
+      // 厳密 ordering を pin: type: の直後に agent: が来る
+      assert.match(
+        fm,
+        new RegExp(`^---\\ntype: session-log\\nagent: ${agent}\\nsession_id: `),
+        `agent=${agent}: type:\\nagent:${agent}\\nsession_id 順で出る`,
+      );
+    }
+  });
+
+  test('BLUE-CORE-AGENT-FRONTMATTER-2: agent value goes through yamlSafeValue + frontmatter delim count unchanged (defense-in-depth)', () => {
+    // validateNormalizedEvent (BLUE-CORE-VAL-5) で agent enum 制約済のため
+    // theoretical injection は不可だが、buildFrontmatter 自体の防御層も pin。
+    // 各 agent で:
+    //   - 単一の closing `---\n` (injection なし)
+    //   - 末尾 `---\n` (closing fence 維持)
+    //   - validateNormalizedEvent との整合 (agent value が AGENT_NAMES set 通り plain string)
+    for (const agent of ['claude', 'gemini', 'codex']) {
+      const normEv = makeNormEv({ agent });
+      const fm = buildFrontmatter(normEv, ts);
+      const delimCount = fm.split('\n---\n').length - 1;
+      assert.equal(delimCount, 1, `agent=${agent}: exactly one closing delim`);
+      assert.match(fm, /---\n$/, `agent=${agent}: trailing closing fence intact`);
+      // plain enum string は yamlSafeValue で quote されない (passthrough)
+      assert.match(fm, new RegExp(`\\nagent: ${agent}\\n`));
+    }
   });
 });
 
@@ -538,6 +582,179 @@ describe('session-logger-core: BLUE-CORE-CWD-VAULT self-recursion guard agent-aw
       } else {
         process.env.OBSIDIAN_VAULT = originalVault;
       }
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+// -----------------------------------------------------------------------------
+// BLUE-CORE-EXIT-REASON-MASK (§35): handleSessionEnd で reason field を mask + yamlSafeValue
+// -----------------------------------------------------------------------------
+
+describe('session-logger-core: BLUE-CORE-EXIT-REASON-MASK §35', () => {
+  test('BLUE-CORE-EXIT-REASON-MASK-1: reason に API key が含まれてもマスクされる', async () => {
+    const { root, ctx } = await createCtx();
+    try {
+      // 先に session を establish
+      await ingestNormalizedEvent(makeNormEv({ sessionId: 'reason-mask-1' }), ctx);
+      // session_end with API key in reason
+      const apiKey = 'sk-ant-' + 'a'.repeat(40);
+      await ingestNormalizedEvent(
+        {
+          sessionId: 'reason-mask-1',
+          eventName: 'session_end',
+          agent: 'claude',
+          timestamp: new Date(),
+          sessionEnd: { reason: `exit due to leaked ${apiKey} value` },
+          cwd: '/tmp',
+        },
+        ctx,
+      );
+      const files = (await readdir(ctx.sessionLogsDir)).filter((f) => f.endsWith('.md'));
+      const content = await readFile(join(ctx.sessionLogsDir, files[0]), 'utf8');
+      assert.ok(
+        !content.includes(apiKey),
+        'raw API key must not appear in session log (mask 適用)',
+      );
+      assert.match(content, /sk-ant-\*\*\*/, 'masked placeholder で置換されている');
+      assert.match(content, /- exit_reason:/, 'exit_reason field がそのまま書き込まれている');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('BLUE-CORE-EXIT-REASON-MASK-2: reason に YAML 構造文字 (colon/quote) が含まれても yamlSafeValue で escape', async () => {
+    const { root, ctx } = await createCtx();
+    try {
+      await ingestNormalizedEvent(makeNormEv({ sessionId: 'reason-yaml-1' }), ctx);
+      await ingestNormalizedEvent(
+        {
+          sessionId: 'reason-yaml-1',
+          eventName: 'session_end',
+          agent: 'claude',
+          timestamp: new Date(),
+          sessionEnd: { reason: "logout: it's done" },
+          cwd: '/tmp',
+        },
+        ctx,
+      );
+      const files = (await readdir(ctx.sessionLogsDir)).filter((f) => f.endsWith('.md'));
+      const content = await readFile(join(ctx.sessionLogsDir, files[0]), 'utf8');
+      // yamlSafeValue は colon-bearing string を single-quote で wrap、内部 single quote は ''
+      assert.match(content, /- exit_reason: 'logout: it''s done'/);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+// -----------------------------------------------------------------------------
+// BLUE-CORE-REALPATH-FALLBACK (§34): buildContext realpath 失敗時 throw せず literal 経路 fallback
+// -----------------------------------------------------------------------------
+
+describe('session-logger-core: BLUE-CORE-REALPATH-FALLBACK §34', () => {
+  test('BLUE-CORE-REALPATH-FALLBACK-1: vault が dangling symlink でも throw せず null 返却 (fail-safe)', async () => {
+    const tmp = await mkdtemp(join(tmpdir(), 'kioku-realpath-fb-'));
+    const originalVault = process.env.OBSIDIAN_VAULT;
+    try {
+      // dangling symlink: realpath() throws ENOENT
+      const dangling = join(tmp, 'dangling-vault');
+      await symlink(join(tmp, 'no-such-target'), dangling);
+      process.env.OBSIDIAN_VAULT = dangling;
+      let ctx;
+      let threw = false;
+      try {
+        ctx = await buildContext({ agent: 'claude' });
+      } catch {
+        threw = true;
+      }
+      assert.equal(threw, false, 'realpath ENOENT でも buildContext は throw せず');
+      assert.equal(
+        ctx,
+        null,
+        'dangling vault: stat fallback で null 返却 (fail-safe)',
+      );
+    } finally {
+      if (originalVault === undefined) delete process.env.OBSIDIAN_VAULT;
+      else process.env.OBSIDIAN_VAULT = originalVault;
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+
+  test('BLUE-CORE-REALPATH-FALLBACK-2: vault 存在 + cwd 外側で realpath 経路成功 → ctx 返却', async () => {
+    // 通常 happy path、realpath が両方成功する scenario でも ctx が出ることを pin。
+    const tmp = await mkdtemp(join(tmpdir(), 'kioku-realpath-happy-'));
+    const sessionLogsDir = join(tmp, 'session-logs');
+    const internalDir = join(sessionLogsDir, '.claude-brain');
+    await mkdir(internalDir, { recursive: true });
+    const originalVault = process.env.OBSIDIAN_VAULT;
+    try {
+      process.env.OBSIDIAN_VAULT = tmp;
+      // cwd は test runner の cwd (vault 外)
+      const ctx = await buildContext({ agent: 'claude' });
+      assert.ok(ctx, 'realpath happy path: ctx 返却');
+      assert.equal(ctx.vault, tmp);
+    } finally {
+      if (originalVault === undefined) delete process.env.OBSIDIAN_VAULT;
+      else process.env.OBSIDIAN_VAULT = originalVault;
+      await rm(tmp, { recursive: true, force: true });
+    }
+  });
+});
+
+// -----------------------------------------------------------------------------
+// BLUE-CORE-LOCK-TOCTOU (§33): index.lock stale + dead PID stealing race
+// -----------------------------------------------------------------------------
+
+describe('session-logger-core: BLUE-CORE-LOCK-TOCTOU §33', () => {
+  test('BLUE-CORE-LOCK-TOCTOU-1: stale lock with dead PID is stolen (single ingest)', async () => {
+    const { root, ctx } = await createCtx();
+    try {
+      const lockPath = `${ctx.indexPath}.lock`;
+      // PID 2147483646 (max int32 - 1) は実機で存在しない PID として安全に "dead" を示す
+      await writeFile(lockPath, '2147483646', { encoding: 'utf8', mode: 0o600 });
+      const pastDate = new Date(Date.now() - 41_000); // > INDEX_LOCK_STALE_MS (30s)
+      await utimes(lockPath, pastDate, pastDate);
+
+      const intent = await ingestNormalizedEvent(
+        makeNormEv({ sessionId: 'toctou-dead-1' }),
+        ctx,
+      );
+      assert.deepEqual(intent, { type: 'none' });
+      const files = (await readdir(ctx.sessionLogsDir)).filter((f) => f.endsWith('.md'));
+      assert.equal(files.length, 1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('BLUE-CORE-LOCK-TOCTOU-2: 5 concurrent ingest racing on stale dead-PID orphan all succeed', async () => {
+    const { root, ctx } = await createCtx();
+    try {
+      const lockPath = `${ctx.indexPath}.lock`;
+      // 同時に複数 ingest が stale orphan lock の steal を試みる scenario。
+      // dead PID の orphan を植え、5 ingest を並列発火。1 ingest が steal +
+      // 'wx' で lock を取得、他は alive owner (= 取得した ingest 自身) で stale
+      // 判定が不成立になり wait/retry → 全 ingest が serial に lock を取り
+      // saveIndex 完了する (in-process 同 pid double-acquire を起こさない)。
+      await writeFile(lockPath, '2147483646', { encoding: 'utf8', mode: 0o600 });
+      const pastDate = new Date(Date.now() - 41_000);
+      await utimes(lockPath, pastDate, pastDate);
+
+      const events = Array.from({ length: 5 }, (_, i) => ({
+        sessionId: `toctou-race-${String(i).padStart(4, '0')}`,
+        eventName: 'user_prompt',
+        agent: 'claude',
+        timestamp: new Date(Date.now() + i),
+        userPrompt: { text: `prompt ${i}` },
+        cwd: '/tmp',
+      }));
+      await Promise.all(events.map((e) => ingestNormalizedEvent(e, ctx)));
+
+      const indexRaw = await readFile(ctx.indexPath, 'utf8');
+      const index = JSON.parse(indexRaw);
+      assert.equal(Object.keys(index.sessions).length, 5);
+    } finally {
       await rm(root, { recursive: true, force: true });
     }
   });

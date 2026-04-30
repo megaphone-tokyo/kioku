@@ -13,7 +13,7 @@
 import { pathToFileURL } from 'node:url';
 
 import { buildContext, envTruthy, ingestNormalizedEvent, readStdin } from '../session-logger-core.mjs';
-import { safeMain } from './_common.mjs';
+import { assertTranscriptInRoot, safeMain } from './_common.mjs';
 
 // -----------------------------------------------------------------------------
 // Gemini CLI hook_event_name → NormalizedEvent.eventName
@@ -166,6 +166,17 @@ export async function main() {
 
   const normEv = geminiPayloadToNormalizedEvent(payload);
   if (!normEv) return;
+
+  // §36 fix: transcript_path safe root boundary check (allowlist 外は drop、
+  // Gemini は inline `prompt_response` text を別途持つため assistant_stop は
+  // text fallback で続行可能)。
+  if (normEv.eventName === 'assistant_stop' && normEv.assistantResponse?.transcriptPath) {
+    try {
+      await assertTranscriptInRoot(normEv.agent, normEv.assistantResponse.transcriptPath);
+    } catch {
+      delete normEv.assistantResponse.transcriptPath;
+    }
+  }
 
   try {
     await ingestNormalizedEvent(normEv, ctx);

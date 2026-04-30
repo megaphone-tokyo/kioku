@@ -433,11 +433,20 @@ describe('session-logger: Edit / Write / MultiEdit', () => {
   });
 });
 
+// §36 fix (v0.7.1): Claude adapter は transcript_path を ~/.claude/projects/ 配下
+// にしか accept しない (TRANSCRIPT_SAFE_ROOTS allowlist)。test 用に HOME を
+// tmp root に上書きし、transcript を ${HOME}/.claude/projects/ 配下に置く。
+async function makeSafeTranscript(root) {
+  const projectsDir = join(root, '.claude', 'projects');
+  await mkdir(projectsDir, { recursive: true });
+  return join(projectsDir, 'transcript.jsonl');
+}
+
 describe('session-logger: Stop handler with transcript', () => {
   test('extracts assistant text from transcript and tracks offset', async () => {
     const { root, vault } = await createVault();
     try {
-      const transcript = join(root, 'transcript.jsonl');
+      const transcript = await makeSafeTranscript(root);
       const lines = [
         JSON.stringify({
           type: 'user',
@@ -461,14 +470,14 @@ describe('session-logger: Stop handler with transcript', () => {
         cwd: '/tmp',
         prompt: 'stop test',
         transcript_path: transcript,
-      });
+      }, { HOME: root });
       await runHook(vault, {
         session_id: 'test-session-0050',
         hook_event_name: 'Stop',
         cwd: '/tmp',
         stop_reason: 'end_turn',
         transcript_path: transcript,
-      });
+      }, { HOME: root });
 
       const body = await readFirstSessionFile(vault);
       assert.match(body, /## Assistant/);
@@ -486,7 +495,7 @@ describe('session-logger: Stop handler with transcript', () => {
   test('second Stop only reads newly appended lines (differential)', async () => {
     const { root, vault } = await createVault();
     try {
-      const transcript = join(root, 'transcript.jsonl');
+      const transcript = await makeSafeTranscript(root);
       const first = JSON.stringify({
         type: 'assistant',
         message: { role: 'assistant', content: [{ type: 'text', text: 'First reply.' }] },
@@ -499,14 +508,14 @@ describe('session-logger: Stop handler with transcript', () => {
         cwd: '/tmp',
         prompt: 'diff test',
         transcript_path: transcript,
-      });
+      }, { HOME: root });
       await runHook(vault, {
         session_id: 'test-session-0051',
         hook_event_name: 'Stop',
         cwd: '/tmp',
         stop_reason: 'end_turn',
         transcript_path: transcript,
-      });
+      }, { HOME: root });
 
       const second = JSON.stringify({
         type: 'assistant',
@@ -520,7 +529,7 @@ describe('session-logger: Stop handler with transcript', () => {
         cwd: '/tmp',
         stop_reason: 'end_turn',
         transcript_path: transcript,
-      });
+      }, { HOME: root });
 
       const body = await readFirstSessionFile(vault);
       // both replies present, but first should not be duplicated
@@ -536,7 +545,7 @@ describe('session-logger: Stop handler with transcript', () => {
   test('transcript truncation resets offset to 0', async () => {
     const { root, vault } = await createVault();
     try {
-      const transcript = join(root, 'transcript.jsonl');
+      const transcript = await makeSafeTranscript(root);
       const big = JSON.stringify({
         type: 'assistant',
         message: { role: 'assistant', content: [{ type: 'text', text: 'padding padding padding padding' }] },
@@ -549,14 +558,14 @@ describe('session-logger: Stop handler with transcript', () => {
         cwd: '/tmp',
         prompt: 'rotate test',
         transcript_path: transcript,
-      });
+      }, { HOME: root });
       await runHook(vault, {
         session_id: 'test-session-0052',
         hook_event_name: 'Stop',
         cwd: '/tmp',
         stop_reason: 'end_turn',
         transcript_path: transcript,
-      });
+      }, { HOME: root });
 
       // truncate (rotate)
       const tiny = JSON.stringify({
@@ -571,10 +580,44 @@ describe('session-logger: Stop handler with transcript', () => {
         cwd: '/tmp',
         stop_reason: 'end_turn',
         transcript_path: transcript,
-      });
+      }, { HOME: root });
 
       const body = await readFirstSessionFile(vault);
       assert.match(body, /after rotate/);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('§36: transcript_path outside ~/.claude/projects/ is silently dropped (boundary check)', async () => {
+    const { root, vault } = await createVault();
+    try {
+      // 敵対的 stdin injection 想定: transcript_path が allowlist 外 (/tmp/...)
+      const evilTranscript = join(root, 'evil.jsonl');
+      const evilLine = JSON.stringify({
+        type: 'assistant',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'INJECTED CONTENT' }] },
+      });
+      await writeFile(evilTranscript, evilLine + '\n', 'utf8');
+
+      await runHook(vault, {
+        session_id: 'test-session-0053',
+        hook_event_name: 'UserPromptSubmit',
+        cwd: '/tmp',
+        prompt: 'boundary test',
+        transcript_path: evilTranscript,
+      }, { HOME: root });
+      await runHook(vault, {
+        session_id: 'test-session-0053',
+        hook_event_name: 'Stop',
+        cwd: '/tmp',
+        stop_reason: 'end_turn',
+        transcript_path: evilTranscript,
+      }, { HOME: root });
+
+      const body = await readFirstSessionFile(vault);
+      // Stop が transcript を読まないため、injected 内容は session log に出ない
+      assert.doesNotMatch(body, /INJECTED CONTENT/, 'allowlist 外 transcript の内容は logger に取り込まれてはならない');
     } finally {
       await rm(root, { recursive: true, force: true });
     }

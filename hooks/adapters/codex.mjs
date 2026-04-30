@@ -22,7 +22,7 @@
 import { pathToFileURL } from 'node:url';
 
 import { buildContext, envTruthy, ingestNormalizedEvent, readStdin } from '../session-logger-core.mjs';
-import { safeMain } from './_common.mjs';
+import { assertTranscriptInRoot, safeMain } from './_common.mjs';
 
 // -----------------------------------------------------------------------------
 // Codex CLI hook_event_name → NormalizedEvent.eventName
@@ -133,6 +133,16 @@ export async function main() {
 
   const normEv = codexPayloadToNormalizedEvent(payload);
   if (!normEv) return;
+
+  // §36 fix: transcript_path safe root boundary check (Codex は inline
+  // `last_assistant_message` を持つため transcriptPath drop でも text fallback で続行)。
+  if (normEv.eventName === 'assistant_stop' && normEv.assistantResponse?.transcriptPath) {
+    try {
+      await assertTranscriptInRoot(normEv.agent, normEv.assistantResponse.transcriptPath);
+    } catch {
+      delete normEv.assistantResponse.transcriptPath;
+    }
+  }
 
   try {
     await ingestNormalizedEvent(normEv, ctx);

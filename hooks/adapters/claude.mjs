@@ -13,7 +13,7 @@
 import { pathToFileURL } from 'node:url';
 
 import { buildContext, envTruthy, ingestNormalizedEvent, readStdin } from '../session-logger-core.mjs';
-import { escapeForSystemMessage, safeMain } from './_common.mjs';
+import { assertTranscriptInRoot, escapeForSystemMessage, safeMain } from './_common.mjs';
 
 // -----------------------------------------------------------------------------
 // Claude Code v2 hook_event_name → NormalizedEvent.eventName
@@ -142,6 +142,18 @@ export async function main() {
 
   const normEv = claudePayloadToNormalizedEvent(payload);
   if (!normEv) return;
+
+  // §36 fix: transcript_path を core が無条件で stat/open/read する前に safe root
+  // boundary check。allowlist 外 (敵対的 stdin injection 等) は transcriptPath
+  // field を drop して silent fallback (Claude には inline text 無いので assistant_stop
+  // は no-op 化、log は欠損するが filesystem boundary は保護される)。
+  if (normEv.eventName === 'assistant_stop' && normEv.assistantResponse?.transcriptPath) {
+    try {
+      await assertTranscriptInRoot(normEv.agent, normEv.assistantResponse.transcriptPath);
+    } catch {
+      delete normEv.assistantResponse.transcriptPath;
+    }
+  }
 
   try {
     await ingestNormalizedEvent(normEv, ctx);

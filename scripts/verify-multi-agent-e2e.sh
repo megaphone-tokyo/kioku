@@ -312,16 +312,15 @@ verify_session_logs() {
   echo ""
 
   # agent tag check (frontmatter 内 agent: <agent>)
-  # v0.7.0 時点: buildFrontmatter は agent field を emit しない (byte-identical regression guard
-  # 優先のため)、open-issues §41 AGENT-FRONTMATTER-FIELD で v0.7.1 実装予定。
-  # → 検出できなくても informational only、他の evidence (session_id 新規 / date 今日 /
-  #   mtime recent / hostname 一致 / filename = 入力 prompt) で Gemini/Codex session
-  #   であることは判定可能。
+  # v0.7.1 §41: buildFrontmatter は `agent: <agent>` field を type: 直後に emit する。
+  # multi-agent indexing / filtering の整合性のため必須化済 (open-issues §41 RESOLVED)。
   if grep -E "^agent:\s*${AGENT}\s*$" "${newest}" >/dev/null 2>&1; then
     success "frontmatter に 'agent: ${AGENT}' あり"
   else
-    info "frontmatter に 'agent: ${AGENT}' field 不在 (v0.7.0 既知、open-issues §41 で v0.7.1 実装予定)"
-    info "  他の evidence で session 由来を判定してください (filename / session_id / mtime)"
+    fail "frontmatter に 'agent: ${AGENT}' field 不在 (v0.7.1 §41 で実装済のはず、buildFrontmatter を再確認)"
+    echo "  期待: 最新 session log の冒頭 frontmatter に '^agent: ${AGENT}\$' line"
+    echo "  file: ${newest}"
+    exit 1
   fi
 
   # masking spot check — sk-proj- / sk-ant- / ghp_ 等の unmasked API key
