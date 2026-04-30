@@ -274,28 +274,87 @@ export function newSessionEntry(fileName, isoDate, transcriptPath) {
 // index.lock (SF1: BLUE-CORE-CONCURRENT-1 / 3 child proc 並列 100 event)
 // -----------------------------------------------------------------------------
 
+// §33 fix: process.kill(pid, 0) で alive check (open-issues §33、原典 plan/
+// claude/26042408 §3 item 1)。EPERM は existence の証 (kill perm は無いが process は
+// 存在)、ESRCH は no-such-process。それ以外は alive 扱いで保守的に倒す
+// (race の中で誤って alive な lock を奪わない pessimistic 判定)。
+function isProcessAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    if (err && err.code === 'EPERM') return true;
+    return false;
+  }
+}
+
+async function readLockPid(lockPath) {
+  try {
+    const content = await readFile(lockPath, 'utf8');
+    const parsed = parseInt(content.trim(), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+// §33 fix: index.lock TOCTOU race 対策 (open-issues §33)。
+//
+// 旧実装の race window:
+//   1. process A が 'wx' で lock 取得、PID=A を write
+//   2. process B が stat(lock) → mtime stale 判定 → unlink → 'wx' で再取得
+//      (A の lock を steal してしまう)、PID=B を write
+//   3. process A は自分が lock を所有していると思って index 書き込み、release で
+//      lockPath を unlink → B の現有 lock を消す事故が起き得る
+//
+// 防御 2 段:
+//   (a) **Steal 前に PID alive check**: stale な mtime でも owner PID が alive なら
+//       steal しない (process が遅いだけかもしれない)。dead PID / unparseable /
+//       自 PID (orphan) のみ steal する。
+//   (b) **取得後に content re-verify**: 'wx' 成功直後に lock の中身を読み戻し、
+//       自分の PID が残っていることを確認する。race で奪われていたら retry。
 async function acquireIndexLock(ctx) {
   const lockPath = `${ctx.indexPath}.lock`;
-  const deadline = Date.now() + 5_000; // 5s 待機上限
+  const deadline = Date.now() + 5_000;
+  const myPid = String(process.pid);
   while (true) {
     try {
       const fh = await open(lockPath, 'wx', 0o600);
       try {
-        await fh.write(String(process.pid));
+        await fh.write(myPid);
       } finally {
         await fh.close();
+      }
+      // (b) 取得後 content verify: race で奪われた場合 retry
+      const ownerPid = await readLockPid(lockPath);
+      if (ownerPid !== process.pid) {
+        if (Date.now() > deadline) {
+          throw new Error('index.lock timeout');
+        }
+        await new Promise((r) => setTimeout(r, 10 + Math.random() * 30));
+        continue;
       }
       return lockPath;
     } catch (err) {
       if (!err || err.code !== 'EEXIST') {
         throw err;
       }
-      // 既存 lock: 古ければ steal
+      // 既存 lock: stale 判定 + (a) PID alive check で steal 可否を決定
       try {
         const s = await stat(lockPath);
         if (Date.now() - s.mtimeMs > INDEX_LOCK_STALE_MS) {
-          await unlink(lockPath);
-          continue;
+          const ownerPid = await readLockPid(lockPath);
+          if (ownerPid === null || !isProcessAlive(ownerPid)) {
+            // 安全に steal: unparseable content / dead owner
+            // (自 pid match は steal 条件にしない: 同 Node process 内の Promise.all
+            //  並列 ingest で全 instance が process.pid を共有するため、self-pid
+            //  shortcut は in-process double-acquire 事故を起こす)
+            await unlink(lockPath).catch(() => {});
+            continue;
+          }
+          // alive owner: stale mtime でも steal しない (process が遅いだけかも)、
+          // deadline まで待機 retry
         }
       } catch {
         // stat 失敗 → 次周回で再 open 試行
@@ -325,6 +384,12 @@ export function buildFrontmatter(normEv, ts) {
   const lines = [
     '---',
     'type: session-log',
+    // §41 fix (v0.7.1): agent field を type: 直後に emit。multi-agent (claude /
+    // gemini / codex) の session log を frontmatter で識別可能にする。
+    // normEv.agent は validateNormalizedEvent (BLUE-CORE-VAL-5) で AGENT_NAMES
+    // closed enum 検証済のため theoretical injection 不可。defense-in-depth で
+    // yamlSafeValue を必ず通す (既存 cwd / sessionId と同じ pattern)。
+    `agent: ${yamlSafeValue(normEv.agent)}`,
     `session_id: ${yamlSafeValue(normEv.sessionId)}`,
     `hostname: ${yamlSafeValue(hostname())}`,
     `cwd: ${yamlSafeValue(normEv.cwd || '')}`,
@@ -521,7 +586,12 @@ async function handleToolUse(normEv, ctx, index, entry, ts) {
 
 async function handleSessionEnd(normEv, ctx, index, entry, ts) {
   const c = entry.counters;
-  const exitReason = normEv.sessionEnd?.reason || 'unknown';
+  // §35 fix: reason は CLI が現状 enum 文字列のみを入れるが、将来 vendor schema
+  // drift で free-form 文字列に拡張される可能性に備え、他の user-controlled
+  // field と同様 mask + yamlSafeValue を必ず通す (open-issues §35、原典 plan/
+  // claude/26042408 §3 item 3)。
+  const rawReason = normEv.sessionEnd?.reason || 'unknown';
+  const exitReason = yamlSafeValue(mask(rawReason));
   const body = [
     '',
     '---',
@@ -588,7 +658,20 @@ export async function buildContext({ agent = 'claude' } = {}) {
       const realVault = await realpath(vault);
       const realCwd = await realpath(process.cwd());
       if (realCwd === realVault || realCwd.startsWith(realVault + '/')) return null;
-    } catch {
+    } catch (err) {
+      // §34 fix: realpath 失敗 (EROFS / ENOENT / EACCES on symlink target 等) は
+      // throw せず literal path で best-effort fallback compare を継続する。
+      // 観測性のため KIOKU_DEBUG=1 のときだけ stderr に warn を出す
+      // (open-issues §34、原典 plan/claude/26042408 §3 item 2)。
+      if (envTruthy(process.env.KIOKU_DEBUG)) {
+        try {
+          process.stderr.write(
+            `[claude-brain] buildContext realpath fallback: ${(err && err.message) || 'unknown'}\n`,
+          );
+        } catch {
+          /* ignore */
+        }
+      }
       const cwd = process.cwd();
       if (cwd === vault || cwd.startsWith(vault + '/')) return null;
     }
