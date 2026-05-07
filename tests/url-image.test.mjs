@@ -7,21 +7,28 @@ import { join } from 'node:path';
 import { downloadImages, rewriteImageSrc } from '../mcp/lib/url-image.mjs';
 import { startFixtureServer } from './helpers/fixture-server.mjs';
 
+// v0.7.2 PR C: URL test 安定化。fixture server / network-ish 統合テストは
+// `KIOKU_SKIP_NETWORKISH_TESTS=1` で skip 可能、各 test に 30s hard timeout。
+const SKIP_NETWORK = process.env.KIOKU_SKIP_NETWORKISH_TESTS === '1';
+const NETWORK_TEST = { skip: SKIP_NETWORK ? 'KIOKU_SKIP_NETWORKISH_TESTS=1' : false, timeout: 30_000 };
+
 describe('url-image', () => {
   let server, workspace, mediaDir;
   before(async () => {
+    if (SKIP_NETWORK) return;
     process.env.KIOKU_URL_ALLOW_LOOPBACK = '1';
     server = await startFixtureServer();
     workspace = await mkdtemp(join(tmpdir(), 'kioku-img-'));
     mediaDir = join(workspace, 'media');
   });
   after(async () => {
+    if (SKIP_NETWORK) return;
     delete process.env.KIOKU_URL_ALLOW_LOOPBACK;
     await server.close();
     await rm(workspace, { recursive: true, force: true });
   });
 
-  test('UI1 relative URL resolved against base, downloaded', async () => {
+  test('UI1 relative URL resolved against base, downloaded', NETWORK_TEST, async () => {
     const imgs = [{ src: '/sample-image.png', alt: 'sample' }];
     const r = await downloadImages(imgs, { baseUrl: server.url, mediaDir });
     assert.equal(r.images.length, 1);
@@ -30,7 +37,7 @@ describe('url-image', () => {
     assert.equal(entries.length, 1);
   });
 
-  test('UI2 same sha → dedupe (second download → no new file)', async () => {
+  test('UI2 same sha → dedupe (second download → no new file)', NETWORK_TEST, async () => {
     const imgs = [
       { src: '/sample-image.png', alt: 'a' },
       { src: '/sample-image.png', alt: 'b' },
@@ -40,49 +47,49 @@ describe('url-image', () => {
     assert.equal(r.images[0].localPath, r.images[1].localPath, 'dedupe to same file');
   });
 
-  test('UI3 octet-stream MIME → skip + warning', async () => {
+  test('UI3 octet-stream MIME → skip + warning', NETWORK_TEST, async () => {
     const imgs = [{ src: '/redirect-target?ct=application%2Foctet-stream&body=junk', alt: 'x' }];
     const r = await downloadImages(imgs, { baseUrl: server.url, mediaDir });
     assert.equal(r.images.length, 0);
     assert.match(r.warnings.join('\n'), /MIME/);
   });
 
-  test('UI4 size > maxBytes → skip + warning', async () => {
+  test('UI4 size > maxBytes → skip + warning', NETWORK_TEST, async () => {
     const imgs = [{ src: '/huge', alt: 'x' }];
     const r = await downloadImages(imgs, { baseUrl: server.url, mediaDir, maxBytes: 1024 });
     assert.equal(r.images.length, 0);
     assert.match(r.warnings.join('\n'), /size/i);
   });
 
-  test('UI5 tracking pixel (< 200 bytes) → skip', async () => {
+  test('UI5 tracking pixel (< 200 bytes) → skip', NETWORK_TEST, async () => {
     const imgs = [{ src: '/pixel-1x1.png', alt: '' }];
     const r = await downloadImages(imgs, { baseUrl: server.url, mediaDir });
     assert.equal(r.images.length, 0);
     assert.match(r.warnings.join('\n'), /pixel|small/i);
   });
 
-  test('UI6 SVG skipped with warning', async () => {
+  test('UI6 SVG skipped with warning', NETWORK_TEST, async () => {
     const imgs = [{ src: '/redirect-target?ct=image%2Fsvg%2Bxml&body=%3Csvg%3E%3C%2Fsvg%3E', alt: 'svg' }];
     const r = await downloadImages(imgs, { baseUrl: server.url, mediaDir });
     assert.equal(r.images.length, 0);
     assert.match(r.warnings.join('\n'), /svg/i);
   });
 
-  test('UI7 fetch timeout → skip + warning', async () => {
+  test('UI7 fetch timeout → skip + warning', NETWORK_TEST, async () => {
     const imgs = [{ src: '/slow', alt: 'x' }];
     const r = await downloadImages(imgs, { baseUrl: server.url, mediaDir, timeoutMs: 200 });
     assert.equal(r.images.length, 0);
     assert.match(r.warnings.join('\n'), /timeout/i);
   });
 
-  test('UI8 data: URI skipped (not downloaded)', async () => {
+  test('UI8 data: URI skipped (not downloaded)', NETWORK_TEST, async () => {
     const imgs = [{ src: 'data:image/png;base64,iVBORw0KGgo=', alt: 'inline' }];
     const r = await downloadImages(imgs, { baseUrl: server.url, mediaDir });
     assert.equal(r.images.length, 0);
     assert.match(r.warnings.join('\n'), /data:/);
   });
 
-  test('UI9 hostname `..` rejected (path-traversal defense-in-depth)', async () => {
+  test('UI9 hostname `..` rejected (path-traversal defense-in-depth)', NETWORK_TEST, async () => {
     // new URL('http://../x.png').hostname === '..' — without an explicit
     // guard, path.join(mediaDir, '..') would write one directory above
     // mediaDir. fetchUrl rejects this via DNS, but we do not depend on that.
@@ -92,7 +99,7 @@ describe('url-image', () => {
     assert.match(r.warnings.join('\n'), /unsafe hostname/i);
   });
 
-  test('UI10 hostname `.` rejected (would collapse into mediaDir root)', async () => {
+  test('UI10 hostname `.` rejected (would collapse into mediaDir root)', NETWORK_TEST, async () => {
     const imgs = [{ src: 'http://./evil.png', alt: 'evil' }];
     const r = await downloadImages(imgs, { baseUrl: server.url, mediaDir });
     assert.equal(r.images.length, 0);

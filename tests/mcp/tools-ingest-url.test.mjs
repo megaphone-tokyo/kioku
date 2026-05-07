@@ -47,6 +47,11 @@ const MCP_DIR = join(__dirname, '..', '..', 'mcp');
 
 const { handleIngestUrl } = await import(join(MCP_DIR, 'tools', 'ingest-url.mjs'));
 
+// v0.7.2 PR C: URL test 安定化。fixture server / network-ish 統合テストは
+// `KIOKU_SKIP_NETWORKISH_TESTS=1` で skip 可能、各 test に 30s hard timeout。
+const SKIP_NETWORK = process.env.KIOKU_SKIP_NETWORKISH_TESTS === '1';
+const NETWORK_TEST = { skip: SKIP_NETWORK ? 'KIOKU_SKIP_NETWORKISH_TESTS=1' : false, timeout: 30_000 };
+
 // poppler が無ければ PDF dispatch サブスイートを skip (handleIngestPdf が extract-pdf.sh
 // を spawn するので pdfinfo / pdftotext が必要)。
 const popplerCheck = spawnSync(
@@ -62,6 +67,7 @@ let stubBin;
 let stubLog;
 
 before(async () => {
+  if (SKIP_NETWORK) return;
   process.env.KIOKU_URL_ALLOW_LOOPBACK = '1';
   server = await startFixtureServer();
   workspace = await mkdtemp(join(tmpdir(), 'kioku-iu-'));
@@ -93,6 +99,7 @@ before(async () => {
 });
 
 after(async () => {
+  if (SKIP_NETWORK) return;
   delete process.env.KIOKU_URL_ALLOW_LOOPBACK;
   if (server) await server.close();
   if (workspace) await rm(workspace, { recursive: true, force: true });
@@ -109,7 +116,7 @@ async function makeVault(name) {
 }
 
 describe('kioku_ingest_url', () => {
-  test('MCP31 normal URL → fetched_and_summarized_pending', async () => {
+  test('MCP31 normal URL → fetched_and_summarized_pending', NETWORK_TEST, async () => {
     const v = await makeVault('mcp31');
     const r = await handleIngestUrl(
       v,
@@ -123,7 +130,7 @@ describe('kioku_ingest_url', () => {
     assert.ok(r.path.startsWith('raw-sources/articles/fetched/'));
   });
 
-  test('MCP32 SSRF: localhost rejected when KIOKU_URL_ALLOW_LOOPBACK=0', async () => {
+  test('MCP32 SSRF: localhost rejected when KIOKU_URL_ALLOW_LOOPBACK=0', NETWORK_TEST, async () => {
     process.env.KIOKU_URL_ALLOW_LOOPBACK = '0';
     try {
       const v = await makeVault('mcp32');
@@ -136,7 +143,7 @@ describe('kioku_ingest_url', () => {
     }
   });
 
-  test('MCP32b HIGH-1: loopback flag still rejects file:// scheme', async () => {
+  test('MCP32b HIGH-1: loopback flag still rejects file:// scheme', NETWORK_TEST, async () => {
     // KIOKU_URL_ALLOW_LOOPBACK=1 が production に leak しても、scheme allowlist
     // (http/https only) は強制される。SSRF IP-range だけが skip される設計。
     const v = await makeVault('mcp32b');
@@ -146,7 +153,7 @@ describe('kioku_ingest_url', () => {
     );
   });
 
-  test('MCP32c HIGH-1: loopback flag still rejects URL credentials', async () => {
+  test('MCP32c HIGH-1: loopback flag still rejects URL credentials', NETWORK_TEST, async () => {
     // user:pass@host も同様に loopback bypass 時にも reject される必要がある
     // (生クレデンシャルが log / error / network 経路に乗らないように)。
     const v = await makeVault('mcp32c');
@@ -160,7 +167,7 @@ describe('kioku_ingest_url', () => {
     );
   });
 
-  test('MCP33 idempotent second call → skipped', async () => {
+  test('MCP33 idempotent second call → skipped', NETWORK_TEST, async () => {
     const v = await makeVault('mcp33');
     await handleIngestUrl(
       v,
@@ -175,7 +182,7 @@ describe('kioku_ingest_url', () => {
     assert.match(r2.status, /skipped/, `expected skipped status, got: ${r2.status}`);
   });
 
-  test('MCP34 robots Disallow → invalid_request', async () => {
+  test('MCP34 robots Disallow → invalid_request', NETWORK_TEST, async () => {
     const v = await makeVault('mcp34');
     await assert.rejects(
       () => handleIngestUrl(
@@ -187,7 +194,7 @@ describe('kioku_ingest_url', () => {
     );
   });
 
-  test('MCP35 lockfile held externally → still pending after 200ms', async () => {
+  test('MCP35 lockfile held externally → still pending after 200ms', NETWORK_TEST, async () => {
     // HIGH-3 fix: assert.equal が失敗しても lockfile / setTimeout / dangling promise が
     // 残らないよう try/finally + clearTimeout で確実に cleanup する。
     // 旧実装は assert 失敗時に lockfile が残留して後続テストの workspace が破損する
@@ -214,7 +221,7 @@ describe('kioku_ingest_url', () => {
     }
   });
 
-  test('MCP36 child env allowlist (no GH_TOKEN leak, KIOKU_NO_LOG / MCP_CHILD propagated)', async () => {
+  test('MCP36 child env allowlist (no GH_TOKEN leak, KIOKU_NO_LOG / MCP_CHILD propagated)', NETWORK_TEST, async () => {
     await writeFile(stubLog, '');
     const prevGh = process.env.GH_TOKEN;
     process.env.GH_TOKEN = 'ghp_SHOULD_NOT_LEAK';
@@ -236,7 +243,7 @@ describe('kioku_ingest_url', () => {
     assert.match(log, /KIOKU_MCP_CHILD=1/, 'KIOKU_MCP_CHILD=1 propagated');
   });
 
-  test('MCP37 default subdir = articles', async () => {
+  test('MCP37 default subdir = articles', NETWORK_TEST, async () => {
     const v = await makeVault('mcp37');
     const r = await handleIngestUrl(
       v,
@@ -246,7 +253,7 @@ describe('kioku_ingest_url', () => {
     assert.match(r.path, /raw-sources\/articles\/fetched\//);
   });
 
-  test('MCP38 title arg overrides frontmatter title', async () => {
+  test('MCP38 title arg overrides frontmatter title', NETWORK_TEST, async () => {
     const v = await makeVault('mcp38');
     const r = await handleIngestUrl(
       v,
@@ -257,7 +264,7 @@ describe('kioku_ingest_url', () => {
     assert.match(content, /title: "Custom Title"/);
   });
 
-  test('MCP39 tags propagate to frontmatter and tag values are masked', async () => {
+  test('MCP39 tags propagate to frontmatter and tag values are masked', NETWORK_TEST, async () => {
     // MED-4 fix (code-quality 2026-04-19): tag 値も applyMasks を通る。
     // 旧実装では url-extract.mjs#buildFrontmatterObject が tags を素通ししていたため、
     // frontmatter に GitHub PAT 等の secret 文字列が漏洩 → vault の git push で
@@ -287,7 +294,7 @@ describe('kioku_ingest_url', () => {
     assert.match(content, /"ghp_\*\*\*"/, 'mask placeholder applied to tag');
   });
 
-  test('MCP39b og_image / published_time meta secrets are masked (red M-1)', async () => {
+  test('MCP39b og_image / published_time meta secrets are masked (red M-1)', NETWORK_TEST, async () => {
     // red M-1 fix (2026-04-20): <meta property="og:image"> と
     // <meta property="article:published_time"> の raw 文字列が attacker-controlled。
     // 旧実装では url-extract.mjs#buildFrontmatterObject で setRaw だったため
@@ -321,7 +328,7 @@ describe('kioku_ingest_url', () => {
     assert.doesNotMatch(content, /^published_time: /m, 'published_time field absent from frontmatter');
   });
 
-  test('MCP40 refresh_days arg overrides global default', async () => {
+  test('MCP40 refresh_days arg overrides global default', NETWORK_TEST, async () => {
     const v = await makeVault('mcp40');
     const r = await handleIngestUrl(
       v,
@@ -333,7 +340,7 @@ describe('kioku_ingest_url', () => {
   });
 
   describe('PDF dispatch (§4.7)', { skip: !HAS_POPPLER ? 'poppler not installed' : false }, () => {
-    test('MCP41 HTML content-type → no PDF dispatch', async () => {
+    test('MCP41 HTML content-type → no PDF dispatch', NETWORK_TEST, async () => {
       const v = await makeVault('mcp41');
       const r = await handleIngestUrl(
         v,
@@ -343,7 +350,7 @@ describe('kioku_ingest_url', () => {
       assert.notEqual(r.status, 'dispatched_to_pdf', `unexpected dispatch: ${r.status}`);
     });
 
-    test('MCP42 application/pdf → dispatch to handleIngestPdf', async () => {
+    test('MCP42 application/pdf → dispatch to handleIngestPdf', NETWORK_TEST, async () => {
       const v = await makeVault('mcp42');
       const r = await handleIngestUrl(
         v,
@@ -361,7 +368,7 @@ describe('kioku_ingest_url', () => {
         'short PDF should be summarized synchronously');
     });
 
-    test('MCP42b v0.3.5: long PDF (42p = 3 chunks) → dispatched_to_pdf_queued', async () => {
+    test('MCP42b v0.3.5: long PDF (42p = 3 chunks) → dispatched_to_pdf_queued', NETWORK_TEST, async () => {
       // handleIngestPdf が `queued_for_summary` を返す分岐が URL 経路でも
       // `dispatched_to_pdf_queued` に正しく伝搬すること。
       const v = await makeVault('mcp42b');
@@ -384,7 +391,7 @@ describe('kioku_ingest_url', () => {
       assert.equal(typeof r.pdf_result.detached_pid, 'number', 'detached_pid surfaced');
     });
 
-    test('MCP43 octet-stream + URL .pdf → dispatch', async () => {
+    test('MCP43 octet-stream + URL .pdf → dispatch', NETWORK_TEST, async () => {
       const v = await makeVault('mcp43');
       // /pdf-file/<name>.pdf にすると pathname 末尾が `.pdf` になり、
       // octet-stream Content-Type でも PDF として dispatch される。
@@ -398,7 +405,7 @@ describe('kioku_ingest_url', () => {
       assert.equal(r.status, 'dispatched_to_pdf');
     });
 
-    test('MCP44 PDF body > 50MB → invalid_request', async () => {
+    test('MCP44 PDF body > 50MB → invalid_request', NETWORK_TEST, async () => {
       const v = await makeVault('mcp44');
       await assert.rejects(
         () => handleIngestUrl(
@@ -410,7 +417,7 @@ describe('kioku_ingest_url', () => {
       );
     });
 
-    test('MCP45 PDF dispatch releases outer lock before handleIngestPdf acquires its own (v0.4.0 Tier A#3 M-a2)', async () => {
+    test('MCP45 PDF dispatch releases outer lock before handleIngestPdf acquires its own (v0.4.0 Tier A#3 M-a2)', NETWORK_TEST, async () => {
       // 2026-04-21 M-a2 fix: 旧実装は outer withLock を保持したまま handleIngestPdf に
       // skipLock=true で dispatch → 大容量 PDF (poppler 同期 extract) で outer lock を
       // 最大 4.5 分保持する問題があった。新実装は dispatchToPdf を withLock の外へ
@@ -439,7 +446,7 @@ describe('kioku_ingest_url', () => {
       assert.equal(lockExists, false, 'lockfile must be unlinked after dispatch');
     });
 
-    test('MCP45c GAP-1 fix: orphan PDF is cleaned up when handleIngestPdf fails (v0.4.0 Tier A#3 post-review)', async () => {
+    test('MCP45c GAP-1 fix: orphan PDF is cleaned up when handleIngestPdf fails (v0.4.0 Tier A#3 post-review)', NETWORK_TEST, async () => {
       // 2026-04-21 /security-review (red + blue parallel) の GAP-1 共通指摘:
       //   refactor 後は outer withLock release 後に PDF が raw-sources/ に
       //   visible になるため、handleIngestPdf が失敗 (encrypted / invalid PDF /
@@ -481,7 +488,7 @@ describe('kioku_ingest_url', () => {
       );
     });
 
-    test('MCP45b PDF dispatch: outer lock is released during handleIngestPdf Phase 1 (v0.4.0 Tier A#3 M-a2)', async () => {
+    test('MCP45b PDF dispatch: outer lock is released during handleIngestPdf Phase 1 (v0.4.0 Tier A#3 M-a2)', NETWORK_TEST, async () => {
       // 2026-04-21 M-a2 refactor の invariant test: late-PDF dispatch 中、
       // outer withLock は既に解放されているので「別の操作が lockfile を取得できる」
       // はずである。旧実装 (skipLock=true で outer 保持) だと、以下の concurrent write
@@ -515,7 +522,7 @@ describe('kioku_ingest_url', () => {
         `concurrent dispatch must complete quickly (actual: ${duration}ms)`);
     });
 
-    test('MCP46 CRIT-1: late-PDF discovery re-fetches with binary mode', async () => {
+    test('MCP46 CRIT-1: late-PDF discovery re-fetches with binary mode', NETWORK_TEST, async () => {
       // late-PDF discovery 経路:
       //   1 回目 fetch (ingest-url 側 binary:true) → text/html を受領
       //   → extractAndSaveUrl に委譲 (refresh skip 等のため非バイナリ再 fetch)
@@ -561,7 +568,7 @@ describe('kioku_ingest_url', () => {
     });
   });
 
-  test('MCP47 HIGH-2: fetch error message does not leak credentials in URL', async () => {
+  test('MCP47 HIGH-2: fetch error message does not leak credentials in URL', NETWORK_TEST, async () => {
     // KIOKU_URL_ALLOW_LOOPBACK=1 (テスト) でも、url credentials は HIGH-1 fix で
     // invalid_params にされる。ここで確認したいのは、production 経路 (loopback flag
     // 無し) で fetchUrl が credentials を含む URL を引いた場合、上位に投げる
@@ -596,7 +603,7 @@ describe('kioku_ingest_url', () => {
     }
   });
 
-  test('MCP48 MED-1: subdir with whitespace rejected (no silent mangling)', async () => {
+  test('MCP48 MED-1: subdir with whitespace rejected (no silent mangling)', NETWORK_TEST, async () => {
     // 旧実装: subdir.replace(/[^\p{L}\p{N}_-]/gu, '') で "my notes" → "mynotes" と
     // 黙って書き換わる UX trap。修正後は invalid_params で reject する。
     const v = await makeVault('mcp48');

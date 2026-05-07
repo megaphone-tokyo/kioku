@@ -11,9 +11,15 @@ import { join } from 'node:path';
 import { extractAndSaveUrl } from '../mcp/lib/url-extract.mjs';
 import { startFixtureServer } from './helpers/fixture-server.mjs';
 
+// v0.7.2 PR C: URL test 安定化。fixture server / network-ish 統合テストは
+// `KIOKU_SKIP_NETWORKISH_TESTS=1` で skip 可能、各 test に 30s hard timeout。
+const SKIP_NETWORK = process.env.KIOKU_SKIP_NETWORKISH_TESTS === '1';
+const NETWORK_TEST = { skip: SKIP_NETWORK ? 'KIOKU_SKIP_NETWORKISH_TESTS=1' : false, timeout: 30_000 };
+
 describe('url-extract orchestrator', () => {
   let server, workspace, vault;
   before(async () => {
+    if (SKIP_NETWORK) return;
     process.env.KIOKU_URL_ALLOW_LOOPBACK = '1';
     server = await startFixtureServer();
     workspace = await mkdtemp(join(tmpdir(), 'kioku-ue-'));
@@ -22,12 +28,13 @@ describe('url-extract orchestrator', () => {
     await mkdir(join(vault, '.cache', 'html'), { recursive: true });
   });
   after(async () => {
+    if (SKIP_NETWORK) return;
     delete process.env.KIOKU_URL_ALLOW_LOOPBACK;
     await server.close();
     await rm(workspace, { recursive: true, force: true });
   });
 
-  test('orchestration: normal article → writes markdown + media + frontmatter', async () => {
+  test('orchestration: normal article → writes markdown + media + frontmatter', NETWORK_TEST, async () => {
     const r = await extractAndSaveUrl({
       url: `${server.url}/article-normal.html`,
       vault,
@@ -47,7 +54,7 @@ describe('url-extract orchestrator', () => {
     assert.match(content, /refresh_days: 30/);
   });
 
-  test('UI9 same content re-extract → skipped', async () => {
+  test('UI9 same content re-extract → skipped', NETWORK_TEST, async () => {
     const r1 = await extractAndSaveUrl({
       url: `${server.url}/article-normal.html`,
       vault, subdir: 'articles',
@@ -62,7 +69,7 @@ describe('url-extract orchestrator', () => {
     assert.equal(r2.source_sha256, r1.source_sha256);
   });
 
-  test('UI11 within REFRESH_DAYS → skipped_within_refresh', async () => {
+  test('UI11 within REFRESH_DAYS → skipped_within_refresh', NETWORK_TEST, async () => {
     // First fetch
     await extractAndSaveUrl({
       url: `${server.url}/article-normal.html`,
@@ -80,7 +87,7 @@ describe('url-extract orchestrator', () => {
     assert.ok(r.status === 'skipped_within_refresh' || r.status === 'skipped_same_sha');
   });
 
-  test('UI13 refresh_days=1 with old fetched_at → re-fetch', async () => {
+  test('UI13 refresh_days=1 with old fetched_at → re-fetch', NETWORK_TEST, async () => {
     const r1 = await extractAndSaveUrl({
       url: `${server.url}/article-normal.html`,
       vault, subdir: 'articles',
@@ -103,7 +110,7 @@ describe('url-extract orchestrator', () => {
     assert.ok(['refreshed_fetched_at', 'skipped_same_sha'].includes(r2.status));
   });
 
-  test('UI14 refresh_days=never with existing file → always skipped', async () => {
+  test('UI14 refresh_days=never with existing file → always skipped', NETWORK_TEST, async () => {
     await extractAndSaveUrl({
       url: `${server.url}/article-normal.html`,
       vault, subdir: 'articles',
@@ -120,7 +127,7 @@ describe('url-extract orchestrator', () => {
     assert.ok(['skipped_never', 'skipped_same_sha'].includes(r2.status));
   });
 
-  test('UI17 future fetched_at (clock skew) does not crash and preserves title', async () => {
+  test('UI17 future fetched_at (clock skew) does not crash and preserves title', NETWORK_TEST, async () => {
     // Regression smoke for code-quality HIGH-2 (2026-04-19):
     // 2 Mac NTP 差で fetched_at が未来時刻で保存されるケースをシミュレート。
     // 事前 fix では ageMs < 0 が refreshMs 未満で永続 skip していた。
@@ -153,7 +160,7 @@ describe('url-extract orchestrator', () => {
     assert.match(reread, /title: "Attention Is All You Need — Normal Article"/);
   });
 
-  test('robots Disallow returns skipped_robots', async () => {
+  test('robots Disallow returns skipped_robots', NETWORK_TEST, async () => {
     await assert.rejects(
       () => extractAndSaveUrl({
         url: `${server.url}/article-normal.html`,
@@ -164,7 +171,7 @@ describe('url-extract orchestrator', () => {
     );
   });
 
-  test('raw HTML saved to .cache/html/', async () => {
+  test('raw HTML saved to .cache/html/', NETWORK_TEST, async () => {
     await extractAndSaveUrl({
       url: `${server.url}/article-normal.html`,
       vault, subdir: 'articles',

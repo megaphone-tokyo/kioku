@@ -15,6 +15,11 @@ import { startFixtureServer } from './helpers/fixture-server.mjs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const CLI = join(__dirname, '..', 'mcp', 'lib', 'url-extract-cli.mjs');
 
+// v0.7.2 PR C: URL test 安定化。fixture server / network-ish 統合テストは
+// `KIOKU_SKIP_NETWORKISH_TESTS=1` で skip 可能、各 test に 30s hard timeout。
+const SKIP_NETWORK = process.env.KIOKU_SKIP_NETWORKISH_TESTS === '1';
+const NETWORK_TEST = { skip: SKIP_NETWORK ? 'KIOKU_SKIP_NETWORKISH_TESTS=1' : false, timeout: 30_000 };
+
 function runCli(args, env = {}) {
   return new Promise((resolve) => {
     const child = spawn('node', [CLI, ...args], {
@@ -31,6 +36,7 @@ function runCli(args, env = {}) {
 describe('url-extract-cli', () => {
   let server, workspace, vault;
   before(async () => {
+    if (SKIP_NETWORK) return;
     server = await startFixtureServer();
     workspace = await mkdtemp(join(tmpdir(), 'kioku-uec-'));
     vault = join(workspace, 'vault');
@@ -38,11 +44,12 @@ describe('url-extract-cli', () => {
     await mkdir(join(vault, '.cache', 'html'), { recursive: true });
   });
   after(async () => {
+    if (SKIP_NETWORK) return;
     await server.close();
     await rm(workspace, { recursive: true, force: true });
   });
 
-  test('CLI normal URL → exit 0 + JSON on stdout', async () => {
+  test('CLI normal URL → exit 0 + JSON on stdout', NETWORK_TEST, async () => {
     const r = await runCli(
       [
         '--url', `${server.url}/article-normal.html`,
@@ -59,19 +66,19 @@ describe('url-extract-cli', () => {
     assert.match(json.path, /raw-sources\/articles\/fetched\//);
   });
 
-  test('CLI missing --url → exit 2 + stderr', async () => {
+  test('CLI missing --url → exit 2 + stderr', NETWORK_TEST, async () => {
     const r = await runCli(['--vault', vault]);
     assert.equal(r.code, 2);
     assert.match(r.stderr, /--url required/i);
   });
 
-  test('CLI missing --vault → exit 2 + stderr', async () => {
+  test('CLI missing --vault → exit 2 + stderr', NETWORK_TEST, async () => {
     const r = await runCli(['--url', 'https://example.com/']);
     assert.equal(r.code, 2);
     assert.match(r.stderr, /--vault required/i);
   });
 
-  test('CLI robots Disallow → exit 3', async () => {
+  test('CLI robots Disallow → exit 3', NETWORK_TEST, async () => {
     const r = await runCli(
       [
         '--url', `${server.url}/article-normal.html`,
@@ -85,7 +92,7 @@ describe('url-extract-cli', () => {
     assert.match(r.stderr, /robots_disallow/);
   });
 
-  test('CLI fetch failure (non-http scheme in validated mode) → exit 4', async () => {
+  test('CLI fetch failure (non-http scheme in validated mode) → exit 4', NETWORK_TEST, async () => {
     const r = await runCli(
       [
         '--url', 'file:///etc/passwd',
@@ -99,7 +106,7 @@ describe('url-extract-cli', () => {
     assert.equal(r.code, 4, `stdout=${r.stdout} stderr=${r.stderr}`);
   });
 
-  test('CLI security-code error message is scrubbed (red M-2)', async () => {
+  test('CLI security-code error message is scrubbed (red M-2)', NETWORK_TEST, async () => {
     // red M-2 fix (2026-04-20): FetchError の raw message に解決済み内部 IP や
     // attacker-controlled hostname がそのまま embed された状態で cron log に
     // leak する経路を塞ぐ。security code (url_scheme / dns_private / ...) では
@@ -120,7 +127,7 @@ describe('url-extract-cli', () => {
     assert.match(r.stderr, /\((url_scheme|url_parse)\)/, 'code is still surfaced for ops visibility');
   });
 
-  test('CLI tags flag parses comma-separated list', async () => {
+  test('CLI tags flag parses comma-separated list', NETWORK_TEST, async () => {
     // 別 subdir で fresh 書込み (orchestrator の idempotency で以前の file が skip を
     // 返してしまうため、テスト単位で isolate する)。
     const r = await runCli(
@@ -141,7 +148,7 @@ describe('url-extract-cli', () => {
     assert.match(content, /tags: \["foo", "bar", "baz"\]/);
   });
 
-  test('CLI --refresh-days=never → passed through', async () => {
+  test('CLI --refresh-days=never → passed through', NETWORK_TEST, async () => {
     const r = await runCli(
       [
         '--url', `${server.url}/article-normal.html`,
