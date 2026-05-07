@@ -263,6 +263,19 @@ Si encuentras un problema de seguridad, repórtalo a través de [SECURITY.md](SE
 
 ## Cambios
 
+### 2026-05-07 — v0.7.3: Sprint 1 completion marker — Mode A/B/C onboarding + doctor mode detection
+
+v0.7.3 marca la **finalizacion del Sprint 1 reliability roadmap** (4 PRs en 8 dias). El delta de v0.7.2 es Mode A/B/C onboarding gradient + `doctor` mode detection.
+
+- **Mode A/B/C onboarding (#4)** — Quick Start ofrece 3 install paths:
+  - **Mode A: MCP-only** — Claude Desktop / security-conscious / casual try
+  - **Mode B: Read-only** — *planned for v0.7.x*, enterprise / legal review
+  - **Mode C: Full memory** — existing Manual Setup renamed (zero regression)
+- **`doctor` mode detection** — `[mode]` line + `--json install_mode` field. 8 BLUE-DOCTOR-MODE-* tests (44 total)
+- **Sprint 1 completion** — 4 PRs landed: #84 doctor + #89 drift test + #90 URL test stabilization + #96 Mode A/B/C
+- Tests: **Node 475 + Bash + 44 doctor + 9 drift all green**
+- [Release v0.7.3](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.3)
+
 ### 2026-05-07 — v0.7.2: Sprint de confiabilidad — `kioku doctor` + metadata drift test + URL test stabilization
 
 v0.7.2 entrega el **Sprint 1** completo del roadmap de confiabilidad post-v0.7.1: tres herramientas de diagnostico que convierten la pregunta "que esta roto?" de intuicion en verificacion mecanica.

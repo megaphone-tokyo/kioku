@@ -331,6 +331,19 @@ KIOKU 是一個存取**所有 Claude Code 工作階段 I/O** 的 Hook 系統。
 
 ## 更新歷史
 
+### 2026-05-07 — v0.7.3：Sprint 1 完走 marker — Mode A/B/C onboarding + doctor mode detection
+
+v0.7.3 標誌著 **Sprint 1 reliability roadmap 完成** (8 天內 4 PR)。從 v0.7.2 的 delta 是 Mode A/B/C onboarding gradient + `doctor` mode detection。
+
+- **Mode A/B/C onboarding (#4)** — Quick Start 提供 3 個 install paths：
+  - **Mode A: MCP-only** — Claude Desktop / security-conscious / 試用
+  - **Mode B: Read-only** — *計劃在 v0.7.x*，enterprise / legal review 用
+  - **Mode C: Full memory** — 現有 Manual Setup 重新命名 (零回歸)
+- **`doctor` mode detection** — `[mode]` line + `--json install_mode` field。8 個新 BLUE-DOCTOR-MODE-* test (共 44 個)
+- **Sprint 1 完成** — 4 PR land: #84 doctor + #89 drift test + #90 URL test 穩定化 + #96 Mode A/B/C
+- Tests: **Node 475 + Bash + 44 doctor + 9 drift 全部 green**
+- [Release v0.7.3](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.3)
+
 ### 2026-05-07 — v0.7.2：可靠性衝刺 — `kioku doctor` + metadata drift test + URL test 穩定化
 
 v0.7.2 一次性 ship post-v0.7.1 可靠性 roadmap 的整個 **Sprint 1** —— 三個 diagnostic 工具將 KIOKU 的「什麼壞了?」surface 從直覺轉變為機器可檢查。

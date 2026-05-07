@@ -465,6 +465,19 @@ If you find a security issue, please report it via [SECURITY.md](SECURITY.md) �
 
 ## Changelog
 
+### 2026-05-07 — v0.7.3: Sprint 1 完走 marker — Mode A/B/C onboarding + doctor mode detection
+
+v0.7.3 marks the **Sprint 1 reliability roadmap completion** (4 PRs in 8 days). The single-feature delta from v0.7.2 is Mode A/B/C onboarding gradient in Quick Start + `doctor` install-mode detection.
+
+- **Mode A/B/C onboarding (#4)** — Quick Start now offers three install paths so users no longer forced into full install upfront:
+  - **Mode A: MCP-only** — Claude Desktop / security-conscious / casual try-out (no hooks, no auto-ingest, no Git sync)
+  - **Mode B: Read-only** — *planned for v0.7.x* (write/read tool separation), for enterprise / legal review / shared Vault viewers
+  - **Mode C: Full memory** — existing full Manual Setup, renamed (zero regression)
+- **`doctor` mode detection** — `bash scripts/doctor.sh` now emits `[mode] Current install mode: ...` derived from MCP / Hooks / cron / Git sync check results. `--json` output includes `summary.install_mode` + `summary.install_mode_detail` for tooling. 8 new BLUE-DOCTOR-MODE-* tests (44 total)
+- **Sprint 1 完走 marker** — codex roadmap §「Sprint 1: 信頼性と導入」 4 PRs all landed: doctor MVP (#84) + drift test (#89) + URL test stabilization (#90) + this Mode A/B/C onboarding (#96)
+- Tests: **Node 475 + Bash all suites + 44 doctor + 9 drift all green**, `npm audit` clean
+- [Release v0.7.3](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.3) — `kioku-wiki-0.7.3.mcpb` attached
+
 ### 2026-05-07 — v0.7.2: Reliability Sprint — `kioku doctor` + metadata drift test + URL test stabilization
 
 v0.7.2 ships the entire **Sprint 1** of the post-v0.7.1 reliability roadmap. Where v0.7.0 / v0.7.1 hardened the multi-agent boundary, v0.7.2 turns KIOKU's "what's broken?" surface from intuition into machine-checkable across three new diagnostic axes.

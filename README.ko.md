@@ -326,6 +326,19 @@ KIOKU은 **모든 Claude Code 세션 입출력**에 접근하는 Hook 시스템�
 
 ## 변경 이력
 
+### 2026-05-07 — v0.7.3: Sprint 1 완주 marker — Mode A/B/C 온보딩 + doctor mode detection
+
+v0.7.3는 **Sprint 1 reliability roadmap의 완주 marker** (8일 간 4 PR). v0.7.2로부터의 delta는 Mode A/B/C onboarding gradient + `doctor` mode detection.
+
+- **Mode A/B/C 온보딩 (#4)** — Quick Start에 3개의 install path:
+  - **Mode A: MCP-only** — Claude Desktop / security-conscious / casual try
+  - **Mode B: Read-only** — *v0.7.x에서 planned*, enterprise / legal review용
+  - **Mode C: Full memory** — 기존 Manual Setup rename (regression 0)
+- **`doctor` mode detection** — `[mode]` line + `--json install_mode` field. 8개의 새 BLUE-DOCTOR-MODE-* test (총 44개)
+- **Sprint 1 완주** — 4 PR land: #84 doctor + #89 drift test + #90 URL test 안정화 + #96 Mode A/B/C
+- Tests: **Node 475 + Bash + 44 doctor + 9 drift 모두 green**
+- [Release v0.7.3](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.3)
+
 ### 2026-05-07 — v0.7.2: 신뢰성 스프린트 — `kioku doctor` + metadata drift test + URL test 안정화
 
 v0.7.2는 post-v0.7.1 신뢰성 로드맵의 **Sprint 1** 전체를 한 번에 ship. v0.7.0 / v0.7.1이 multi-agent boundary를 hardening한 것에 비해, v0.7.2는 KIOKU의 "무엇이 망가졌나?" surface를 **직관 기반에서 기계 검사 기반**으로 전환하는 3개의 diagnostic axis.

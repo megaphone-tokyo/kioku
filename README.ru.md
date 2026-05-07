@@ -331,6 +331,19 @@ KIOKU спроектирован для **совместного использ�
 
 ## История изменений
 
+### 2026-05-07 — v0.7.3: Sprint 1 completion marker — Mode A/B/C onboarding + doctor mode detection
+
+v0.7.3 отмечает **завершение Sprint 1 reliability roadmap** (4 PR за 8 дней). Дельта от v0.7.2 — Mode A/B/C onboarding gradient + `doctor` mode detection.
+
+- **Mode A/B/C onboarding (#4)** — Quick Start предлагает 3 install paths:
+  - **Mode A: MCP-only** — Claude Desktop / security-conscious / casual try
+  - **Mode B: Read-only** — *запланировано для v0.7.x*, enterprise / legal review
+  - **Mode C: Full memory** — существующий Manual Setup переименован (zero regression)
+- **`doctor` mode detection** — строка `[mode]` + поле `--json install_mode`. 8 BLUE-DOCTOR-MODE-* тестов (44 всего)
+- **Sprint 1 completion** — 4 PR land: #84 doctor + #89 drift test + #90 URL test stabilization + #96 Mode A/B/C
+- Tests: **Node 475 + Bash + 44 doctor + 9 drift все green**
+- [Release v0.7.3](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.3)
+
 ### 2026-05-07 — v0.7.2: Спринт надёжности — `kioku doctor` + metadata drift test + URL test stabilization
 
 v0.7.2 поставляет весь **Sprint 1** post-v0.7.1 roadmap надёжности — три diagnostic tool, превращающих KIOKU surface "что сломано?" из интуиции в machine-checkable.
