@@ -326,6 +326,17 @@ Si vous trouvez un probleme de securite, veuillez le signaler via [SECURITY.md](
 
 ## Journal des modifications
 
+### 2026-05-07 — v0.7.2 : Sprint de fiabilite — `kioku doctor` + metadata drift test + URL test stabilization
+
+v0.7.2 livre le **Sprint 1** complet de la roadmap de fiabilite post-v0.7.1 : trois outils de diagnostic qui transforment la question "qu'est-ce qui est casse ?" de l'intuition en verification mecanique.
+
+- **`kioku doctor` (PR A)** — `bash scripts/doctor.sh` execute 22 verifications read-only dans 7 categories (Environment / Runtime / CLI agents / Hook configs / MCP configs / Metadata parity / Dependencies). Default human-readable, `--json` pour outils. Chaque `[fail]` / `[warn]` vient avec un `Next action` concret. 36 tests BLUE-DOCTOR-* avec isolation temp HOME / temp Vault
+- **metadata drift test (PR B)** — `node --test tests/metadata-drift.test.mjs` detecte mecaniquement 3 categories de drift : MCP tool registry / 5-place version parity / install command syntax. Codifie l'incident §44 install-syntax-drift (4/28) comme regression guard. 9 tests BLUE-DRIFT-*
+- **URL test stabilization (PR C)** — Quick suite (60s budget, `KIOKU_SKIP_NETWORKISH_TESTS=1`) + Full suite separes. 10 fichiers URL test avec pattern unifie `{ timeout, skip }`. Mesure : **quick suite 9.8s sur Mac mini**
+- **Side-finding fixes (bundled)** — `mcp/package-lock.json` version 0.5.0 → 0.7.2 / `tests/post-release-sync.test.sh` PRS-S13 worktree skip guard
+- Tests : **Node 475 + Bash 22 suites + 36 doctor + 9 drift + 27 post-release-sync tous green**
+- [Release v0.7.2](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.2)
+
 ### 2026-04-30 — v0.7.1 : Polissage — champ `agent:` dans frontmatter + 5 durcissements + codification du workflow
 
 v0.7.1 polit la narrative multi-agent atterrie en v0.7.0 : chaque session log porte maintenant son identite d'agent dans le frontmatter, cinq durcissements discrets (lock TOCTOU, realpath fallback, exit-reason masking, transcript-path boundary, listener accumulation), et les regles de workflow gagnent une codification de drift bidirectionnelle.

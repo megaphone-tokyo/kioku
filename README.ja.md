@@ -484,6 +484,17 @@ KIOKU は Claude Code の**全セッション入出力にアクセスする Hook
 
 ## 更新履歴
 
+### 2026-05-07 — v0.7.2: 信頼性スプリント — `kioku doctor` + metadata drift test + URL test 安定化
+
+v0.7.2 は post-v0.7.1 の信頼性ロードマップ **Sprint 1** を一気に ship。v0.7.0 / v0.7.1 が multi-agent boundary を hardening したのに対し、v0.7.2 は KIOKU の「何が壊れているか」を **直感ベースから機械検査ベース** に転換する 3 つの diagnostic axis。
+
+- **`kioku doctor` (PR A)** — `bash scripts/doctor.sh` で 22 件の read-only チェック × 7 カテゴリ (Environment / Runtime / CLI agents / Hook configs / MCP configs / Metadata parity / Dependencies)。default は人間 readable、`--json` で機械可読。各 `[fail]` / `[warn]` には具体的な `Next action` (例: `bash scripts/install-mcp-client.sh --apply`) を併記。36 件の BLUE-DOCTOR-* test を temp HOME / temp Vault で isolation、macOS / Linux 両対応 (BSD vs GNU `stat` 分岐を design で回避)
+- **metadata drift test (PR B)** — `node --test tests/metadata-drift.test.mjs` が 3 drift カテゴリを機械検出: MCP tool registry (server.mjs ↔ manifest.json ↔ README ↔ context/14) / 5-place version parity (package.json + manifest.json + plugin.json + marketplace.json metadata + plugins[0]) / install command syntax (docs/install-guide-plugin.md の `claude plugin marketplace add` syntax + identifier が `marketplace.json` `name` と一致)。§44 install syntax drift incident (4/28) を継続的な regression guard として codify。9 件の BLUE-DRIFT-* test
+- **URL test 安定化 (PR C)** — 日常 `node --test ...` が URL/fetch test で数分 hang する問題を解消。`tests/run-quick-suite.sh` (60 秒予算、`KIOKU_SKIP_NETWORKISH_TESTS=1` 強制、hooks/ + mcp/ のみ) が新規 default、`tests/run-full-suite.sh` (FAIL_LOG 集約、network 含む) が release 時の gate。10 個の URL test file が `{ timeout, skip }` 統一 pattern、fixture server explicit close。実測: **Mac mini で quick suite 9.8 秒** (target <60 秒)
+- **副次発見 fix (bundled)** — `mcp/package-lock.json` version 0.5.0 → 0.7.2 (long-stale な lock metadata、future drift test の 6th place candidate)。`tests/post-release-sync.test.sh` PRS-S13 に linked worktree skip guard (`[[ -f "${REPO_ROOT}/.git" ]]` で pointer-file `.git` を検出して dynamic dry-run output match を skip)
+- テスト: **Node 475 + Bash 22 suites + 36 doctor + 9 drift + 27 post-release-sync 全 green**、`npm audit` clean
+- [Release v0.7.2](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.2) — `kioku-wiki-0.7.2.mcpb` attached
+
 ### 2026-04-30 — v0.7.1: ポリッシュ — `agent:` frontmatter + 5 件のハードニング + workflow ルール codify
 
 v0.7.1 は v0.7.0 で完成したマルチエージェント narrative の磨き上げ。session log の frontmatter にエージェント識別子を追加、5 件の地味なハードニング (lock TOCTOU / realpath fallback / exit-reason masking / transcript-path boundary / listener accumulation)、運用ルールへの双方向 drift codify を入れた。

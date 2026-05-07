@@ -331,6 +331,17 @@ KIOKU спроектирован для **совместного использ�
 
 ## История изменений
 
+### 2026-05-07 — v0.7.2: Спринт надёжности — `kioku doctor` + metadata drift test + URL test stabilization
+
+v0.7.2 поставляет весь **Sprint 1** post-v0.7.1 roadmap надёжности — три diagnostic tool, превращающих KIOKU surface "что сломано?" из интуиции в machine-checkable.
+
+- **`kioku doctor` (PR A)** — `bash scripts/doctor.sh` выполняет 22 read-only проверки в 7 категориях (Environment / Runtime / CLI agents / Hook configs / MCP configs / Metadata parity / Dependencies). Default human-readable, `--json` для tooling. Каждый `[fail]` / `[warn]` сопровождается конкретным `Next action`. 36 BLUE-DOCTOR-* тестов с temp HOME / temp Vault изоляцией
+- **metadata drift test (PR B)** — `node --test tests/metadata-drift.test.mjs` machine-detects 3 категории drift: MCP tool registry / 5-place version parity / install command syntax. Кодифицирует инцидент §44 install-syntax-drift (4/28) как regression guard. 9 BLUE-DRIFT-* тестов
+- **URL test stabilization (PR C)** — Quick suite (60s budget, `KIOKU_SKIP_NETWORKISH_TESTS=1`) + Full suite разделены. 10 URL test files с унифицированным паттерном `{ timeout, skip }`. Измерено: **quick suite 9.8s на Mac mini**
+- **Side-finding fixes (bundled)** — `mcp/package-lock.json` version 0.5.0 → 0.7.2 / `tests/post-release-sync.test.sh` PRS-S13 worktree skip guard
+- Tests: **Node 475 + Bash 22 suites + 36 doctor + 9 drift + 27 post-release-sync all green**
+- [Release v0.7.2](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.2)
+
 ### 2026-04-30 — v0.7.1: Полировка — поле `agent:` в frontmatter + 5 hardening + кодификация workflow
 
 v0.7.1 полирует multi-agent narrative, появившийся в v0.7.0: каждый session log теперь несёт свою agent identity в frontmatter, пять тихих hardening fixes (lock TOCTOU, realpath fallback, exit-reason masking, transcript-path boundary, listener accumulation), правила workflow получают двунаправленную drift-codification.

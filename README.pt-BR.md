@@ -326,6 +326,17 @@ Se voce encontrar um problema de seguranca, por favor reporte via [SECURITY.md](
 
 ## Histórico de mudanças
 
+### 2026-05-07 — v0.7.2: Sprint de confiabilidade — `kioku doctor` + metadata drift test + URL test stabilization
+
+v0.7.2 entrega o **Sprint 1** completo do roadmap de confiabilidade post-v0.7.1: tres ferramentas de diagnostico que transformam a pergunta "o que esta quebrado?" de intuicao em verificacao mecanica.
+
+- **`kioku doctor` (PR A)** — `bash scripts/doctor.sh` executa 22 read-only checks em 7 categorias (Environment / Runtime / CLI agents / Hook configs / MCP configs / Metadata parity / Dependencies). Default human-readable, `--json` para tooling. Cada `[fail]` / `[warn]` vem com `Next action` concreto. 36 BLUE-DOCTOR-* tests com isolation temp HOME / temp Vault
+- **metadata drift test (PR B)** — `node --test tests/metadata-drift.test.mjs` detecta 3 categorias de drift: MCP tool registry / 5-place version parity / install command syntax. Codifica o incidente §44 install-syntax-drift (4/28) como regression guard. 9 BLUE-DRIFT-* tests
+- **URL test stabilization (PR C)** — Quick suite (60s budget, `KIOKU_SKIP_NETWORKISH_TESTS=1`) + Full suite separados. 10 arquivos URL test com padrao unificado `{ timeout, skip }`. Medido: **quick suite 9.8s no Mac mini**
+- **Side-finding fixes (bundled)** — `mcp/package-lock.json` version 0.5.0 → 0.7.2 / `tests/post-release-sync.test.sh` PRS-S13 worktree skip guard
+- Tests: **Node 475 + Bash 22 suites + 36 doctor + 9 drift + 27 post-release-sync todos green**
+- [Release v0.7.2](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.2)
+
 ### 2026-04-30 — v0.7.1: Polimento — campo `agent:` no frontmatter + 5 endurecimentos + codificacao de workflow
 
 v0.7.1 polica a narrativa multi-agente que aterrissou em v0.7.0: cada session log agora carrega sua identidade de agente no frontmatter, cinco endurecimentos discretos (lock TOCTOU, realpath fallback, exit-reason masking, transcript-path boundary, listener accumulation), e as regras de workflow ganham codificacao de drift bidirecional.

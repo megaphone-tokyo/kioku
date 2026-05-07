@@ -263,6 +263,17 @@ KIOKU एक Hook सिस्टम है जो **सभी Claude Code स�
 
 ## परिवर्तन इतिहास
 
+### 2026-05-07 — v0.7.2: Reliability Sprint — `kioku doctor` + metadata drift test + URL test stabilization
+
+v0.7.2 post-v0.7.1 reliability roadmap के पूरे **Sprint 1** को ship करता है — तीन diagnostic tools जो KIOKU की "क्या टूट रहा है?" surface को intuition से machine-checkable में बदलते हैं।
+
+- **`kioku doctor` (PR A)** — `bash scripts/doctor.sh` 22 read-only checks × 7 categories (Environment / Runtime / CLI agents / Hook configs / MCP configs / Metadata parity / Dependencies) चलाता है। Default human-readable, `--json` machine consumption के लिए। हर `[fail]` / `[warn]` के साथ concrete `Next action` (जैसे `bash scripts/install-mcp-client.sh --apply`)। 36 BLUE-DOCTOR-* tests temp HOME / temp Vault isolation में
+- **metadata drift test (PR B)** — `node --test tests/metadata-drift.test.mjs` 3 drift categories machine-detect करता है: MCP tool registry / 5-place version parity / install command syntax। §44 install-syntax-drift incident (4/28) को continuous regression guard में codify करता है। 9 BLUE-DRIFT-* tests
+- **URL test stabilization (PR C)** — Quick suite (60s budget, `KIOKU_SKIP_NETWORKISH_TESTS=1`) + Full suite अलग। 10 URL test files में `{ timeout, skip }` unified pattern। मापा: **Mac mini पर quick suite 9.8s**
+- **Side-finding fixes (bundled)** — `mcp/package-lock.json` version 0.5.0 → 0.7.2 / `tests/post-release-sync.test.sh` PRS-S13 worktree skip guard
+- Tests: **Node 475 + Bash 22 suites + 36 doctor + 9 drift + 27 post-release-sync all green**
+- [Release v0.7.2](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.2)
+
 ### 2026-04-30 — v0.7.1: Polish — frontmatter में `agent:` field + 5 hardening + workflow codification
 
 v0.7.1 v0.7.0 में ship हुई multi-agent narrative को polish करता है: हर session log अब अपनी agent identity frontmatter में रखता है, पाँच quiet hardening fixes (lock TOCTOU, realpath fallback, exit-reason masking, transcript-path boundary, listener accumulation), और workflow rules में bidirectional drift codification।
