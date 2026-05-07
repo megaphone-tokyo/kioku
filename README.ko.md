@@ -326,6 +326,17 @@ KIOKU은 **모든 Claude Code 세션 입출력**에 접근하는 Hook 시스템�
 
 ## 변경 이력
 
+### 2026-05-07 — v0.7.2: 신뢰성 스프린트 — `kioku doctor` + metadata drift test + URL test 안정화
+
+v0.7.2는 post-v0.7.1 신뢰성 로드맵의 **Sprint 1** 전체를 한 번에 ship. v0.7.0 / v0.7.1이 multi-agent boundary를 hardening한 것에 비해, v0.7.2는 KIOKU의 "무엇이 망가졌나?" surface를 **직관 기반에서 기계 검사 기반**으로 전환하는 3개의 diagnostic axis.
+
+- **`kioku doctor` (PR A)** — `bash scripts/doctor.sh`로 22개 read-only check × 7 카테고리 (Environment / Runtime / CLI agents / Hook configs / MCP configs / Metadata parity / Dependencies). default는 human-readable, `--json`으로 machine-readable. 각 `[fail]` / `[warn]`에 구체적 `Next action`을 병기. 36개의 BLUE-DOCTOR-* test, temp HOME / temp Vault에서 isolation
+- **metadata drift test (PR B)** — `node --test tests/metadata-drift.test.mjs`가 3개 drift 카테고리를 기계 검출: MCP tool registry / 5-place version parity / install command syntax. §44 install syntax drift incident (4/28)를 지속적인 regression guard로 codify. 9개의 BLUE-DRIFT-* test
+- **URL test 안정화 (PR C)** — Quick suite (60s budget, `KIOKU_SKIP_NETWORKISH_TESTS=1`) + Full suite 분리. 10개의 URL test file에 `{ timeout, skip }` 통일 패턴. 측정: **Mac mini에서 quick suite 9.8s**
+- **Side-finding fixes (bundled)** — `mcp/package-lock.json` version 0.5.0 → 0.7.2 / `tests/post-release-sync.test.sh` PRS-S13 worktree skip guard
+- Tests: **Node 475 + Bash 22 suites + 36 doctor + 9 drift + 27 post-release-sync 모두 green**
+- [Release v0.7.2](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.2)
+
 ### 2026-04-30 — v0.7.1: Polish — `agent:` frontmatter 필드 + 5건의 hardening + workflow 코드화
 
 v0.7.1은 v0.7.0에서 정착한 multi-agent narrative를 다듬는 release. 모든 session log가 frontmatter에 agent identity를 갖게 되었고, 다섯 개의 조용한 hardening (lock TOCTOU, realpath fallback, exit-reason masking, transcript-path boundary, listener accumulation), workflow rules에 양방향 drift codification이 추가됨.

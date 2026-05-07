@@ -465,6 +465,17 @@ If you find a security issue, please report it via [SECURITY.md](SECURITY.md) �
 
 ## Changelog
 
+### 2026-05-07 — v0.7.2: Reliability Sprint — `kioku doctor` + metadata drift test + URL test stabilization
+
+v0.7.2 ships the entire **Sprint 1** of the post-v0.7.1 reliability roadmap. Where v0.7.0 / v0.7.1 hardened the multi-agent boundary, v0.7.2 turns KIOKU's "what's broken?" surface from intuition into machine-checkable across three new diagnostic axes.
+
+- **`kioku doctor` (PR A)** — `bash scripts/doctor.sh` runs 22 read-only checks across 7 categories (Environment / Runtime / CLI agents / Hook configs / MCP configs / Metadata parity / Dependencies). Human-readable by default, `--json` for tooling. Each `[fail]` / `[warn]` is paired with a concrete `Next action` (e.g. `bash scripts/install-mcp-client.sh --apply`). 36 BLUE-DOCTOR-* tests with temp HOME / temp Vault isolation, macOS / Linux portable (avoids BSD vs GNU `stat` divergence by design)
+- **metadata drift test (PR B)** — `node --test tests/metadata-drift.test.mjs` machine-detects 3 drift categories: MCP tool registry (server.mjs ↔ manifest.json ↔ README ↔ context/14) / 5-place version parity (package.json + manifest.json + plugin.json + marketplace.json metadata + plugins[0]) / install command syntax (docs/install-guide-plugin.md `claude plugin marketplace add` syntax + identifier matches `marketplace.json` `name`). Codifies the §44 install-syntax-drift incident (4/28) into a continuous regression guard. 9 BLUE-DRIFT-* tests
+- **URL test stabilization (PR C)** — Daily `node --test ...` no longer hangs minutes on URL/fetch tests. `tests/run-quick-suite.sh` (60s budget, `KIOKU_SKIP_NETWORKISH_TESTS=1` forced, hooks/ + mcp/ only) is the new contributor default; `tests/run-full-suite.sh` (FAIL_LOG aggregation, network included) is the release-time gate. 10 URL test files now share a `{ timeout, skip }` pattern with explicit fixture-server cleanup. Measured: **quick suite 9.8s on Mac mini** (target <60s)
+- **Side-finding fixes (bundled)** — `mcp/package-lock.json` version field bumped 0.5.0 → 0.7.2 (long-stale lock metadata, future drift test 6th place candidate). `tests/post-release-sync.test.sh` PRS-S13 gains a linked-worktree skip guard (`[[ -f "${REPO_ROOT}/.git" ]]` detects pointer-file `.git` and skips dynamic dry-run output match)
+- Tests: **Node 475 + Bash 22 suites + 36 doctor + 9 drift + 27 post-release-sync all green**, `npm audit` clean
+- [Release v0.7.2](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.2) — `kioku-wiki-0.7.2.mcpb` attached
+
 ### 2026-04-30 — v0.7.1: Polish — `agent:` frontmatter + 5 hardening + workflow codification
 
 v0.7.1 polishes the multi-agent narrative landed in v0.7.0: every session log now carries its agent identity in the frontmatter, five quiet hardening fixes (lock TOCTOU, realpath fallback, exit-reason masking, transcript-path boundary, listener accumulation), and the workflow rules gain bidirectional-drift codification.

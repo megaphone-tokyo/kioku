@@ -331,6 +331,17 @@ KIOKU 是一個存取**所有 Claude Code 工作階段 I/O** 的 Hook 系統。
 
 ## 更新歷史
 
+### 2026-05-07 — v0.7.2：可靠性衝刺 — `kioku doctor` + metadata drift test + URL test 穩定化
+
+v0.7.2 一次性 ship post-v0.7.1 可靠性 roadmap 的整個 **Sprint 1** —— 三個 diagnostic 工具將 KIOKU 的「什麼壞了?」surface 從直覺轉變為機器可檢查。
+
+- **`kioku doctor` (PR A)** — `bash scripts/doctor.sh` 在 7 個類別 (Environment / Runtime / CLI agents / Hook configs / MCP configs / Metadata parity / Dependencies) 中執行 22 個 read-only check。預設 human-readable，`--json` 用於 tooling。每個 `[fail]` / `[warn]` 都附帶具體的 `Next action`。36 個 BLUE-DOCTOR-* test，temp HOME / temp Vault isolation
+- **metadata drift test (PR B)** — `node --test tests/metadata-drift.test.mjs` 機器檢測 3 個 drift 類別：MCP tool registry / 5-place version parity / install command syntax。將 §44 install-syntax-drift incident (4/28) codify 為持續的 regression guard。9 個 BLUE-DRIFT-* test
+- **URL test 穩定化 (PR C)** — Quick suite (60s budget, `KIOKU_SKIP_NETWORKISH_TESTS=1`) + Full suite 分離。10 個 URL test 檔案採用 `{ timeout, skip }` 統一模式。測量：**Mac mini 上 quick suite 9.8s**
+- **Side-finding fixes (bundled)** — `mcp/package-lock.json` version 0.5.0 → 0.7.2 / `tests/post-release-sync.test.sh` PRS-S13 worktree skip guard
+- Tests: **Node 475 + Bash 22 suites + 36 doctor + 9 drift + 27 post-release-sync 全部 green**
+- [Release v0.7.2](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.2)
+
 ### 2026-04-30 — v0.7.1：打磨 — frontmatter 中 `agent:` 欄位 + 5 項 hardening + workflow 編碼
 
 v0.7.1 打磨 v0.7.0 落地的 multi-agent narrative：每個 session log 現在在 frontmatter 中攜帶其 agent 身份，五項低調 hardening (lock TOCTOU、realpath fallback、exit-reason masking、transcript-path boundary、listener accumulation)，workflow 規則獲得雙向 drift codification。
