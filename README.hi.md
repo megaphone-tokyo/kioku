@@ -263,6 +263,19 @@ KIOKU एक Hook सिस्टम है जो **सभी Claude Code स�
 
 ## परिवर्तन इतिहास
 
+### 2026-05-07 — v0.7.3: Sprint 1 completion marker — Mode A/B/C onboarding + doctor mode detection
+
+v0.7.3 **Sprint 1 reliability roadmap completion** marker है (8 दिनों में 4 PR)। v0.7.2 से delta = Mode A/B/C onboarding gradient + `doctor` mode detection।
+
+- **Mode A/B/C onboarding (#4)** — Quick Start में 3 install paths:
+  - **Mode A: MCP-only** — Claude Desktop / security-conscious / casual try
+  - **Mode B: Read-only** — *v0.7.x में planned*, enterprise / legal review के लिए
+  - **Mode C: Full memory** — मौजूदा Manual Setup renamed (zero regression)
+- **`doctor` mode detection** — `[mode]` line + `--json install_mode` field। 8 BLUE-DOCTOR-MODE-* tests (कुल 44)
+- **Sprint 1 completion** — 4 PR land: #84 doctor + #89 drift test + #90 URL test stabilization + #96 Mode A/B/C
+- Tests: **Node 475 + Bash + 44 doctor + 9 drift सभी green**
+- [Release v0.7.3](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.3)
+
 ### 2026-05-07 — v0.7.2: Reliability Sprint — `kioku doctor` + metadata drift test + URL test stabilization
 
 v0.7.2 post-v0.7.1 reliability roadmap के पूरे **Sprint 1** को ship करता है — तीन diagnostic tools जो KIOKU की "क्या टूट रहा है?" surface को intuition से machine-checkable में बदलते हैं।

@@ -484,6 +484,19 @@ KIOKU は Claude Code の**全セッション入出力にアクセスする Hook
 
 ## 更新履歴
 
+### 2026-05-07 — v0.7.3: Sprint 1 完走 marker — Mode A/B/C オンボーディング + doctor mode detection
+
+v0.7.3 は **Sprint 1 reliability roadmap の完走 marker** (8 日で 4 PR)。v0.7.2 からの単機能 delta は Quick Start の Mode A/B/C onboarding gradient + `doctor` install-mode 検出。
+
+- **Mode A/B/C オンボーディング (#4)** — Quick Start に 3 つの install path を提示、user は最初から full install を強制されない:
+  - **Mode A: MCP-only** — Claude Desktop / security-conscious / 試験的な user 向け (hooks 不要、auto-ingest 不要、Git sync 不要)
+  - **Mode B: Read-only** — *v0.7.x 導入予定* (write/read tool separation)、enterprise / legal review / 共有 Vault 閲覧向け
+  - **Mode C: Full memory** — 既存 Manual Setup を rename (regression 0)
+- **`doctor` mode detection** — `bash scripts/doctor.sh` が `[mode] Current install mode: ...` を出力 (MCP / Hooks / cron / Git sync の各 check 結果から derived view)。`--json` に `summary.install_mode` + `summary.install_mode_detail` field 追加。8 件の新 BLUE-DOCTOR-MODE-* test (合計 44 件)
+- **Sprint 1 完走 marker** — codex roadmap §「Sprint 1: 信頼性と導入」 4 PR すべて land: doctor MVP (#84) + drift test (#89) + URL test 安定化 (#90) + 本 Mode A/B/C onboarding (#96)
+- テスト: **Node 475 + Bash 全 suite + doctor 44 + drift 9 全 green**、`npm audit` clean
+- [Release v0.7.3](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.3) — `kioku-wiki-0.7.3.mcpb` attached
+
 ### 2026-05-07 — v0.7.2: 信頼性スプリント — `kioku doctor` + metadata drift test + URL test 安定化
 
 v0.7.2 は post-v0.7.1 の信頼性ロードマップ **Sprint 1** を一気に ship。v0.7.0 / v0.7.1 が multi-agent boundary を hardening したのに対し、v0.7.2 は KIOKU の「何が壊れているか」を **直感ベースから機械検査ベース** に転換する 3 つの diagnostic axis。
