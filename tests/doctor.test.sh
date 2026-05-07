@@ -757,6 +757,184 @@ test_json_output() {
 }
 
 # -----------------------------------------------------------------------------
+# BLUE-DOCTOR-MODE-1: Hooks ok + MCP ok → Mode C (Full memory)
+# -----------------------------------------------------------------------------
+test_install_mode_full() {
+  echo "BLUE-DOCTOR-MODE-1: hooks + MCP both ok → Mode C (Full memory)"
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "  skip  jq not available"
+    return 0
+  fi
+  local d
+  d="$(new_case "mode-full")"
+  stub_full_clis "${d}/bin"
+  stub_node_18 "${d}/bin"
+  init_full_vault "${d}/vault"
+
+  # Claude hook ok
+  mkdir -p "${d}/home/.claude"
+  cat >"${d}/home/.claude/settings.json" <<'EOF'
+{ "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "node /x/session-logger.mjs" } ] } ] } }
+EOF
+  # Claude Desktop MCP ok (macOS path under temp HOME)
+  local desktop_dir="${d}/home/Library/Application Support/Claude"
+  mkdir -p "${desktop_dir}"
+  cat >"${desktop_dir}/claude_desktop_config.json" <<'EOF'
+{ "mcpServers": { "kioku": { "command": "node", "args": ["/x/mcp/server.mjs"] } } }
+EOF
+
+  local out
+  set +e
+  out="$(env -i \
+        HOME="${d}/home" \
+        PATH="$(build_path "${d}/bin")" \
+        TMPDIR="${TMPDIR:-/tmp}" \
+        OBSIDIAN_VAULT="${d}/vault" \
+        CLAUDE_DESKTOP_CONFIG="${desktop_dir}/claude_desktop_config.json" \
+        bash "${DOCTOR}" 2>&1)"
+  set -e
+
+  assert_contains "${out}" "[mode] Current install mode: Mode C (Full memory)" \
+    "MODE-1: Mode C label appears"
+  assert_contains "${out}" "MCP: ok / Hooks: ok" \
+    "MODE-1: detail shows MCP ok and Hooks ok"
+}
+
+# -----------------------------------------------------------------------------
+# BLUE-DOCTOR-MODE-2: MCP ok, Hooks not registered → Mode A (MCP-only)
+# -----------------------------------------------------------------------------
+test_install_mode_mcp_only() {
+  echo "BLUE-DOCTOR-MODE-2: MCP ok + hooks absent → Mode A (MCP-only)"
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "  skip  jq not available"
+    return 0
+  fi
+  local d
+  d="$(new_case "mode-mcp-only")"
+  # Stub everything except hook CLIs (claude/codex/gemini absent → hook check skipped as warn)
+  write_stub "${d}/bin" "qmd"
+  write_stub "${d}/bin" "pdfinfo"
+  write_stub "${d}/bin" "pdftotext"
+  stub_node_18 "${d}/bin"
+  init_full_vault "${d}/vault"
+
+  # No Claude/Codex/Gemini hooks registered (CLIs absent → all hook checks "warn")
+  # But Claude Desktop MCP registered (Claude Desktop config does not need claude CLI)
+  local desktop_dir="${d}/home/Library/Application Support/Claude"
+  mkdir -p "${desktop_dir}"
+  cat >"${desktop_dir}/claude_desktop_config.json" <<'EOF'
+{ "mcpServers": { "kioku": { "command": "node", "args": ["/x/mcp/server.mjs"] } } }
+EOF
+
+  local out
+  set +e
+  out="$(env -i \
+        HOME="${d}/home" \
+        PATH="$(build_path "${d}/bin")" \
+        TMPDIR="${TMPDIR:-/tmp}" \
+        OBSIDIAN_VAULT="${d}/vault" \
+        CLAUDE_DESKTOP_CONFIG="${desktop_dir}/claude_desktop_config.json" \
+        bash "${DOCTOR}" 2>&1)"
+  set -e
+
+  assert_contains "${out}" "[mode] Current install mode: Mode A (MCP-only)" \
+    "MODE-2: Mode A label appears"
+  assert_contains "${out}" "MCP: ok / Hooks: not registered" \
+    "MODE-2: detail shows MCP ok and Hooks not registered"
+}
+
+# -----------------------------------------------------------------------------
+# BLUE-DOCTOR-MODE-3: Hooks ok, MCP missing → Unknown / Partial install
+#
+# Mode B (Read-only) は --read-only flag が install-mcp-client.sh に未実装な
+# ため MVP では判定しない。MCP 抜け / Hooks ok の組み合わせも "Unknown /
+# Partial install" として扱う (judge は v0.7.x で iterative refine 予定)。
+# -----------------------------------------------------------------------------
+test_install_mode_unknown() {
+  echo "BLUE-DOCTOR-MODE-3: hooks ok + MCP missing → Unknown / Partial install"
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "  skip  jq not available"
+    return 0
+  fi
+  local d
+  d="$(new_case "mode-unknown")"
+  stub_full_clis "${d}/bin"
+  stub_node_18 "${d}/bin"
+  init_full_vault "${d}/vault"
+
+  # Claude hook ok
+  mkdir -p "${d}/home/.claude"
+  cat >"${d}/home/.claude/settings.json" <<'EOF'
+{ "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "node /x/session-logger.mjs" } ] } ] } }
+EOF
+  # No MCP config files at all (Claude Desktop / Codex / Gemini MCP all missing)
+  # CLAUDE_DESKTOP_CONFIG points to a non-existent path under temp HOME
+  local out
+  set +e
+  out="$(env -i \
+        HOME="${d}/home" \
+        PATH="$(build_path "${d}/bin")" \
+        TMPDIR="${TMPDIR:-/tmp}" \
+        OBSIDIAN_VAULT="${d}/vault" \
+        CLAUDE_DESKTOP_CONFIG="${d}/home/no-such-claude-desktop-config.json" \
+        bash "${DOCTOR}" 2>&1)"
+  set -e
+
+  assert_contains "${out}" "[mode] Current install mode: Unknown / Partial install" \
+    "MODE-3: Unknown label appears"
+  assert_contains "${out}" "MCP: not registered / Hooks: ok" \
+    "MODE-3: detail shows MCP missing and Hooks ok"
+}
+
+# -----------------------------------------------------------------------------
+# BLUE-DOCTOR-MODE-4: --json mode includes install_mode in summary
+# -----------------------------------------------------------------------------
+test_install_mode_json() {
+  echo "BLUE-DOCTOR-MODE-4: --json summary includes install_mode field"
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "  skip  jq not available"
+    return 0
+  fi
+  local d
+  d="$(new_case "mode-json")"
+  stub_full_clis "${d}/bin"
+  stub_node_18 "${d}/bin"
+  init_full_vault "${d}/vault"
+
+  mkdir -p "${d}/home/.claude"
+  cat >"${d}/home/.claude/settings.json" <<'EOF'
+{ "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": "node /x/session-logger.mjs" } ] } ] } }
+EOF
+  local desktop_dir="${d}/home/Library/Application Support/Claude"
+  mkdir -p "${desktop_dir}"
+  cat >"${desktop_dir}/claude_desktop_config.json" <<'EOF'
+{ "mcpServers": { "kioku": { "command": "node", "args": ["/x/mcp/server.mjs"] } } }
+EOF
+
+  local out
+  set +e
+  out="$(env -i \
+        HOME="${d}/home" \
+        PATH="$(build_path "${d}/bin")" \
+        TMPDIR="${TMPDIR:-/tmp}" \
+        OBSIDIAN_VAULT="${d}/vault" \
+        CLAUDE_DESKTOP_CONFIG="${desktop_dir}/claude_desktop_config.json" \
+        bash "${DOCTOR}" --json 2>&1)"
+  set -e
+
+  if printf '%s' "${out}" | jq -e '.summary.install_mode == "Mode C (Full memory)"' >/dev/null 2>&1; then
+    pass "MODE-4: --json summary.install_mode == \"Mode C (Full memory)\""
+  else
+    fail "MODE-4: --json summary.install_mode missing or wrong (got: $(printf '%s' "${out}" | jq -r '.summary.install_mode // "<absent>"' 2>/dev/null || echo '<unparseable>'))"
+  fi
+  if printf '%s' "${out}" | jq -e '.summary.install_mode_detail | contains("MCP: ok") and contains("Hooks: ok")' >/dev/null 2>&1; then
+    pass "MODE-4: --json summary.install_mode_detail contains MCP ok / Hooks ok"
+  else
+    fail "MODE-4: --json summary.install_mode_detail missing or wrong"
+  fi
+}
+
+# -----------------------------------------------------------------------------
 # Run all
 # -----------------------------------------------------------------------------
 test_env_unset
@@ -778,6 +956,10 @@ test_exit_code_all_ok
 test_exit_code_fail
 test_exit_code_warn_only
 test_json_output
+test_install_mode_full
+test_install_mode_mcp_only
+test_install_mode_unknown
+test_install_mode_json
 
 echo ""
 echo "doctor.test.sh: ${PASS} passed, ${FAIL} failed"

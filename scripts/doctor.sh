@@ -545,6 +545,54 @@ check_dependencies() {
 }
 
 # -----------------------------------------------------------------------------
+# Section: Install mode detection (derived from hook/MCP checks)
+#
+# 既存の hook-* / mcp-* check 結果を集約して、現在の install mode を判定する。
+# Mode C (Full memory): MCP ok + Hooks ok    KIOKU 本来の使い方 (auto logging + sync)
+# Mode A (MCP-only):    MCP ok + Hooks 無し  security-conscious / Claude Desktop 中心
+# Unknown:              上記いずれでもない    partial install / first run
+#
+# Mode B (Read-only) は --read-only flag が install-mcp-client.sh に未実装の
+# ため MVP では判定しない (acceptance criteria は Mode A / C 判定で満たす)。
+# read-only flag 導入後に v0.7.x の iterative refine で追加予定。
+# -----------------------------------------------------------------------------
+INSTALL_MODE_LABEL=""
+INSTALL_MODE_DETAIL=""
+
+detect_install_mode() {
+  local total=$((OK_COUNT + WARN_COUNT + FAIL_COUNT))
+  local has_hooks_ok=0
+  local has_mcp_ok=0
+  local i=0
+  while [[ $i -lt $total ]]; do
+    local id="${RESULT_IDS[$i]}"
+    local level="${RESULT_LEVELS[$i]}"
+    case "${id}" in
+      hook-claude|hook-codex|hook-gemini)
+        [[ "${level}" == "ok" ]] && has_hooks_ok=1
+        ;;
+      mcp-claude-desktop|mcp-codex|mcp-gemini)
+        [[ "${level}" == "ok" ]] && has_mcp_ok=1
+        ;;
+    esac
+    i=$((i + 1))
+  done
+
+  local hooks_state mcp_state
+  if [[ "${has_hooks_ok}" -eq 1 ]]; then hooks_state="ok"; else hooks_state="not registered"; fi
+  if [[ "${has_mcp_ok}"   -eq 1 ]]; then mcp_state="ok";   else mcp_state="not registered"; fi
+
+  if [[ "${has_mcp_ok}" -eq 1 && "${has_hooks_ok}" -eq 1 ]]; then
+    INSTALL_MODE_LABEL="Mode C (Full memory)"
+  elif [[ "${has_mcp_ok}" -eq 1 && "${has_hooks_ok}" -eq 0 ]]; then
+    INSTALL_MODE_LABEL="Mode A (MCP-only)"
+  else
+    INSTALL_MODE_LABEL="Unknown / Partial install"
+  fi
+  INSTALL_MODE_DETAIL="MCP: ${mcp_state} / Hooks: ${hooks_state}"
+}
+
+# -----------------------------------------------------------------------------
 # Output: text or JSON
 # -----------------------------------------------------------------------------
 print_text() {
@@ -567,6 +615,12 @@ print_text() {
   echo ""
   printf 'Summary: %d ok / %d warn / %d fail\n' \
     "${OK_COUNT}" "${WARN_COUNT}" "${FAIL_COUNT}"
+
+  # Install mode (derived view from hook/MCP checks)
+  if [[ -n "${INSTALL_MODE_LABEL}" ]]; then
+    printf '[mode] Current install mode: %s\n' "${INSTALL_MODE_LABEL}"
+    printf '       %s\n' "${INSTALL_MODE_DETAIL}"
+  fi
 
   # Next actions (warn/fail で next_action が空でないものを列挙、重複は除く)
   local actions_file
@@ -621,7 +675,9 @@ print_json() {
     --argjson ok "${OK_COUNT}" \
     --argjson warn "${WARN_COUNT}" \
     --argjson fail "${FAIL_COUNT}" \
-    '{summary: {ok: $ok, warn: $warn, fail: $fail}, checks: .}' \
+    --arg install_mode "${INSTALL_MODE_LABEL}" \
+    --arg install_mode_detail "${INSTALL_MODE_DETAIL}" \
+    '{summary: {ok: $ok, warn: $warn, fail: $fail, install_mode: $install_mode, install_mode_detail: $install_mode_detail}, checks: .}' \
     "${buf}"
   rm -f "${buf}"
 }
@@ -636,6 +692,7 @@ check_hook_configs
 check_mcp_configs
 check_metadata_parity
 check_dependencies
+detect_install_mode
 
 if [[ "${JSON_MODE}" -eq 1 ]]; then
   print_json
