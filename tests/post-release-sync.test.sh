@@ -284,21 +284,30 @@ fi
 # -----------------------------------------------------------------------------
 # PRS-S13: dry-run 動的テスト — default / --force-sync で output が変わる
 # -----------------------------------------------------------------------------
-echo "test PRS-S13: --dry-run output differs by --force-sync"
-
-default_dry="$(bash "${TARGET}" --dry-run 2>&1 || true)"
-force_dry="$(bash "${TARGET}" --dry-run --force-sync 2>&1 || true)"
-
-if printf '%s' "${default_dry}" | grep -qF 'fatal error if diverged'; then
-  pass "PRS-S13 default --dry-run mentions fatal on diverge"
+# Skip in linked worktree (.git is a file pointing to parent repo's worktree
+# metadata, not a directory). post-release-sync.sh の git status 系出力が
+# worktree の metadata path を含み、static string match を破壊するため。
+# 本 test は parent main checkout でのみ走らせる (LEARN-CANDIDATE: test
+# should not depend on git state outside its scope、§45 と同種 candidate)。
+if [[ -f "${REPO_ROOT}/.git" ]]; then
+  echo "skip PRS-S13: linked worktree (parent main checkout でのみ実行可)"
 else
-  fail "PRS-S13 default --dry-run missing diverge warning"
-fi
+  echo "test PRS-S13: --dry-run output differs by --force-sync"
 
-if printf '%s' "${force_dry}" | grep -qF '(--force-sync) git reset --hard'; then
-  pass "PRS-S13 --force-sync --dry-run announces reset --hard"
-else
-  fail "PRS-S13 --force-sync --dry-run missing reset announcement"
+  default_dry="$(bash "${TARGET}" --dry-run 2>&1 || true)"
+  force_dry="$(bash "${TARGET}" --dry-run --force-sync 2>&1 || true)"
+
+  if printf '%s' "${default_dry}" | grep -qF 'fatal error if diverged'; then
+    pass "PRS-S13 default --dry-run mentions fatal on diverge"
+  else
+    fail "PRS-S13 default --dry-run missing diverge warning"
+  fi
+
+  if printf '%s' "${force_dry}" | grep -qF '(--force-sync) git reset --hard'; then
+    pass "PRS-S13 --force-sync --dry-run announces reset --hard"
+  else
+    fail "PRS-S13 --force-sync --dry-run missing reset announcement"
+  fi
 fi
 
 # -----------------------------------------------------------------------------
