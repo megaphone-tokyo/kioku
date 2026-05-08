@@ -109,3 +109,15 @@ views:
     order:
       - formula.age_days
       - file.name
+
+  - type: table
+    name: "Wiki Health (記憶品質 dashboard、Sprint 2 v0.7.4)"
+    limit: 5
+    filters:
+      and:
+        - 'file.name == "health"'
+        - file.inFolder("wiki/meta")
+    order:
+      - file.name
+      - updated
+      - formula.age_days
