@@ -6,9 +6,9 @@ updated: 2026-04-24
 # KIOKU Multi-Agent MCP Setup
 
 KIOKU ships an MCP-compliant stdio server at `mcp/server.mjs` that exposes
-**10 tools**: `kioku_read`, `kioku_list`, `kioku_search`, `kioku_write_note`,
+**11 tools**: `kioku_read`, `kioku_list`, `kioku_search`, `kioku_write_note`,
 `kioku_write_wiki`, `kioku_delete`, `kioku_ingest_pdf`, `kioku_ingest_document`,
-`kioku_ingest_url`, `kioku_generate_viz`.
+`kioku_ingest_url`, `kioku_generate_viz`, `kioku_health`.
 
 Because the server speaks the Model Context Protocol, any MCP-capable client
 can drive it — not just Claude Code / Claude Desktop. This guide shows how to
@@ -46,7 +46,7 @@ when this guide was written (2026-04-24):
 
 | Layer | Status | Evidence |
 |---|---|---|
-| MCP protocol compliance of `mcp/server.mjs` | **Verified** | Direct JSON-RPC `initialize` + `tools/list` + `tools/call kioku_list` against `node mcp/server.mjs` with a real Vault. Server returned `kioku-wiki` in `initialize`, 10 tools in `tools/list`, and 13 top-level entries from `tools/call kioku_list`. |
+| MCP protocol compliance of `mcp/server.mjs` | **Verified** | Direct JSON-RPC `initialize` + `tools/list` + `tools/call kioku_list` against `node mcp/server.mjs` with a real Vault. Server returned `kioku-wiki` in `initialize`, 11 tools in `tools/list` (Sprint 2 v0.7.4: added `kioku_health`), and 13 top-level entries from `tools/call kioku_list`. |
 | Per-CLI config-file integration (Codex / Gemini / OpenCode) | **Documented, not CLI-tested** | Config syntax below is quoted from each vendor's upstream docs (URLs cited per agent). End-to-end smoke tests (`codex` / `gemini` / `opencode` binaries + `kioku_list` round-trip) were **not** run in the delegation environment because the three CLIs were not installed and global npm install was declined by sandbox policy. |
 
 If you run the end-to-end flow successfully in any of the three CLIs, a PR
@@ -384,7 +384,7 @@ Expected output on a seeded Vault:
 
 ```
 initialize: { name: 'kioku-wiki', version: '0.1.0' }
-tools/list: 10 tools
+tools/list: 11 tools
   - kioku_read
   - kioku_list
   - kioku_search
@@ -395,6 +395,7 @@ tools/list: 10 tools
   - kioku_ingest_document
   - kioku_ingest_url
   - kioku_generate_viz
+  - kioku_health
 kioku_list: <n> entries
 ```
 
