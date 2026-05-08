@@ -3,7 +3,7 @@
   "manifest_version": "0.4",
   "name": "kioku-wiki",
   "display_name": "KIOKU Wiki",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "description": "Read, search, and write your KIOKU Obsidian Wiki from Claude Desktop or Claude Code.",
   "long_description": "KIOKU is a personal knowledge base ('second brain') built on top of an Obsidian Vault. This MCP server exposes eleven tools (kioku_search, kioku_read, kioku_list, kioku_write_note, kioku_write_wiki, kioku_delete, kioku_ingest_pdf, kioku_ingest_url, kioku_ingest_document, kioku_generate_viz, kioku_health) so that Claude Desktop and Claude Code can browse and update the Wiki without leaving the chat. All operations are local stdio — nothing leaves your machine. See https://github.com/megaphone-tokyo/kioku for the full project.",
   "author": {
@@ -88,7 +88,7 @@
     },
     {
       "name": "kioku_health",
-      "description": "Compute 6 KIOKU memory health metrics (orphan / stale / duplicate title / hot.md age / last ingest / unprocessed session-logs) and return them as JSON. Read-only — does not modify wiki/. Pair with scripts/generate-health.mjs which writes the same data to wiki/meta/health.md. (Sprint 2 v0.7.4)"
+      "description": "Compute 11 KIOKU memory health metrics (core 6: orphan / stale / duplicate_title / hot_md_age / last_ingest / unprocessed_logs; stretch 5: broken_wikilink / source_sha256_duplicate / pages_warm_zone / page_count_by_type / summaries_growth_rate) and return them as JSON. Read-only — does not modify wiki/. Pair with scripts/generate-health.mjs which writes the same data to wiki/meta/health.md. (Sprint 2 v0.7.4 + 完走 v0.7.5)"
     }
   ]
 }

@@ -465,6 +465,74 @@ assert_contains "${out_g6}" "Recovery:" "G6 stderr provides recovery hint"
 assert_eq "${before_sha_g6}" "${after_sha_g6}" "G6 HEAD unchanged (guard prevented commit in detached state)"
 
 # -----------------------------------------------------------------------------
+# Sprint 2 完走 v0.7.5: LINT_PROMPT 4 観点化 + kioku_health 役割分担明示
+#
+# - BLUE-LINT-PROMPT-1: 4 観点 (概念の矛盾 / splinter / 専用ページ候補 / 意味的相互リンク欠落) 存在
+# - BLUE-LINT-PROMPT-2: "kioku_health" "machine-check" の役割分担文が prompt に含まれる
+# - BLUE-LINT-PROMPT-3: 旧 6 観点のうち kioku_health 移行分 (frontmatter / orphan / broken wikilink) を
+#                       「別途検出される」と明記
+# - BLUE-LINT-PROMPT-4 (negative): 旧 prompt の dedicated section ("## 孤立ページ" / "## フロントマター不備")
+#                                   が新 prompt に存在しない (overlap 排除済確認)
+# -----------------------------------------------------------------------------
+
+echo "test BLUE-LINT-PROMPT-1..4: LINT_PROMPT 4 観点 + role separation"
+VAULT_LP="$(make_vault vault-lint-prompt)"
+add_wiki_page "${VAULT_LP}" "concept-lp"
+FAKE_HOME_LP="${TMPROOT}/fake-home-lp"
+mkdir -p "${FAKE_HOME_LP}"
+
+rm -f "${CAPTURE_FILE_LINT}"
+set +e
+env -i \
+  HOME="${FAKE_HOME_LP}" \
+  PATH="${STUB_CAPTURE_DIR_LINT}:/usr/bin:/bin:$(dirname "$(command -v node 2>/dev/null || echo /usr/bin/false)")" \
+  OBSIDIAN_VAULT="${VAULT_LP}" \
+  bash "${AUTO_LINT}" >/dev/null 2>&1
+rc=$?
+set -e
+assert_eq "0" "${rc}" "BLUE-LINT-PROMPT exit code 0"
+
+if [[ ! -f "${CAPTURE_FILE_LINT}" ]]; then
+  fail "BLUE-LINT-PROMPT prompt capture created"
+else
+  pass "BLUE-LINT-PROMPT prompt capture created"
+  captured_lp="$(cat "${CAPTURE_FILE_LINT}")"
+
+  # BLUE-LINT-PROMPT-1: 4 観点 keywords present
+  assert_contains "${captured_lp}" "概念の矛盾" "BLUE-LINT-PROMPT-1a 観点 1 (概念の矛盾)"
+  assert_contains "${captured_lp}" "概念の splinter" "BLUE-LINT-PROMPT-1b 観点 2 (概念の splinter)"
+  assert_contains "${captured_lp}" "専用ページが必要な繰り返し言及概念" "BLUE-LINT-PROMPT-1c 観点 3 (専用ページ候補)"
+  assert_contains "${captured_lp}" "意味的な相互リンク欠落" "BLUE-LINT-PROMPT-1d 観点 4 (意味的相互リンク)"
+
+  # BLUE-LINT-PROMPT-2: kioku_health role separation phrase
+  assert_contains "${captured_lp}" "kioku_health" "BLUE-LINT-PROMPT-2a kioku_health 言及"
+  assert_contains "${captured_lp}" "machine-check" "BLUE-LINT-PROMPT-2b machine-check 言及"
+
+  # BLUE-LINT-PROMPT-3: kioku_health 移行分の明記 (frontmatter / orphan / broken wikilink)
+  assert_contains "${captured_lp}" "frontmatter" "BLUE-LINT-PROMPT-3a frontmatter exclusion"
+  assert_contains "${captured_lp}" "broken wikilink" "BLUE-LINT-PROMPT-3b broken wikilink exclusion"
+  assert_contains "${captured_lp}" "孤立ページ" "BLUE-LINT-PROMPT-3c orphan (孤立) exclusion mention"
+
+  # BLUE-LINT-PROMPT-4 (negative): old dedicated output sections removed
+  if printf '%s' "${captured_lp}" | grep -Fq "## 孤立ページ"; then
+    fail "BLUE-LINT-PROMPT-4a old '## 孤立ページ' section should be removed"
+  else
+    pass "BLUE-LINT-PROMPT-4a old '## 孤立ページ' section removed"
+  fi
+  if printf '%s' "${captured_lp}" | grep -Fq "## フロントマター不備"; then
+    fail "BLUE-LINT-PROMPT-4b old '## フロントマター不備' section should be removed"
+  else
+    pass "BLUE-LINT-PROMPT-4b old '## フロントマター不備' section removed"
+  fi
+  # negative for the original heredoc verbatim (旧 #2 line "孤立ページ (他のどのページからもリンクされていないページ)")
+  if printf '%s' "${captured_lp}" | grep -Fq "孤立ページ (他のどのページからもリンクされていないページ)"; then
+    fail "BLUE-LINT-PROMPT-4c old enumeration of orphan as 観点 #2 should be removed"
+  else
+    pass "BLUE-LINT-PROMPT-4c old orphan 観点 #2 enumeration removed"
+  fi
+fi
+
+# -----------------------------------------------------------------------------
 # サマリ
 # -----------------------------------------------------------------------------
 echo
