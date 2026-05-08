@@ -263,6 +263,16 @@ KIOKU एक Hook सिस्टम है जो **सभी Claude Code स�
 
 ## परिवर्तन इतिहास
 
+### 2026-05-08 — v0.7.4: Sprint 2 शुरू — `kioku_health` MCP tool + 6 memory health metrics
+
+v0.7.4 post-v0.7.1 reliability roadmap के **Sprint 2 (記憶品質 dashboard)** को launch करता है। Sprint 1 ने diagnostic / drift / onboarding दिए, **Sprint 2 KIOKU की memory को self-aware बनाता है** — `kioku_health` 5 seconds में जवाब देता है।
+
+- **`kioku_health` (11वां MCP tool)** — 6 core metrics JSON में return: `orphan` / `stale (>30d)` / `duplicate title` / `hot.md age` / `last ingest` / `unprocessed session-logs`। हर metric के साथ concrete `next_actions`। Read-only।
+- **`scripts/generate-health.mjs`** — `bash scripts/generate-health.mjs` `wiki/meta/health.md` लिखता है। Dashboard view "Wiki Health" `templates/wiki/meta/dashboard.base` में जोड़ा गया।
+- **Sprint 2 stretch (v0.7.5 planned)** — broken wikilink / source_sha256 duplicate / etc.
+- Tests: **23 BLUE-HEALTH-* + MCP-HEALTH-* + 9 drift (11 tools) + 475+ Node + 22 Bash सभी green**
+- [Release v0.7.4](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.4)
+
 ### 2026-05-07 — v0.7.3: Sprint 1 completion marker — Mode A/B/C onboarding + doctor mode detection
 
 v0.7.3 **Sprint 1 reliability roadmap completion** marker है (8 दिनों में 4 PR)। v0.7.2 से delta = Mode A/B/C onboarding gradient + `doctor` mode detection।

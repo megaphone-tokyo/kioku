@@ -465,6 +465,23 @@ If you find a security issue, please report it via [SECURITY.md](SECURITY.md) �
 
 ## Changelog
 
+### 2026-05-08 — v0.7.4: Sprint 2 着手 — `kioku_health` MCP tool + 6 memory health metrics
+
+v0.7.4 launches **Sprint 2 (記憶品質 dashboard)** of the post-v0.7.1 reliability roadmap. Where Sprint 1 (v0.7.2 / v0.7.3) gave KIOKU diagnostic / drift / onboarding tools, **Sprint 2 makes KIOKU's memory itself self-aware** — does the Wiki contain orphan pages? stale notes? duplicate titles? `kioku_health` answers all of these in 5 seconds.
+
+- **`kioku_health` (11th MCP tool)** — Claude Desktop / Claude Code can now ask "is my KIOKU memory healthy?". Returns 6 core metrics as JSON: `orphan` / `stale (>30d)` / `duplicate title` / `hot.md age` / `last ingest` / `unprocessed session-logs`. Each metric pairs with a concrete `next_actions` suggestion (e.g., "1 orphan pages → Add wikilinks or move to wiki/.archive/"). Read-only — never modifies wiki/.
+- **`scripts/generate-health.mjs` standalone Node script** — `bash scripts/generate-health.mjs` writes `wiki/meta/health.md` (markdown body + JSON appendix) so the same metrics surface in the Obsidian dashboard view (`templates/wiki/meta/dashboard.base` gains a "Wiki Health" view alongside the existing 9). Use it as a CI gate, a monthly cron, or just `--dry-run` for an instant terminal report.
+- **6 metrics by design rationale**:
+  - `orphan` — pages with no inbound wikilinks (= disconnected memory)
+  - `stale (>30d)` — frontmatter `updated:` over 30 days old (= dormant)
+  - `duplicate title` — pages sharing the same H1 (= splintered concept)
+  - `hot.md age` — time since last manual `wiki/hot.md` update (= short-term memory freshness)
+  - `last ingest` — newest `session-logs/*.md` mtime (= ingest pipeline alive?)
+  - `unprocessed session-logs` — `ingested: false` count (= auto-ingest backlog)
+- **Sprint 2 stretch (planned for v0.7.5)** — `broken wikilink` / `source_sha256 duplicate` / `pages updated 7-30 days` / `Wiki page count by type` / `summaries growth rate` will land separately
+- **Tests**: 23 BLUE-HEALTH-* + MCP-HEALTH-* + 9 drift (11 tools verified) + 475+ existing Node + 22 Bash suites all green. `npm audit` clean
+- [Release v0.7.4](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.4) — `kioku-wiki-0.7.4.mcpb` attached
+
 ### 2026-05-07 — v0.7.3: Sprint 1 完走 marker — Mode A/B/C onboarding + doctor mode detection
 
 v0.7.3 marks the **Sprint 1 reliability roadmap completion** (4 PRs in 8 days). The single-feature delta from v0.7.2 is Mode A/B/C onboarding gradient in Quick Start + `doctor` install-mode detection.

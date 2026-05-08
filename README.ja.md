@@ -484,6 +484,23 @@ KIOKU は Claude Code の**全セッション入出力にアクセスする Hook
 
 ## 更新履歴
 
+### 2026-05-08 — v0.7.4: Sprint 2 着手 — `kioku_health` MCP tool + 6 件のメモリ健康メトリクス
+
+v0.7.4 は post-v0.7.1 信頼性ロードマップの **Sprint 2 (記憶品質 dashboard)** を ship。Sprint 1 (v0.7.2 / v0.7.3) が KIOKU の診断 / drift / オンボーディングのツール群を提供したのに対し、**Sprint 2 は KIOKU の記憶そのものを自己診断可能に** — Wiki に orphan page は? stale note は? 重複 title は? すべて `kioku_health` が 5 秒で答える。
+
+- **`kioku_health` (11 個目の MCP tool)** — Claude Desktop / Claude Code から「KIOKU の記憶は健康?」を直接問える。6 件のコアメトリクスを JSON で返却: `orphan` / `stale (>30d)` / `duplicate title` / `hot.md age` / `last ingest` / `unprocessed session-logs`。各メトリクスに具体的 `next_actions` (例: 「1 orphan pages → Add wikilinks or move to wiki/.archive/」) を併記。Read-only、wiki/ を一切 modify しない。
+- **`scripts/generate-health.mjs` 単独 Node script** — `bash scripts/generate-health.mjs` で `wiki/meta/health.md` (markdown 本文 + JSON 付録) を生成、Obsidian dashboard に health view が反映される (`templates/wiki/meta/dashboard.base` 既存 9 view の隣に "Wiki Health" view 追加)。CI gate / 月次 cron / `--dry-run` でターミナル即時 report、いずれの用途でも使える
+- **6 メトリクスの設計 rationale**:
+  - `orphan` — inbound wikilink 無しの page (= 切り離された記憶)
+  - `stale (>30d)` — frontmatter `updated:` が 30 日以上前 (= 休眠)
+  - `duplicate title` — 同 H1 を持つ page (= 概念の分裂)
+  - `hot.md age` — `wiki/hot.md` 最終手動 update からの経過時間 (= 短期記憶 freshness)
+  - `last ingest` — `session-logs/*.md` 最新 mtime (= ingest pipeline alive?)
+  - `unprocessed session-logs` — `ingested: false` のカウント (= auto-ingest 残債)
+- **Sprint 2 stretch (v0.7.5 planned)** — `broken wikilink` / `source_sha256 duplicate` / `pages updated 7-30 days` / `Wiki page count by type` / `summaries 増加率` は別 PR で land 予定
+- **テスト**: 23 BLUE-HEALTH-* + MCP-HEALTH-* + 9 drift (11 tools 整合 verified) + 475+ existing Node + 22 Bash suites 全 green、`npm audit` clean
+- [Release v0.7.4](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.4) — `kioku-wiki-0.7.4.mcpb` attached
+
 ### 2026-05-07 — v0.7.3: Sprint 1 完走 marker — Mode A/B/C オンボーディング + doctor mode detection
 
 v0.7.3 は **Sprint 1 reliability roadmap の完走 marker** (8 日で 4 PR)。v0.7.2 からの単機能 delta は Quick Start の Mode A/B/C onboarding gradient + `doctor` install-mode 検出。

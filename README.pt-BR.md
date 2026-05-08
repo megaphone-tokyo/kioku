@@ -326,6 +326,16 @@ Se voce encontrar um problema de seguranca, por favor reporte via [SECURITY.md](
 
 ## Histórico de mudanças
 
+### 2026-05-08 — v0.7.4: Sprint 2 inicio — `kioku_health` MCP tool + 6 metricas de saude de memoria
+
+v0.7.4 lanca o **Sprint 2 (記憶品質 dashboard)** do reliability roadmap post-v0.7.1. Onde Sprint 1 deu diagnostico / drift / onboarding, **Sprint 2 torna a memoria de KIOKU autoconsciente** — `kioku_health` responde em 5 segundos.
+
+- **`kioku_health` (11° MCP tool)** — Retorna 6 metricas core como JSON: `orphan` / `stale (>30d)` / `duplicate title` / `hot.md age` / `last ingest` / `unprocessed session-logs`. Cada metrica com `next_actions` concreto. Read-only.
+- **`scripts/generate-health.mjs`** — `bash scripts/generate-health.mjs` escreve `wiki/meta/health.md`. Dashboard view "Wiki Health" adicionado em `templates/wiki/meta/dashboard.base`.
+- **Sprint 2 stretch (planejado para v0.7.5)** — broken wikilink / source_sha256 duplicate / etc.
+- Tests: **23 BLUE-HEALTH-* + MCP-HEALTH-* + 9 drift (11 tools) + 475+ Node + 22 Bash todos green**
+- [Release v0.7.4](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.4)
+
 ### 2026-05-07 — v0.7.3: Sprint 1 completion marker — Mode A/B/C onboarding + doctor mode detection
 
 v0.7.3 marca a **conclusao do Sprint 1 reliability roadmap** (4 PRs em 8 dias). O delta de v0.7.2 e Mode A/B/C onboarding gradient + `doctor` mode detection.

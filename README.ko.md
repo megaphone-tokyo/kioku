@@ -326,6 +326,16 @@ KIOKU은 **모든 Claude Code 세션 입출력**에 접근하는 Hook 시스템�
 
 ## 변경 이력
 
+### 2026-05-08 — v0.7.4: Sprint 2 착수 — `kioku_health` MCP tool + 6개 메모리 health metrics
+
+v0.7.4는 post-v0.7.1 reliability roadmap의 **Sprint 2 (記憶品質 dashboard)**를 launch. Sprint 1이 diagnostic / drift / onboarding을 제공한 데 비해, **Sprint 2는 KIOKU의 memory 자체를 self-aware하게** — `kioku_health`가 5초 안에 답함.
+
+- **`kioku_health` (11번째 MCP tool)** — 6 core metrics를 JSON으로 반환: `orphan` / `stale (>30d)` / `duplicate title` / `hot.md age` / `last ingest` / `unprocessed session-logs`. 각 metric에 구체적 `next_actions` 병기. Read-only.
+- **`scripts/generate-health.mjs`** — `bash scripts/generate-health.mjs`로 `wiki/meta/health.md` 작성. Dashboard view "Wiki Health"가 `templates/wiki/meta/dashboard.base`에 추가됨.
+- **Sprint 2 stretch (v0.7.5 planned)** — broken wikilink / source_sha256 duplicate / etc.
+- Tests: **23 BLUE-HEALTH-* + MCP-HEALTH-* + 9 drift (11 tools) + 475+ Node + 22 Bash 모두 green**
+- [Release v0.7.4](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.4)
+
 ### 2026-05-07 — v0.7.3: Sprint 1 완주 marker — Mode A/B/C 온보딩 + doctor mode detection
 
 v0.7.3는 **Sprint 1 reliability roadmap의 완주 marker** (8일 간 4 PR). v0.7.2로부터의 delta는 Mode A/B/C onboarding gradient + `doctor` mode detection.
