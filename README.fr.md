@@ -326,6 +326,16 @@ Si vous trouvez un probleme de securite, veuillez le signaler via [SECURITY.md](
 
 ## Journal des modifications
 
+### 2026-05-08 — v0.7.5 : Sprint 2 termine — `kioku_health` 11 metriques (5 stretch ajoutees) + auto-lint refactor
+
+v0.7.5 marque la **finalisation du Sprint 2 (記憶品質 dashboard)** — micro cascade le meme jour apres la release matinale de v0.7.4.
+
+- **`kioku_health` 6 → 11 metriques** : ajoutees `broken_wikilink` / `source_sha256_duplicate` / `pages_warm_zone` (7-30j) / `page_count_by_type` / `summaries_growth_rate`
+- **auto-lint LINT_PROMPT 6 → 4 observations refactor** : exclut explicitement les 11 metriques machine-checkable de `kioku_health`, ne laisse que les problemes semantiques necessitant un jugement LLM (contradiction / splinter de concepts / page dediee manquante / gap de wikilinks semantiques)
+- **Real-world dogfood (PM Vault, 155 pages)** : premier run a surface `broken=21 / sha256_dup=2 / warm zone=99 / growth 30d=33`
+- **Tests** : 33 BLUE-HEALTH-* + 9 BLUE-DRIFT-* + 53 BLUE-LINT-PROMPT-* + 475+ Node + 22 Bash tous green
+- [Release v0.7.5](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.5)
+
 ### 2026-05-08 — v0.7.4 : Sprint 2 demarrage — `kioku_health` MCP tool + 6 metriques de sante de memoire
 
 v0.7.4 lance le **Sprint 2 (記憶品質 dashboard)** du reliability roadmap post-v0.7.1. La ou Sprint 1 a donne diagnostique / drift / onboarding, **Sprint 2 rend la memoire de KIOKU auto-consciente** — `kioku_health` repond en 5 secondes.

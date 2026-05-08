@@ -465,6 +465,25 @@ If you find a security issue, please report it via [SECURITY.md](SECURITY.md) �
 
 ## Changelog
 
+### 2026-05-08 — v0.7.5: Sprint 2 完走 — `kioku_health` 11 metrics (stretch 5 追加) + auto-lint refactor
+
+v0.7.5 marks **Sprint 2 (記憶品質 dashboard) completion** — same-day micro cascade after v0.7.4 morning release. Where v0.7.4 shipped the **core 6 metrics** (orphan / stale / duplicate title / hot.md age / last ingest / unprocessed session-logs), v0.7.5 adds the **stretch 5 metrics** identified in the codex roadmap §「指標案」 and **refactors auto-lint** to no longer overlap with `kioku_health`'s machine-checkable surface.
+
+- **`kioku_health` 6 → 11 metrics** — the 5 added metrics:
+  - `broken_wikilink` — `[[link]]` references that don't resolve to any page in wiki/ (= orphan link)
+  - `source_sha256_duplicate` — pages sharing the same `source_sha256:` frontmatter (= idempotent ingest broken or manual dup)
+  - `pages_warm_zone` — pages with `updated:` between 7-30 days (= warm zone, between fresh and stale-30d)
+  - `page_count_by_type` — breakdown by page type (concept / project / decision / source-summary / log / index / meta / その他)
+  - `summaries_growth_rate` — `wiki/sources/*-summary.md` additions in last 7d / 30d, expressed as count/day
+- **`auto-lint` LINT_PROMPT 6 → 4 観点 refactor** — `scripts/auto-lint.sh` now explicitly excludes the 11 `kioku_health` machine-checkable metrics from its observation list, leaving only **LLM judgment-required semantic patterns**:
+  1. **概念の矛盾** (contradicting facts across pages, old claims overwritten by newer sources)
+  2. **概念の splinter** (same concept split across multiple pages, merge candidates)
+  3. **専用ページが必要な繰り返し言及概念** (mentioned repeatedly in sources/summaries but no dedicated `wiki/concepts/` page)
+  4. **意味的な相互リンク欠落** (semantic gap — pages thematically related but not wikilinked; broken wikilink syntax handled by `kioku_health`)
+- **Real-world dogfood (PM Vault, 155 pages)** — first run on 2026-05-08 surfaced `broken=21 / sha256_dup=2 / warm zone=99 / growth 30d=33`, immediately actionable via `next_actions` text
+- **Tests**: 33 BLUE-HEALTH-* + MCP-HEALTH-* (incl. STRETCH-1..7) + 9 BLUE-DRIFT-* + 53 BLUE-LINT-PROMPT-* + 475+ existing Node + 22 Bash all green; `npm audit` clean
+- [Release v0.7.5](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.5) — `kioku-wiki-0.7.5.mcpb` attached
+
 ### 2026-05-08 — v0.7.4: Sprint 2 着手 — `kioku_health` MCP tool + 6 memory health metrics
 
 v0.7.4 launches **Sprint 2 (記憶品質 dashboard)** of the post-v0.7.1 reliability roadmap. Where Sprint 1 (v0.7.2 / v0.7.3) gave KIOKU diagnostic / drift / onboarding tools, **Sprint 2 makes KIOKU's memory itself self-aware** — does the Wiki contain orphan pages? stale notes? duplicate titles? `kioku_health` answers all of these in 5 seconds.
