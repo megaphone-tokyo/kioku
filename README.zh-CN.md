@@ -331,6 +331,16 @@ KIOKU 是一个可以访问**所有 Claude Code 会话输入输出**的 Hook 系
 
 ## 更新历史
 
+### 2026-05-08 — v0.7.4：Sprint 2 启动 — `kioku_health` MCP tool + 6 个内存健康指标
+
+v0.7.4 启动 post-v0.7.1 reliability roadmap 的 **Sprint 2 (記憶品質 dashboard)**。Sprint 1 给出 diagnostic / drift / onboarding，**Sprint 2 让 KIOKU 的内存自我感知** — `kioku_health` 在 5 秒内回答。
+
+- **`kioku_health` (第 11 个 MCP tool)** — 返回 6 个 core metrics 作为 JSON: `orphan` / `stale (>30d)` / `duplicate title` / `hot.md age` / `last ingest` / `unprocessed session-logs`。每个 metric 配有具体的 `next_actions`。Read-only。
+- **`scripts/generate-health.mjs`** — `bash scripts/generate-health.mjs` 写入 `wiki/meta/health.md`。Dashboard view "Wiki Health" 添加到 `templates/wiki/meta/dashboard.base`。
+- **Sprint 2 stretch (计划在 v0.7.5)** — broken wikilink / source_sha256 duplicate / 等
+- Tests: **23 BLUE-HEALTH-* + MCP-HEALTH-* + 9 drift (11 tools) + 475+ Node + 22 Bash 全部 green**
+- [Release v0.7.4](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.4)
+
 ### 2026-05-07 — v0.7.3：Sprint 1 完走 marker — Mode A/B/C onboarding + doctor mode detection
 
 v0.7.3 标志着 **Sprint 1 reliability roadmap 完成** (8 天内 4 PR)。从 v0.7.2 的 delta 是 Mode A/B/C onboarding gradient + `doctor` mode detection。
