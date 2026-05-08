@@ -163,15 +163,27 @@ fi
 # -----------------------------------------------------------------------------
 
 read -r -d '' LINT_PROMPT <<'PROMPT' || true
-CLAUDE.md のスキーマに従って、wiki/ 内の全ファイルを読んで健全性をチェックして。
+CLAUDE.md のスキーマに従って、wiki/ 内の全ファイルを読んで意味的な健全性をチェックして。
+
+## 前提: 役割分担 (重要)
+
+frontmatter の不備 / 孤立ページ / broken wikilink / source_sha256 の重複 / stale ページ /
+duplicate title / hot.md age / last ingest / unprocessed session-logs / page count by type /
+warm zone は `kioku_health` (machine-check) で別途検出される。
+
+本 lint では **LLM judgment 必須の semantic な問題** のみを扱い、上記の machine-checkable
+metric は **重複検出しない** (既に health-metrics 側で actionable に列挙されている)。
+
+## 観点 (LLM 判断必須の 4 つに集約)
 
 以下の観点で問題を探して:
-1. ページ間の矛盾 (同じ事実について異なる記述がないか)
-2. 孤立ページ (他のどのページからもリンクされていないページ)
-3. 繰り返し言及されるが専用ページのない概念
-4. 新しいソースで上書きされた古い主張
-5. 不足している相互リンク
-6. フロントマターの不備 (tags, updated 等の欠損)
+
+1. **概念の矛盾** (同じ事実について異なる記述、新しいソースで上書きされた古い主張)
+2. **概念の splinter** (同概念を複数ページに分散している、merge 候補)
+3. **専用ページが必要な繰り返し言及概念** (sources/summaries で複数言及されているが
+   wiki/concepts/ 等に専用ページが昇格していない)
+4. **意味的な相互リンク欠落** (wikilink 構文の broken は kioku_health 側で別 detect 済、
+   ここでは「内容上関連が深いのに wikilink が張られていない」semantic gap を扱う)
 
 重要: 問題の修正は行わないこと。レポートの生成のみ。
 
@@ -187,24 +199,20 @@ date: (今日の日付)
 ## 要約
 - 検出した問題の総数
 - カテゴリ別の内訳
+- 注: frontmatter 不備 / broken wikilink / duplicate title / stale 等は kioku_health で別途検出されるため
+  本レポートには含めない (役割分担)
 
-## 矛盾
-(矛盾があれば具体的なページ名と内容を列挙)
+## 概念の矛盾
+(同じ事実について異なる記述、または新しいソースで上書きされた古い主張)
 
-## 孤立ページ
-(リンクされていないページの一覧)
+## 概念の splinter
+(同じ概念が複数のページに散在しており merge 候補となるケース)
 
 ## 専用ページ候補
-(頻出だが専用ページのない概念)
+(sources/summaries で繰り返し言及されているが、wiki/concepts/ などに専用ページが昇格していない概念)
 
-## 古い記述の疑い
-(新しい情報で上書きされた可能性のある記述)
-
-## リンク不足
-(相互リンクを追加すべき箇所)
-
-## フロントマター不備
-(不備のあるページ一覧)
+## 意味的な相互リンク欠落
+(内容上関連が深いのに wikilink が張られていないケース。wikilink 構文の broken は kioku_health で別検出)
 
 ## R1: Unicode 不可視文字 (prompt injection 監査)
 (Shell 側 pre-scan の結果がプロンプト末尾で提供されるので、それをそのまま列挙する。

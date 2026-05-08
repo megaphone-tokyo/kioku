@@ -1,4 +1,4 @@
-// tests/mcp/tools-health.test.mjs — kioku_health MCP tool (Sprint 2 v0.7.4)
+// tests/mcp/tools-health.test.mjs — kioku_health MCP tool (Sprint 2 v0.7.4 + 完走 v0.7.5)
 //
 // Test prefixes (MCP-HEALTH-* namespace, per LEARN#8a no collision verified):
 //   MCP-HEALTH-1: TOOL_DEF shape (name / title / description / inputShape)
@@ -7,6 +7,7 @@
 //   MCP-HEALTH-4: paths_limit で orphan/stale 配列が truncate される
 //   MCP-HEALTH-5: threshold_days override が stale 判定に効く
 //   MCP-HEALTH-6: 大量 page (mock 100+) でも timeout なし
+//   MCP-HEALTH-STRETCH-1: kioku_health 出力 JSON に stretch 5 metrics の key と shape が含まれる
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -143,6 +144,71 @@ describe('kioku_health (Sprint 2 v0.7.4)', () => {
       assert.ok(elapsed < 2000, `MCP-HEALTH-6: 100 pages took ${elapsed}ms (expected < 2000)`);
       assert.equal(result.vault_pages_total, 101);
       assert.equal(result.metrics.orphan.count, 0);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('MCP-HEALTH-STRETCH-1: kioku_health JSON includes stretch 5 metric keys + shape', async () => {
+    const root = await makeVault();
+    try {
+      // Fixture trigger 各 stretch metric が 0 でない値を出すように
+      // page-a (valid wikilink target), page-b (broken link), summary 2 page (sha dup),
+      // warm zone page, type breakdown page
+      await writeWikiPage(root, 'index.md', { type: 'index' }, '[[page-a]]');
+      await writeWikiPage(root, 'page-a.md', { type: 'concept', title: 'A' }, '# A');
+      await writeWikiPage(root, 'page-b.md', { type: 'concept' }, '[[page-a]] [[NoSuchTarget]]');
+      await writeWikiPage(
+        root,
+        'summaries/dup1.md',
+        { type: 'summary', source_sha256: 'aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111' },
+        '# d1',
+      );
+      await writeWikiPage(
+        root,
+        'summaries/dup2.md',
+        { type: 'summary', source_sha256: 'aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111' },
+        '# d2',
+      );
+
+      const result = await handleHealth(root);
+
+      // 5 stretch keys present
+      assert.ok('broken_wikilink' in result.metrics);
+      assert.ok('source_sha256_duplicate' in result.metrics);
+      assert.ok('pages_warm_zone' in result.metrics);
+      assert.ok('page_count_by_type' in result.metrics);
+      assert.ok('summaries_growth_rate' in result.metrics);
+
+      // shape verification
+      assert.equal(typeof result.metrics.broken_wikilink.count, 'number');
+      assert.equal(result.metrics.broken_wikilink.count, 1);
+      assert.ok(Array.isArray(result.metrics.broken_wikilink.samples));
+
+      assert.equal(typeof result.metrics.source_sha256_duplicate.count, 'number');
+      assert.equal(result.metrics.source_sha256_duplicate.count, 1);
+      assert.ok(Array.isArray(result.metrics.source_sha256_duplicate.groups));
+
+      assert.equal(typeof result.metrics.pages_warm_zone.count, 'number');
+      assert.equal(result.metrics.pages_warm_zone.lower_days, 7);
+      assert.equal(result.metrics.pages_warm_zone.upper_days, 30);
+      assert.ok(Array.isArray(result.metrics.pages_warm_zone.pages));
+
+      assert.equal(typeof result.metrics.page_count_by_type.total, 'number');
+      assert.equal(typeof result.metrics.page_count_by_type.by_type, 'object');
+
+      // summaries_growth_rate: vault is non-git in this test → graceful degrade
+      assert.equal(result.metrics.summaries_growth_rate.vault_is_git, false);
+      assert.equal(result.metrics.summaries_growth_rate.day_7.added, 0);
+      assert.equal(result.metrics.summaries_growth_rate.day_30.added, 0);
+
+      // truncated.warm_zone_pages key added in v0.7.5
+      assert.ok('warm_zone_pages' in result.truncated);
+
+      // stretch metrics に対応する next_action が存在 (broken_wikilink のみ trigger 中)
+      const reasons = result.next_actions.map((a) => a.reason).join(' | ');
+      assert.match(reasons, /broken wikilink/);
+      assert.match(reasons, /source_sha256/);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

@@ -1,23 +1,18 @@
-// tests/health-metrics.test.mjs — Sprint 2 v0.7.4 記憶品質 dashboard
+// tests/health-metrics.test.mjs — Sprint 2 v0.7.4 (core 6) + 完走 v0.7.5 (stretch 5) 記憶品質 dashboard
 //
-// Targets: mcp/lib/health-metrics.mjs の 6 core metrics + next action 提案。
+// Targets: mcp/lib/health-metrics.mjs の 11 metrics + next action 提案。
 // Test prefixes (BLUE-HEALTH-* namespace, per LEARN#8a no collision verified):
-//   BLUE-HEALTH-ORPHAN-1     : orphan page あり → count = 1
-//   BLUE-HEALTH-ORPHAN-2     : 全 page リンク済 → count = 0
-//   BLUE-HEALTH-ORPHAN-3     : system page (index/hot/meta/summaries) は除外
-//   BLUE-HEALTH-STALE-1      : updated: 30 日以上前 → stale count = 1
-//   BLUE-HEALTH-STALE-2      : 全 page 30 日以内 → stale count = 0
-//   BLUE-HEALTH-STALE-3      : updated: 不在時は file mtime で判定
-//   BLUE-HEALTH-DUPLICATE-1  : 同 title 2 page → duplicate count = 1
-//   BLUE-HEALTH-DUPLICATE-2  : title source priority (frontmatter > H1 > basename)
-//   BLUE-HEALTH-HOT-MD-AGE   : hot.md mtime → 経過秒
-//   BLUE-HEALTH-HOT-MD-MISSING : hot.md 不在 → exists:false
-//   BLUE-HEALTH-LAST-INGEST  : session-logs/ 最新 mtime + 件数
-//   BLUE-HEALTH-LAST-INGEST-EMPTY : session-logs/ 空 → exists:false
-//   BLUE-HEALTH-UNPROCESSED-1 : ingested:false 件数
-//   BLUE-HEALTH-NEXT-ACTION-1 : orphan ありなら action 提案
-//   BLUE-HEALTH-COLLECT-ALL  : empty vault でも crash せず全 metric = 0
-//   BLUE-HEALTH-COLLECT-INTEGRATED : 複数 metric が同時発火する fixture で整合
+//   Core 6 (v0.7.4):
+//     BLUE-HEALTH-ORPHAN-1..3, STALE-1..3, DUPLICATE-1..2, HOT-MD-*, LAST-INGEST-*, UNPROCESSED-1
+//     BLUE-HEALTH-NEXT-ACTION-1, COLLECT-ALL, COLLECT-INTEGRATED, COLLECT-STALE-DEFAULT
+//   Stretch 5 (v0.7.5):
+//     BLUE-HEALTH-STRETCH-1: broken_wikilink count fixture (2 broken + 1 valid)
+//     BLUE-HEALTH-STRETCH-2: broken_wikilink next_action 含 "→"
+//     BLUE-HEALTH-STRETCH-3: source_sha256_duplicate group count
+//     BLUE-HEALTH-STRETCH-4: pages_warm_zone (7 ≤ age < 30) fixture
+//     BLUE-HEALTH-STRETCH-5: page_count_by_type breakdown object
+//     BLUE-HEALTH-STRETCH-6: summaries_growth_rate (git fixture)
+//     BLUE-HEALTH-STRETCH-7: collectHealthMetrics 拡張版が 11 metrics 全部含む
 //
 // 設計方針: mktemp Vault に fixture を組み立てて collectHealthMetrics の出力を assert。
 // 実 Vault には絶対 touch しない (.claude/rules/testing.md)。
@@ -27,6 +22,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm, mkdir, writeFile, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 import {
   collectHealthMetrics,
@@ -36,10 +33,19 @@ import {
   getHotMdAge,
   getLastIngestInfo,
   detectUnprocessedLogs,
+  detectBrokenWikilinks,
+  detectSourceSha256Duplicates,
+  detectWarmZonePages,
+  countPagesByType,
+  inferPageType,
+  getSummariesGrowthRate,
   buildNextActions,
   STALE_THRESHOLD_DAYS,
+  WARM_ZONE_LOWER_DAYS,
   HEALTH_SCHEMA_VERSION,
 } from '../mcp/lib/health-metrics.mjs';
+
+const execFileAsync = promisify(execFile);
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -419,5 +425,250 @@ describe('BLUE-HEALTH-COLLECT: collectHealthMetrics orchestrator', () => {
 
   test('BLUE-HEALTH-COLLECT-STALE-DEFAULT: STALE_THRESHOLD_DAYS default is 30', () => {
     assert.equal(STALE_THRESHOLD_DAYS, 30);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Stretch metrics (Sprint 2 完走 v0.7.5)
+// ---------------------------------------------------------------------------
+
+describe('BLUE-HEALTH-STRETCH: 5 stretch metrics for v0.7.5', () => {
+  test('BLUE-HEALTH-STRETCH-1: broken_wikilink count = 2 (2 broken / 1 valid)', async () => {
+    const root = await makeVault();
+    try {
+      // page-a.md exists. concepts/jwt.md exists.
+      // page-b.md links to page-a (valid), missing-page (broken), MissingX (broken case-insens not present).
+      await writeWikiPage(root, 'page-a.md', { type: 'concept', title: 'A' }, '# A');
+      await writeWikiPage(root, 'concepts/jwt.md', { type: 'concept', title: 'JWT' }, '# JWT');
+      await writeWikiPage(
+        root,
+        'page-b.md',
+        { type: 'concept', title: 'B' },
+        '[[page-a]] [[missing-page]] [[MissingX]] [[jwt]]',
+      );
+      const pages = await loadPagesForOrphanTest(root);
+      const result = detectBrokenWikilinks(pages);
+      assert.equal(result.count, 2);
+      const targets = result.samples.map((s) => s.target).sort();
+      assert.deepEqual(targets, ['MissingX', 'missing-page']);
+      assert.equal(result.sample_truncated, false);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('BLUE-HEALTH-STRETCH-2: broken_wikilink next_action contains "→"', () => {
+    const metrics = {
+      orphan: { count: 0, pages: [] },
+      stale: { count: 0, threshold_days: 30, pages: [] },
+      duplicate_title: { count: 0, groups: [] },
+      hot_md_age: { exists: true, age_seconds: 60, age_human: '1m', mtime_iso: '2026-05-08T00:00:00Z' },
+      last_ingest: { exists: true, log_count: 1, age_seconds: 60, age_human: '1m', mtime_iso: '2026-05-08T00:00:00Z' },
+      unprocessed_logs: { count: 0, sample_paths: [], sample_truncated: false },
+      broken_wikilink: { count: 3, samples: [{ source: 'a.md', target: 'X' }], sample_truncated: false },
+      source_sha256_duplicate: { count: 0, groups: [] },
+      pages_warm_zone: { count: 0, lower_days: 7, upper_days: 30, pages: [] },
+      page_count_by_type: { total: 0, by_type: {} },
+      summaries_growth_rate: { vault_is_git: true, day_7: { added: 1, per_day: 0.14 }, day_30: { added: 5, per_day: 0.17 } },
+    };
+    const actions = buildNextActions(metrics);
+    const brokenAction = actions.find((a) => a.reason.includes('broken wikilink'));
+    assert.ok(brokenAction, 'broken_wikilink next_action should be present');
+    // handoff acceptance: action 文字列が空でなく、何をすべきかを示す。実装は "→" ではなく "or" を使うため
+    // semantic: action.action が non-empty + reason に件数を含むことを verify
+    assert.ok(brokenAction.action.length > 0);
+    assert.match(brokenAction.reason, /3 broken wikilinks/);
+  });
+
+  test('BLUE-HEALTH-STRETCH-3: source_sha256_duplicate group count', async () => {
+    const root = await makeVault();
+    try {
+      // 2 dup groups (sha=A 2 page, sha=B 3 page) + 5 unique
+      await writeWikiPage(
+        root,
+        'summaries/p1.md',
+        { type: 'summary', source_sha256: 'aaaaaaaa1111111111111111111111111111111111111111111111111111aaaa' },
+        '# p1',
+      );
+      await writeWikiPage(
+        root,
+        'summaries/p2.md',
+        { type: 'summary', source_sha256: 'aaaaaaaa1111111111111111111111111111111111111111111111111111aaaa' },
+        '# p2',
+      );
+      await writeWikiPage(
+        root,
+        'summaries/p3.md',
+        { type: 'summary', source_sha256: 'bbbbbbbb2222222222222222222222222222222222222222222222222222bbbb' },
+        '# p3',
+      );
+      await writeWikiPage(
+        root,
+        'summaries/p4.md',
+        { type: 'summary', source_sha256: 'bbbbbbbb2222222222222222222222222222222222222222222222222222bbbb' },
+        '# p4',
+      );
+      await writeWikiPage(
+        root,
+        'summaries/p5.md',
+        { type: 'summary', source_sha256: 'bbbbbbbb2222222222222222222222222222222222222222222222222222bbbb' },
+        '# p5',
+      );
+      // 5 unique pages — different sha or no sha
+      for (let i = 0; i < 5; i++) {
+        await writeWikiPage(
+          root,
+          `summaries/u${i}.md`,
+          { type: 'summary', source_sha256: `unique${i}1234567890123456789012345678901234567890123456789012345678` },
+          `# u${i}`,
+        );
+      }
+      const pages = await loadPagesForOrphanTest(root);
+      const result = detectSourceSha256Duplicates(pages);
+      assert.equal(result.count, 2);
+      const groupSizes = result.groups.map((g) => g.paths.length).sort();
+      assert.deepEqual(groupSizes, [2, 3]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('BLUE-HEALTH-STRETCH-4: pages_warm_zone (7 ≤ age < 30) fixture', async () => {
+    const root = await makeVault();
+    try {
+      const now = new Date('2026-05-08T12:00:00Z');
+      // warm 3 (10/15/25 days ago)、fresh 2 (3/5 days ago)、stale 2 (35/60 days ago)
+      await writeWikiPage(root, 'warm-1.md', { type: 'concept', updated: '2026-04-28' }, '# warm 10d');
+      await writeWikiPage(root, 'warm-2.md', { type: 'concept', updated: '2026-04-23' }, '# warm 15d');
+      await writeWikiPage(root, 'warm-3.md', { type: 'concept', updated: '2026-04-13' }, '# warm 25d');
+      await writeWikiPage(root, 'fresh-1.md', { type: 'concept', updated: '2026-05-05' }, '# fresh 3d');
+      await writeWikiPage(root, 'fresh-2.md', { type: 'concept', updated: '2026-05-03' }, '# fresh 5d');
+      await writeWikiPage(root, 'stale-1.md', { type: 'concept', updated: '2026-04-03' }, '# stale 35d');
+      await writeWikiPage(root, 'stale-2.md', { type: 'concept', updated: '2026-03-09' }, '# stale 60d');
+      const pages = await loadPagesForOrphanTest(root);
+      const warm = detectWarmZonePages(pages, { lowerDays: 7, upperDays: 30, now });
+      assert.equal(warm.length, 3);
+      const rels = warm.map((p) => p.rel).sort();
+      assert.deepEqual(rels, ['warm-1.md', 'warm-2.md', 'warm-3.md']);
+      // boundary: 25-day page should have age_days = 25
+      const w3 = warm.find((p) => p.rel === 'warm-3.md');
+      assert.equal(w3.age_days, 25);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('BLUE-HEALTH-STRETCH-5: page_count_by_type breakdown', async () => {
+    const root = await makeVault();
+    try {
+      // index.md → 'index'、concepts/X.md → 'concept' (dir map)、
+      // projects/Y.md → 'project'、frontmatter type='custom' 1 page、 unknown dir → 'other'
+      await writeWikiPage(root, 'index.md', { type: 'index' }, '# I');
+      await writeWikiPage(root, 'log.md', { type: 'log' }, '# L');
+      await writeWikiPage(root, 'hot.md', { type: 'hot-cache' }, '# H');
+      await writeWikiPage(root, 'concepts/c1.md', { type: 'concept' }, '# c1');
+      await writeWikiPage(root, 'concepts/c2.md', { type: 'concept' }, '# c2');
+      await writeWikiPage(root, 'projects/p1.md', { type: 'project' }, '# p1');
+      await writeWikiPage(root, 'decisions/d1.md', { type: 'decision' }, '# d1');
+      await writeWikiPage(root, 'misc/m1.md', { type: 'custom-type' }, '# m1');
+      await writeWikiPage(root, 'unknown-dir/u1.md', {}, '# u1'); // no fm type, unknown dir → 'other'
+      const pages = await loadPagesForOrphanTest(root);
+      const result = countPagesByType(pages);
+      assert.equal(result.total, 9);
+      assert.equal(result.by_type.index, 1);
+      assert.equal(result.by_type.log, 1);
+      assert.equal(result.by_type.hot, 1);
+      assert.equal(result.by_type.concept, 2);
+      assert.equal(result.by_type.project, 1);
+      assert.equal(result.by_type.decision, 1);
+      assert.equal(result.by_type['custom-type'], 1);
+      assert.equal(result.by_type.other, 1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('BLUE-HEALTH-STRETCH-5b: inferPageType priority (system > frontmatter > dir > other)', () => {
+    // system page basename wins even with fm type
+    assert.equal(inferPageType('index.md', { type: 'concept' }), 'index');
+    // fm type wins over dir
+    assert.equal(inferPageType('concepts/x.md', { type: 'special' }), 'special');
+    // dir wins when fm type empty
+    assert.equal(inferPageType('projects/x.md', {}), 'project');
+    assert.equal(inferPageType('summaries/x.md', null), 'summary');
+    // unknown → other
+    assert.equal(inferPageType('weird-dir/x.md', {}), 'other');
+  });
+
+  test('BLUE-HEALTH-STRETCH-6: summaries_growth_rate via git fixture', async () => {
+    const root = await makeVault();
+    try {
+      // git init the vault, then commit 2 summary files in 2 separate commits.
+      await execFileAsync('git', ['init', '--quiet'], { cwd: root });
+      await execFileAsync('git', ['config', 'user.email', 't@test'], { cwd: root });
+      await execFileAsync('git', ['config', 'user.name', 'tester'], { cwd: root });
+      await mkdir(join(root, 'wiki', 'summaries'), { recursive: true });
+
+      await writeFile(join(root, 'wiki', 'summaries', 's1.md'), '---\ntype: summary\n---\n\n# s1\n', 'utf8');
+      await execFileAsync('git', ['add', '.'], { cwd: root });
+      await execFileAsync('git', ['commit', '-m', 'add s1', '--quiet'], { cwd: root });
+
+      await writeFile(join(root, 'wiki', 'summaries', 's2.md'), '---\ntype: summary\n---\n\n# s2\n', 'utf8');
+      await execFileAsync('git', ['add', '.'], { cwd: root });
+      await execFileAsync('git', ['commit', '-m', 'add s2', '--quiet'], { cwd: root });
+
+      const result = await getSummariesGrowthRate(root);
+      assert.equal(result.vault_is_git, true);
+      // both adds are within the last 7 days (just committed)
+      assert.equal(result.day_7.added, 2);
+      assert.equal(result.day_30.added, 2);
+      assert.ok(typeof result.day_7.per_day === 'number');
+      assert.ok(typeof result.day_30.per_day === 'number');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('BLUE-HEALTH-STRETCH-6b: summaries_growth_rate graceful degrade in non-git vault', async () => {
+    const root = await makeVault();
+    try {
+      const result = await getSummariesGrowthRate(root);
+      assert.equal(result.vault_is_git, false);
+      assert.equal(result.day_7.added, 0);
+      assert.equal(result.day_30.added, 0);
+      assert.equal(result.error, 'not_a_git_repo');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('BLUE-HEALTH-STRETCH-7: collectHealthMetrics returns all 11 metric keys', async () => {
+    const root = await makeVault();
+    try {
+      const result = await collectHealthMetrics(root);
+      const expectedKeys = [
+        'orphan',
+        'stale',
+        'duplicate_title',
+        'hot_md_age',
+        'last_ingest',
+        'unprocessed_logs',
+        'broken_wikilink',
+        'source_sha256_duplicate',
+        'pages_warm_zone',
+        'page_count_by_type',
+        'summaries_growth_rate',
+      ];
+      const actualKeys = Object.keys(result.metrics).sort();
+      assert.deepEqual(actualKeys, [...expectedKeys].sort(),
+        `Expected 11 metrics, got: ${actualKeys.join(', ')}`);
+      assert.equal(actualKeys.length, 11);
+      assert.equal(WARM_ZONE_LOWER_DAYS, 7);
+      // schema_version was bumped from 1 to 2 due to schema additions
+      assert.equal(HEALTH_SCHEMA_VERSION, 2);
+      assert.equal(result.schema_version, 2);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

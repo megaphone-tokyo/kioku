@@ -1,7 +1,9 @@
 // health-metrics.mjs — KIOKU 記憶品質 dashboard の metric 計算ライブラリ
 //
 // codex roadmap §P1 (plan/codex/260430_kioku-product-improvement-roadmap.md L283-315)
-// に基づく "wiki が育っているか / 淀んでいるか" を測る 6 core metrics:
+// に基づく "wiki が育っているか / 淀んでいるか" を測る 11 metrics:
+//
+// Core 6 metrics (Sprint 2 v0.7.4):
 //   1. orphan pages           — 他から wikilink で参照されていない page
 //   2. stale pages            — frontmatter `updated:` が 30 日以上前 (fallback: file mtime)
 //   3. duplicate title groups — 同一 title (frontmatter > H1 > basename) の 2+ page
@@ -9,10 +11,17 @@
 //   5. last ingest activity   — session-logs/ の最新 mtime + ログ件数
 //   6. unprocessed session-logs — frontmatter `ingested: false` の session-log 件数
 //
+// Stretch 5 metrics (Sprint 2 完走 v0.7.5):
+//   7. broken wikilink        — `[[X]]` で参照される target が wiki 内に存在しない件数
+//   8. source_sha256 duplicate — wiki/summaries/ 配下で同 sha256 の page 群件数
+//   9. pages warm zone        — 7 ≤ updated < 30 日 (stale と fresh の中間帯)
+//  10. page count by type     — concept/project/decision/summary/その他 の breakdown
+//  11. summaries growth rate  — wiki/summaries/ への新規 add 件数 (直近 7d / 30d、git log 経由)
+//
 // Acceptance criteria (codex roadmap L310-315):
 //   - 「Wiki が育っている / 淀んでいる」を見て分かる
-//   - auto-lint の結果と重複しすぎない (auto-lint は session→wiki ingest 品質、
-//     本 module は ingest 後の wiki 自体の状態、責務分離)
+//   - auto-lint の結果と重複しすぎない (auto-lint = session→wiki ingest 品質、
+//     本 module = ingest 後 wiki 自体の状態、責務分離)
 //   - 数字だけでなく next action を出す (buildNextActions が actionable 提案を生成)
 //
 // 設計方針:
@@ -20,15 +29,21 @@
 //   - 読み取り専用: wiki/ session-logs/ を **絶対に modify しない**
 //   - test 可能性を優先: 個別 metric 関数を export、orchestrator (collectHealthMetrics) で合成
 //   - vault root を引数で受け取り、environment 変数依存を持たない
+//   - git 依存 metric (summaries_growth_rate) は non-git vault で graceful degrade
 
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { basename, join, relative, sep } from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 import { parseFrontmatter } from './frontmatter.mjs';
 import { findWikilinks } from './wikilinks.mjs';
 
+const execFileAsync = promisify(execFile);
+
 export const STALE_THRESHOLD_DAYS = 30;
-export const HEALTH_SCHEMA_VERSION = 1;
+export const WARM_ZONE_LOWER_DAYS = 7;
+export const HEALTH_SCHEMA_VERSION = 2;
 
 // wiki/ 走査時にスキップするディレクトリ (kioku_list の EXCLUDE と整合)
 const EXCLUDE_DIRS = new Set(['.obsidian', '.archive', '.trash', 'templates', '.cache']);
@@ -329,6 +344,262 @@ export async function detectUnprocessedLogs(vault) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Stretch metrics (Sprint 2 完走 v0.7.5)
+// ---------------------------------------------------------------------------
+
+// Metric 7: broken wikilink count
+//
+// `[[X]]` 形式で参照される target が wiki 内に解決できないリンクを返す。
+// detectOrphans の inverse (orphan = inbound 不足、broken = outbound 解決不能)。
+//
+// 解決規則 (Obsidian と detectOrphans 両者と整合):
+//   target が以下いずれかに hit すれば valid:
+//     - p.rel そのもの (例: "concepts/jwt.md")
+//     - p.rel から .md を除去 (例: "concepts/jwt")
+//     - basename (例: "jwt")
+//
+// system page も含めて全 page を target 候補にする (orphan 判定で除外する system page でも
+// link target としては valid なため。例: `[[index]]` は valid link)。
+const BROKEN_WIKILINK_SAMPLE_LIMIT = 30;
+
+export function detectBrokenWikilinks(pages) {
+  const pathSet = new Set();
+  for (const p of pages) {
+    pathSet.add(p.rel);
+    pathSet.add(p.rel.replace(/\.md$/, ''));
+    pathSet.add(basename(p.rel, '.md'));
+  }
+  const broken = [];
+  for (const p of pages) {
+    for (const target of p.meta.wikilinks) {
+      const t = String(target).trim();
+      if (!t) continue;
+      if (pathSet.has(t)) continue;
+      // 大文字小文字を吸収した二次マッチ (Obsidian の wikilink 解決は基本 case-insensitive)
+      const lower = t.toLowerCase();
+      let resolvedCaseInsensitive = false;
+      for (const candidate of pathSet) {
+        if (candidate.toLowerCase() === lower) {
+          resolvedCaseInsensitive = true;
+          break;
+        }
+      }
+      if (resolvedCaseInsensitive) continue;
+      broken.push({ source: p.rel, target: t });
+    }
+  }
+  // sort: source path then target — deterministic
+  broken.sort((a, b) => {
+    if (a.source !== b.source) return a.source.localeCompare(b.source);
+    return a.target.localeCompare(b.target);
+  });
+  return {
+    count: broken.length,
+    samples: broken.slice(0, BROKEN_WIKILINK_SAMPLE_LIMIT),
+    sample_truncated: broken.length > BROKEN_WIKILINK_SAMPLE_LIMIT,
+  };
+}
+
+// Metric 8: source_sha256 duplicate groups
+//
+// wiki/summaries/ 配下の page が `source_sha256:` frontmatter を持つ場合、同 sha256 値の
+// page を group 化し count >= 2 の group 数を返す。同 source PDF/URL から複数の summary
+// が誤生成された (idempotent ingest が壊れた) 警告として機能。
+//
+// 設計: summaries/ 以外も `source_sha256:` を持ちうる (mcp-note の一部) ため、frontmatter
+// 持ちの全 page を対象にする。実害は同じく "同 source の重複 page" を検出すること。
+export function detectSourceSha256Duplicates(pages) {
+  const sha256Map = new Map();
+  for (const p of pages) {
+    const sha = p.meta.frontmatter?.source_sha256;
+    if (typeof sha !== 'string') continue;
+    const key = sha.trim().toLowerCase();
+    if (!key) continue;
+    if (!sha256Map.has(key)) sha256Map.set(key, []);
+    sha256Map.get(key).push(p.rel);
+  }
+  const groups = [];
+  for (const [sha256, paths] of sha256Map.entries()) {
+    if (paths.length >= 2) {
+      groups.push({ source_sha256: sha256, paths: paths.slice().sort() });
+    }
+  }
+  groups.sort((a, b) => a.source_sha256.localeCompare(b.source_sha256));
+  return { count: groups.length, groups };
+}
+
+// Metric 9: pages in warm zone
+//
+// `updated:` (or fallback file mtime) が WARM_ZONE_LOWER_DAYS ≤ age < staleThresholdDays
+// の page を返す。stale と fresh の中間帯で「そろそろ revisit したほうがいい」signal。
+// system page は除外 (stale と同じ logic)。
+export function detectWarmZonePages(
+  pages,
+  {
+    lowerDays = WARM_ZONE_LOWER_DAYS,
+    upperDays = STALE_THRESHOLD_DAYS,
+    now = new Date(),
+  } = {},
+) {
+  const lowerMs = lowerDays * 24 * 60 * 60 * 1000;
+  const upperMs = upperDays * 24 * 60 * 60 * 1000;
+  const out = [];
+  for (const p of pages) {
+    if (isSystemPage(p.rel)) continue;
+    const updatedDate = parseUpdatedDate(p.meta.frontmatter?.updated, p.meta.mtime);
+    const ageMs = now.getTime() - updatedDate.getTime();
+    if (ageMs >= lowerMs && ageMs < upperMs) {
+      const ageDays = Math.floor(ageMs / (24 * 60 * 60 * 1000));
+      out.push({
+        rel: p.rel,
+        age_days: ageDays,
+        updated: updatedDate.toISOString().slice(0, 10),
+      });
+    }
+  }
+  return out.sort((a, b) => b.age_days - a.age_days);
+}
+
+// Metric 10: page count by type
+//
+// type 推論の優先順位:
+//   1. system page (basename match): index.md / log.md / hot.md
+//   2. frontmatter `type:` (string、trim 後 non-empty)
+//   3. top-level directory map (concepts → concept など、複数形 → 単数形に正規化)
+//   4. それ以外 → 'other'
+//
+// 戻り値は { <type>: <count> } の object (sort 済 entries)。
+const DIR_TO_TYPE = {
+  concepts: 'concept',
+  projects: 'project',
+  decisions: 'decision',
+  summaries: 'summary',
+  analyses: 'analysis',
+  patterns: 'pattern',
+  bugs: 'bug',
+  meta: 'meta',
+  viz: 'viz',
+  people: 'person',
+  sources: 'source',
+};
+
+export function inferPageType(rel, frontmatter) {
+  if (rel === 'index.md') return 'index';
+  if (rel === 'log.md') return 'log';
+  if (rel === 'hot.md') return 'hot';
+  const fmType = frontmatter?.type;
+  if (typeof fmType === 'string' && fmType.trim()) return fmType.trim();
+  const top = rel.split('/')[0];
+  if (DIR_TO_TYPE[top]) return DIR_TO_TYPE[top];
+  return 'other';
+}
+
+export function countPagesByType(pages) {
+  const counts = {};
+  for (const p of pages) {
+    const t = inferPageType(p.rel, p.meta.frontmatter);
+    counts[t] = (counts[t] || 0) + 1;
+  }
+  // ascending key で出力 — UI 表示の安定性
+  const sorted = {};
+  for (const k of Object.keys(counts).sort()) {
+    sorted[k] = counts[k];
+  }
+  return { total: pages.length, by_type: sorted };
+}
+
+// Metric 11: summaries growth rate
+//
+// 直近 7 日 / 30 日に wiki/summaries/ 配下に新規追加された .md (`-summary.md` 限定ではなく
+// 全 .md、Obsidian filename ゆれに頑健) の件数を git log から数える。
+//
+// 戻り値:
+//   {
+//     vault_is_git: boolean,
+//     day_7:  { added: number, per_day: number },
+//     day_30: { added: number, per_day: number },
+//     error?: 'not_a_git_repo' | 'git_failed'  // vault_is_git=false の時のみ
+//   }
+//
+// non-git vault では vault_is_git: false + 0 件で graceful degrade (acceptance: crash させない)。
+// git is_inside_work_tree check は cwd dependent なので {cwd: vault} で実行。
+async function gitAddCountSince(vault, sinceDays) {
+  // --diff-filter=A: addition only / --since=<n> days ago (relative date)
+  // --pretty=format: 空にして name-only のみ印字 / 最後 --: pathspec 区切り
+  const args = [
+    'log',
+    `--since=${sinceDays} days ago`,
+    '--diff-filter=A',
+    '--name-only',
+    '--pretty=format:',
+    '--',
+    'wiki/summaries/',
+  ];
+  const { stdout } = await execFileAsync('git', args, {
+    cwd: vault,
+    timeout: 10_000,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+  const lines = stdout
+    .split('\n')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && s.endsWith('.md'));
+  return lines.length;
+}
+
+export async function getSummariesGrowthRate(vault, { now = new Date() } = {}) {
+  // ignore now param for git command (git interprets relative dates from current time);
+  // signature accepts now for future-proofing if we move to absolute --since=ISO.
+  void now;
+
+  // step 1: git work tree check
+  let isInsideWorkTree = false;
+  try {
+    const { stdout } = await execFileAsync(
+      'git',
+      ['rev-parse', '--is-inside-work-tree'],
+      { cwd: vault, timeout: 5_000 },
+    );
+    isInsideWorkTree = stdout.trim() === 'true';
+  } catch {
+    return {
+      vault_is_git: false,
+      day_7: { added: 0, per_day: 0 },
+      day_30: { added: 0, per_day: 0 },
+      error: 'not_a_git_repo',
+    };
+  }
+  if (!isInsideWorkTree) {
+    return {
+      vault_is_git: false,
+      day_7: { added: 0, per_day: 0 },
+      day_30: { added: 0, per_day: 0 },
+      error: 'not_a_git_repo',
+    };
+  }
+
+  // step 2: count adds in 7d / 30d windows
+  try {
+    const [day7, day30] = await Promise.all([
+      gitAddCountSince(vault, 7),
+      gitAddCountSince(vault, 30),
+    ]);
+    return {
+      vault_is_git: true,
+      day_7: { added: day7, per_day: Math.round((day7 / 7) * 100) / 100 },
+      day_30: { added: day30, per_day: Math.round((day30 / 30) * 100) / 100 },
+    };
+  } catch {
+    return {
+      vault_is_git: true,
+      day_7: { added: 0, per_day: 0 },
+      day_30: { added: 0, per_day: 0 },
+      error: 'git_failed',
+    };
+  }
+}
+
 // Next action 提案。数字だけでなく「次に何をすべきか」を出す (codex roadmap acceptance)。
 // 各提案は { reason, action, command? } の形。command は実行可能 1-line を載せる。
 export function buildNextActions(metrics) {
@@ -373,6 +644,38 @@ export function buildNextActions(metrics) {
       command: 'bash scripts/auto-ingest.sh',
     });
   }
+  // Stretch metrics next_actions (Sprint 2 完走 v0.7.5)
+  if (metrics.broken_wikilink && metrics.broken_wikilink.count > 0) {
+    actions.push({
+      reason: `${metrics.broken_wikilink.count} broken wikilinks ([[X]] target が wiki に存在しない)`,
+      action: 'orphan link を修正 (target page を作成 or 命名揺れを fix)、または link 元 page を整理',
+      command: 'cat wiki/meta/health.md  # see metrics.broken_wikilink.samples',
+    });
+  }
+  if (metrics.source_sha256_duplicate && metrics.source_sha256_duplicate.count > 0) {
+    actions.push({
+      reason: `${metrics.source_sha256_duplicate.count} source_sha256 duplicate group(s) — 同一 source から重複 page`,
+      action: '重複 page を merge or archive (idempotent ingest が壊れている可能性あり、ingest path を確認)',
+    });
+  }
+  if (metrics.pages_warm_zone && metrics.pages_warm_zone.count > 5) {
+    actions.push({
+      reason: `${metrics.pages_warm_zone.count} pages in warm zone (7-${metrics.pages_warm_zone.upper_days} days)`,
+      action: '更新候補が溜まっている。stale 化する前に revisit / 内容更新 / 関連リンク補強を検討',
+    });
+  }
+  if (metrics.summaries_growth_rate) {
+    const r = metrics.summaries_growth_rate;
+    if (r.vault_is_git === false) {
+      // graceful info: git ではない vault では本 metric は計測不能。next action は提示しない。
+    } else if (r.day_7.added === 0 && r.day_30.added === 0) {
+      actions.push({
+        reason: 'No new summaries added in the last 30 days (ingest pipeline idle?)',
+        action: 'PDF/URL ingest cron が回っているか確認、または新規 source を投入',
+        command: 'bash scripts/auto-ingest.sh',
+      });
+    }
+  }
   return actions;
 }
 
@@ -404,6 +707,17 @@ export async function collectHealthMetrics(vault, options = {}) {
   const lastIngest = await getLastIngestInfo(vault, now);
   const unprocessed = await detectUnprocessedLogs(vault);
 
+  // Stretch 5 (Sprint 2 完走 v0.7.5)
+  const broken = detectBrokenWikilinks(pages);
+  const sha256Dups = detectSourceSha256Duplicates(pages);
+  const warm = detectWarmZonePages(pages, {
+    lowerDays: WARM_ZONE_LOWER_DAYS,
+    upperDays: thresholdDays,
+    now,
+  });
+  const byType = countPagesByType(pages);
+  const growth = await getSummariesGrowthRate(vault, { now });
+
   const metrics = {
     orphan: { count: orphans.length, pages: orphans },
     stale: { count: stale.length, threshold_days: thresholdDays, pages: stale },
@@ -411,6 +725,16 @@ export async function collectHealthMetrics(vault, options = {}) {
     hot_md_age: hotAge,
     last_ingest: lastIngest,
     unprocessed_logs: unprocessed,
+    broken_wikilink: broken,
+    source_sha256_duplicate: sha256Dups,
+    pages_warm_zone: {
+      count: warm.length,
+      lower_days: WARM_ZONE_LOWER_DAYS,
+      upper_days: thresholdDays,
+      pages: warm,
+    },
+    page_count_by_type: byType,
+    summaries_growth_rate: growth,
   };
 
   return {
@@ -431,4 +755,6 @@ export const _internals = {
   listWikiPages,
   listSessionLogs,
   PATH_SAMPLE_LIMIT,
+  BROKEN_WIKILINK_SAMPLE_LIMIT,
+  DIR_TO_TYPE,
 };
