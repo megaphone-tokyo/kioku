@@ -331,6 +331,16 @@ KIOKU 是一個存取**所有 Claude Code 工作階段 I/O** 的 Hook 系統。
 
 ## 更新歷史
 
+### 2026-05-08 — v0.7.5：Sprint 2 完成 — `kioku_health` 11 個指標 (新增 stretch 5) + auto-lint refactor
+
+v0.7.5 標記 **Sprint 2 (記憶品質 dashboard) 完成** — v0.7.4 上午 release 後同日的 micro cascade。
+
+- **`kioku_health` 6 → 11 個指標**：新增 `broken_wikilink` / `source_sha256_duplicate` / `pages_warm_zone` (7-30d) / `page_count_by_type` / `summaries_growth_rate`
+- **auto-lint LINT_PROMPT 6 → 4 個觀察 refactor**：顯式 exclude `kioku_health` 的 11 個 machine-checkable 指標，只保留需要 LLM 判斷的語義問題 (矛盾 / 概念 splinter / 缺少專屬頁 / 語義 wikilink gap)
+- **Real-world dogfood (PM Vault, 155 頁)**：首次 run 即時 surface `broken=21 / sha256_dup=2 / warm zone=99 / growth 30d=33`
+- **Tests**：33 BLUE-HEALTH-* + 9 BLUE-DRIFT-* + 53 BLUE-LINT-PROMPT-* + 475+ Node + 22 Bash 全部 green
+- [Release v0.7.5](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.5)
+
 ### 2026-05-08 — v0.7.4：Sprint 2 啟動 — `kioku_health` MCP tool + 6 個記憶健康指標
 
 v0.7.4 啟動 post-v0.7.1 reliability roadmap 的 **Sprint 2 (記憶品質 dashboard)**。Sprint 1 給出 diagnostic / drift / onboarding，**Sprint 2 讓 KIOKU 的記憶自我感知** — `kioku_health` 在 5 秒內回答。

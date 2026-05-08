@@ -484,6 +484,25 @@ KIOKU は Claude Code の**全セッション入出力にアクセスする Hook
 
 ## 更新履歴
 
+### 2026-05-08 — v0.7.5: Sprint 2 完走 — `kioku_health` 11 メトリクス (stretch 5 追加) + auto-lint 改訂
+
+v0.7.5 は **Sprint 2 (記憶品質 dashboard) の完走 marker** — v0.7.4 (本日朝) との overnight micro cascade。v0.7.4 が **コア 6 メトリクス** (orphan / stale / duplicate title / hot.md age / last ingest / unprocessed session-logs) を ship したのに対し、v0.7.5 は codex roadmap §「指標案」 の **stretch 5 メトリクス** を追加 + **auto-lint を refactor** して `kioku_health` の machine-checkable な領域と重複しないよう役割分担を明示する。
+
+- **`kioku_health` 6 → 11 メトリクス** — 追加された 5 メトリクス:
+  - `broken_wikilink` — `[[link]]` で参照されているが wiki/ 内に存在しない件数 (= 切れたリンク)
+  - `source_sha256_duplicate` — frontmatter `source_sha256:` が同値の page group 数 (= 冪等 ingest が壊れている、または手動重複)
+  - `pages_warm_zone` — `updated:` が 7-30 日の warm 帯 page 件数 (fresh と stale-30d の中間)
+  - `page_count_by_type` — type (concept / project / decision / source-summary / log / index / meta / その他) 別 breakdown
+  - `summaries_growth_rate` — 直近 7d / 30d の `wiki/sources/*-summary.md` 増加件数 (件/日 換算)
+- **`auto-lint` LINT_PROMPT 6 → 4 観点 refactor** — `scripts/auto-lint.sh` が `kioku_health` の 11 machine-checkable メトリクスを観察対象から **明示的に exclude**、**LLM judgment 必須の semantic な問題** だけに絞り込み:
+  1. **概念の矛盾** (同じ事実について異なる記述、新しいソースで上書きされた古い主張)
+  2. **概念の splinter** (同概念を複数ページに分散している、merge 候補)
+  3. **専用ページが必要な繰り返し言及概念** (sources/summaries で複数言及されているが `wiki/concepts/` 等に専用ページが昇格していない)
+  4. **意味的な相互リンク欠落** (内容上関連が深いのに wikilink が張られていない semantic gap、wikilink 構文の broken は `kioku_health` で別 detect 済)
+- **実環境 dogfood (PM Vault, 155 ページ)** — 2026-05-08 初回実行で `broken=21 / sha256_dup=2 / warm zone=99 / growth 30d=33` を即時 surface、各々が `next_actions` で actionable な改善候補に直結
+- **テスト**: 33 BLUE-HEALTH-* + MCP-HEALTH-* (STRETCH-1..7 含む) + 9 BLUE-DRIFT-* + 53 BLUE-LINT-PROMPT-* + 既存 475+ Node + 22 Bash 全 pass、`npm audit` clean
+- [Release v0.7.5](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.5) — `kioku-wiki-0.7.5.mcpb` attached
+
 ### 2026-05-08 — v0.7.4: Sprint 2 着手 — `kioku_health` MCP tool + 6 件のメモリ健康メトリクス
 
 v0.7.4 は post-v0.7.1 信頼性ロードマップの **Sprint 2 (記憶品質 dashboard)** を ship。Sprint 1 (v0.7.2 / v0.7.3) が KIOKU の診断 / drift / オンボーディングのツール群を提供したのに対し、**Sprint 2 は KIOKU の記憶そのものを自己診断可能に** — Wiki に orphan page は? stale note は? 重複 title は? すべて `kioku_health` が 5 秒で答える。

@@ -326,6 +326,16 @@ KIOKU은 **모든 Claude Code 세션 입출력**에 접근하는 Hook 시스템�
 
 ## 변경 이력
 
+### 2026-05-08 — v0.7.5: Sprint 2 완주 — `kioku_health` 11개 metrics (stretch 5개 추가) + auto-lint refactor
+
+v0.7.5는 **Sprint 2 (記憶品質 dashboard) 완주 marker** — v0.7.4 아침 release 후 같은 날의 micro cascade.
+
+- **`kioku_health` 6 → 11개 metrics**: 추가된 5개는 `broken_wikilink` / `source_sha256_duplicate` / `pages_warm_zone` (7-30d) / `page_count_by_type` / `summaries_growth_rate`
+- **auto-lint LINT_PROMPT 6 → 4개 관점 refactor**: `kioku_health`의 11개 machine-checkable metrics를 명시적으로 exclude, LLM judgment-required한 semantic 문제만 남김 (모순 / 개념 splinter / dedicated 페이지 누락 / semantic wikilink gap)
+- **Real-world dogfood (PM Vault, 155 페이지)**: 첫 run에서 `broken=21 / sha256_dup=2 / warm zone=99 / growth 30d=33` 즉시 surface
+- **Tests**: 33 BLUE-HEALTH-* + 9 BLUE-DRIFT-* + 53 BLUE-LINT-PROMPT-* + 475+ Node + 22 Bash 모두 green
+- [Release v0.7.5](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.7.5)
+
 ### 2026-05-08 — v0.7.4: Sprint 2 착수 — `kioku_health` MCP tool + 6개 메모리 health metrics
 
 v0.7.4는 post-v0.7.1 reliability roadmap의 **Sprint 2 (記憶品質 dashboard)**를 launch. Sprint 1이 diagnostic / drift / onboarding을 제공한 데 비해, **Sprint 2는 KIOKU의 memory 자체를 self-aware하게** — `kioku_health`가 5초 안에 답함.
