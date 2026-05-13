@@ -326,6 +326,19 @@ Se voce encontrar um problema de seguranca, por favor reporte via [SECURITY.md](
 
 ## Histórico de mudanças
 
+### 2026-05-13 — v0.8.0: "Abra KIOKU e veja como sua memoria parece" — HTML Visualizer β (Sprint 3 concluido)
+
+v0.8.0 marca a **conclusao do Sprint 3 (価値の可視化)**. Primeiro release onde KIOKU pode mostrar seu valor sem Obsidian — drag-and-drop o HTML gerado em qualquer browser e veja seu second brain.
+
+- **Overview tab (4 layers)**: Vault overview / Health focus / Graph preview / Action queue, tudo em 5 segundos
+- **5 visualizacoes pure CSS+DOM** (Phase 2): bar chart, sparkline, warm zone gradient, broken wikilink cluster, sha256 duplicate cluster
+- **Lineage tab (Phase 3)**: raw-sources → summaries → wiki pages 3-layer lineage graph, 5 edge types, 300-node cap, best-effort hint
+- **Quality notes drawer (Phase 4)**: `wiki/lint-report.md` renderizado como 5o card, `kioku_health` e auto-lint com non-overlapping surface
+- **§46 N=3 mandatory refactor**: `wiki-walker.mjs` extraido, 3 callers unificados
+- **Real-world dogfood (PM Vault, 162 paginas)**: broken=23 / sha256_dup=2 / warm=99, lineage 184 nos / 846 edges em 68ms, HTML self-contained 61.5KB
+- **Tests**: 38 Phase 4 + 45 Phase 3 + Node + Bash regression todos passaram
+- [Release v0.8.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.8.0)
+
 ### 2026-05-08 — v0.7.5: Sprint 2 concluido — `kioku_health` 11 metricas (5 stretch adicionadas) + auto-lint refactor
 
 v0.7.5 marca a **conclusao do Sprint 2 (記憶品質 dashboard)** — micro cascade do mesmo dia apos a release matinal de v0.7.4.

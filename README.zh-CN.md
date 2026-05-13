@@ -331,6 +331,19 @@ KIOKU 是一个可以访问**所有 Claude Code 会话输入输出**的 Hook 系
 
 ## 更新历史
 
+### 2026-05-13 — v0.8.0：「打开 KIOKU 看看你的记忆长什么样」— HTML Visualizer β (Sprint 3 完成)
+
+v0.8.0 标志着 **Sprint 3 (価値の可視化) 完成**。KIOKU 首次能够无需 Obsidian 展示价值 — 将生成的 HTML 拖入任何 browser，即可看到你的 second brain。
+
+- **Overview tab (4 layers)**：Vault overview / Health focus / Graph preview / Action queue，5 秒内全部可见
+- **5 个可视化 pure CSS+DOM** (Phase 2)：bar chart、sparkline、warm zone gradient、broken wikilink cluster、sha256 duplicate cluster
+- **Lineage tab (Phase 3)**：raw-sources → summaries → wiki pages 3-layer lineage graph、5 edge types、300-node cap、best-effort hint
+- **Quality notes drawer (Phase 4)**：`wiki/lint-report.md` 作为第 5 张 card 渲染，`kioku_health` 与 auto-lint 在 non-overlapping surface 共存
+- **§46 N=3 mandatory refactor**：`wiki-walker.mjs` 抽出，3 callers 统一
+- **Real-world dogfood (PM Vault, 162 页)**：broken=23 / sha256_dup=2 / warm=99，lineage 184 nodes / 846 edges 用时 68ms，HTML self-contained 61.5KB
+- **Tests**：38 Phase 4 + 45 Phase 3 + Node + Bash regression 全部 pass
+- [Release v0.8.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.8.0)
+
 ### 2026-05-08 — v0.7.5：Sprint 2 完成 — `kioku_health` 11 个指标 (新增 stretch 5) + auto-lint refactor
 
 v0.7.5 标志着 **Sprint 2 (記憶品質 dashboard) 完成** — v0.7.4 上午 release 后同日的 micro cascade。
