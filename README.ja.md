@@ -484,6 +484,30 @@ KIOKU は Claude Code の**全セッション入出力にアクセスする Hook
 
 ## 更新履歴
 
+### 2026-05-13 — v0.8.0: 「自分の記憶が育っているか」を 5 秒で見せる HTML Visualizer β (Sprint 3 完走)
+
+v0.8.0 は **Sprint 3 (価値の可視化) 完走**。Sprint 1 (信頼性) + Sprint 2 (記憶品質) で「自分の KIOKU はちゃんと動いてる? Wiki は腐ってない?」に答える土台ができた上で、Sprint 3 は **「自分の記憶がどう育っているか」を視覚的に体験できる HTML Visualizer β** を提供する。
+
+Obsidian がなくても browser に drag-and-drop するだけで second brain の状態が見える、KIOKU が単体で価値を見せられる初めての release。
+
+- **Overview tab (Phase 1 + 2)** — HTML を開いて 5 秒で見える 4 層:
+  - **Vault overview** — ページ総数 / summaries growth (7日/30日) / page type 分布
+  - **Health focus** — broken wikilinks (cluster で merge 候補表示) / source sha256 重複 / warm zone (7-30 日、fresh→warm→stale gradient)
+  - **Graph preview** — 入リンク数で hot pages / active projects / recent decisions
+  - **Action queue** — 今日直すと価値が高い 3-5 件、P0/P1/P2 priority + 具体的な `next_action` 付き
+- **Status banner + 5 つの可視化 (Phase 2)** — 全て pure CSS + DOM、外部 chart ライブラリ不使用:
+  - page type 分布の bar chart
+  - summaries 増加率の sparkline (7d/30d)
+  - warm zone gradient (fresh/warm/stale の 3 セグメント bar)
+  - broken wikilink cluster (target ごとにグループ化、merge 候補 view)
+  - source_sha256 重複 cluster (同じソースから生まれた重複ページ)
+- **Lineage tab (Phase 3)** — KIOKU 固有の差別化 view: **raw-sources → summaries → wiki pages の 3 層 lineage graph**、5 種の edge (sha256 / derived_from / filename / wikilink / time proximity)。300 ノード cap、best-effort hint、1-2 hop subgraph helper。実環境 dogfooding: 184 ノード / 846 エッジを 68ms で構築。
+- **Quality notes drawer (Phase 4)** — `wiki/lint-report.md` (auto-lint 出力) を Overview 5 枚目の card として表示。Phase 2 で 2 重 negative assert していた契約を **Phase 4 で flip** (negative → positive) — auto-lint の 4 観点 (概念の矛盾 / 概念の splinter / 専用ページ候補 / 意味的相互リンク欠落) が drawer に並ぶ。`kioku_health` の 11 機械検査メトリクスと auto-lint の LLM judgment が **重複しない surface** で共存する設計。
+- **§46 N=3 mandatory refactor** — `mcp/lib/wiki-walker.mjs` を抽出、3 caller (health-metrics / visualizer-data / lineage-graph) を `walkPages()` 共通 entry point に統一。LEARN#8b フレームワークの好例 (N=2 で defer、N=3 で extract)。
+- **テスト**: Phase 4 で 38 件新規 (visualizer-data 24 + visualizer 10 + screenshot 4) + Phase 3 で 45 件新規 (wiki-walker 9 + lineage-graph 7+補強 + visualizer-data 15 + mcp/visualizer 9) + 既存 Node + Bash 全 pass。CI screenshot regression (`tests/mcp/tools-visualizer-screenshot.test.mjs`) で empty / small Vault fixture を deterministic に走らせる
+- **実環境 dogfooding (PM Vault、162 ページ)** — Overview tab で broken=23 / sha256_dup=2 / warm=99、Lineage tab で 184 ノード / 846 エッジ、auto-lint drawer で 4 categories を即時 surface。HTML self-contained 61.5KB (external script/link/fetch 全 0)
+- [Release v0.8.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.8.0) — `kioku-wiki-0.8.0.mcpb` attached
+
 ### 2026-05-08 — v0.7.5: Sprint 2 完走 — `kioku_health` 11 メトリクス (stretch 5 追加) + auto-lint 改訂
 
 v0.7.5 は **Sprint 2 (記憶品質 dashboard) の完走 marker** — v0.7.4 (本日朝) との overnight micro cascade。v0.7.4 が **コア 6 メトリクス** (orphan / stale / duplicate title / hot.md age / last ingest / unprocessed session-logs) を ship したのに対し、v0.7.5 は codex roadmap §「指標案」 の **stretch 5 メトリクス** を追加 + **auto-lint を refactor** して `kioku_health` の machine-checkable な領域と重複しないよう役割分担を明示する。

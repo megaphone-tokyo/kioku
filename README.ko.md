@@ -326,6 +326,19 @@ KIOKU은 **모든 Claude Code 세션 입출력**에 접근하는 Hook 시스템�
 
 ## 변경 이력
 
+### 2026-05-13 — v0.8.0: "KIOKU 열고 내 기억이 어떻게 자라는지 본다" — HTML Visualizer β (Sprint 3 완주)
+
+v0.8.0은 **Sprint 3 (価値の可視化) 완주 marker**. Obsidian 없이 KIOKU 가치를 보여줄 수 있는 첫 release — 생성된 HTML을 browser에 drag-and-drop으로 second brain을 본다.
+
+- **Overview tab (4 layers)**: Vault overview / Health focus / Graph preview / Action queue, 5초 안에 다 보임
+- **5 visualizations pure CSS+DOM** (Phase 2): bar chart, sparkline, warm zone gradient, broken wikilink cluster, sha256 duplicate cluster
+- **Lineage tab (Phase 3)**: raw-sources → summaries → wiki pages 3-layer lineage graph, 5 edge types, 300-node cap, best-effort hint
+- **Quality notes drawer (Phase 4)**: `wiki/lint-report.md`를 5번째 card로 render, `kioku_health`와 auto-lint를 non-overlapping surface로 공존
+- **§46 N=3 mandatory refactor**: `wiki-walker.mjs` 추출, 3 callers 통일
+- **Real-world dogfood (PM Vault, 162 페이지)**: broken=23 / sha256_dup=2 / warm=99, lineage 184 nodes / 846 edges in 68ms, HTML self-contained 61.5KB
+- **Tests**: 38 Phase 4 + 45 Phase 3 + Node + Bash regression 모두 pass
+- [Release v0.8.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.8.0)
+
 ### 2026-05-08 — v0.7.5: Sprint 2 완주 — `kioku_health` 11개 metrics (stretch 5개 추가) + auto-lint refactor
 
 v0.7.5는 **Sprint 2 (記憶品質 dashboard) 완주 marker** — v0.7.4 아침 release 후 같은 날의 micro cascade.
