@@ -21,6 +21,9 @@ import { fileURLToPath } from 'node:url';
 import { assertInsideBase, PathBoundaryError } from '../lib/vault-path.mjs';
 import { getFileHistory } from '../lib/git-history.mjs';
 import { buildWikiSnapshot, diffSnapshots } from '../lib/wiki-snapshot.mjs';
+import { collectHealthMetrics } from '../lib/health-metrics.mjs';
+import { collectFirstViewData } from '../lib/visualizer-data.mjs';
+import { buildLineageGraph } from '../lib/lineage-graph.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_PATH = join(__dirname, '..', 'templates', 'viz-template.html');
@@ -41,7 +44,7 @@ export const VISUALIZER_TOOL_DEF = {
   name: 'kioku_generate_viz',
   title: 'Generate KIOKU wiki visualizer (local HTML)',
   description:
-    'Generates a self-contained HTML visualizer of the wiki showing Timeline Player (View 1, temporal evolution) and Diff Viewer (View 2, 2 時点の差分). Data is embedded as inline JSON — only frontmatter and wikilinks, never page body. Output is written to the vault .cache/viz/ directory and opened directly in a browser (no external network). Does NOT modify wiki/. Requires the vault to be a git repository.',
+    'Generates a self-contained HTML visualizer of the wiki with 4 views: Overview (first view = vault overview + health focus + graph preview + action queue), Timeline Player (temporal evolution), Diff Viewer (2 時点の差分), and Lineage (raw-sources → summaries → wiki best-effort 3 layer lineage graph, Sprint 3 v0.8 β). Data is embedded as inline JSON — only frontmatter and wikilinks, never page body. Output is written to the vault .cache/viz/ directory and opened directly in a browser (no external network). Does NOT modify wiki/. Requires the vault to be a git repository.',
   inputShape: {
     output_path: z
       .string()
@@ -148,15 +151,44 @@ export async function handleGenerateViz(vault, args = {}) {
   }
 
   // 4. data embed
+  //   Phase 1 v0.8 Visualizer β: first_view を top-level に追加。
+  //   既存 Timeline / Diff が依存する snapshots / since / commits_total 等は
+  //   schema を破壊しないよう保持 (BLUE-VIZ-FIRSTVIEW-5 schema isolation 担保)。
+  //   health metrics 取得失敗時 (orphan health module deps 等) は warnings に積み、
+  //   first_view を null とし既存 view は維持 (LEARN#6 graceful degrade)。
+  const now = new Date();
+  let firstView = null;
+  let firstViewError = null;
+  try {
+    const health = await collectHealthMetrics(vault, { now });
+    firstView = await collectFirstViewData(vault, { now, snapshots, health });
+  } catch (err) {
+    firstViewError = err instanceof Error ? err.message : String(err);
+  }
+  // Phase 3 v0.8 β: best-effort 3 layer lineage graph (raw-sources → summaries → wiki).
+  // Failure is non-fatal — Overview/Timeline/Diff continue working with lineage=null.
+  let lineage = null;
+  let lineageError = null;
+  try {
+    lineage = await buildLineageGraph(vault, { now });
+  } catch (err) {
+    lineageError = err instanceof Error ? err.message : String(err);
+  }
   const data = {
-    schema_version: 1,
-    generated_at: new Date().toISOString(),
+    // schema_version 履歴: 1 (V-1 base) / 2 (Phase 1 first_view) / 3 (Phase 3 lineage) /
+    //                      4 (Phase 4 auto-lint drawer in first_view.auto_lint)
+    schema_version: 4,
+    generated_at: now.toISOString(),
     vault_name: basename(vault),
     since,
     max_commits: maxCommits,
     commits_total: histRes.commits.length,
     history_truncated: Boolean(histRes.truncated),
     snapshots, // 新しい順 (git log --max-count)
+    first_view: firstView, // Sprint 3 v0.8 β Phase 1/2、null の場合は Overview tab で degraded UI 表示
+    first_view_error: firstViewError, // null / string、warning banner 用
+    lineage,           // Sprint 3 v0.8 β Phase 3、null は Lineage tab で degraded UI 表示
+    lineage_error: lineageError,
   };
   const dataJson = safeJsonForScript(data);
   const html = template.replace(DATA_PLACEHOLDER, dataJson);
@@ -188,7 +220,13 @@ export async function handleGenerateViz(vault, args = {}) {
     latest_pages: latestPagesCount,
     since,
     history_truncated: Boolean(histRes.truncated),
-    views: ['timeline-player', 'diff-viewer'],
+    views: ['overview', 'timeline-player', 'diff-viewer', 'lineage'],
+    first_view_present: firstView !== null,
+    first_view_error: firstViewError,
+    auto_lint_present: Boolean(firstView && firstView.auto_lint && firstView.auto_lint.report_exists),
+    lineage_present: lineage !== null,
+    lineage_error: lineageError,
+    lineage_totals: lineage ? lineage.totals : null,
     note: 'Open the generated HTML file in a browser. No external network required.',
   };
 }

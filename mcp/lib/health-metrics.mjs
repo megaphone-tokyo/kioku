@@ -38,6 +38,11 @@ import { promisify } from 'node:util';
 
 import { parseFrontmatter } from './frontmatter.mjs';
 import { findWikilinks } from './wikilinks.mjs';
+import {
+  walkPages,
+  listMarkdownRefs,
+  inferPageType as inferPageTypeShared,
+} from './wiki-walker.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -45,7 +50,13 @@ export const STALE_THRESHOLD_DAYS = 30;
 export const WARM_ZONE_LOWER_DAYS = 7;
 export const HEALTH_SCHEMA_VERSION = 2;
 
+// Re-export for back-compat (Sprint 3 Phase 3 §46 N=3 refactor): inferPageType now
+// lives in wiki-walker.mjs as the shared canonical impl. tests/health-metrics.test.mjs
+// imports it directly from health-metrics; keep the named export stable.
+export const inferPageType = inferPageTypeShared;
+
 // wiki/ 走査時にスキップするディレクトリ (kioku_list の EXCLUDE と整合)
+// Kept for back-compat — wiki-walker.mjs#DEFAULT_EXCLUDE_DIRS holds the canonical set.
 const EXCLUDE_DIRS = new Set(['.obsidian', '.archive', '.trash', 'templates', '.cache']);
 
 // orphan / stale / duplicate 判定から除外する system page
@@ -62,62 +73,10 @@ function isSystemPage(rel) {
   return ORPHAN_EXEMPT_TOP_DIRS.has(top);
 }
 
-// wiki/ を再帰的に walk して .md file path を集める。
-// 戻り値は { abs, rel } (rel は wiki/ からの相対パス、posix slash 統一)。
+// Back-compat shim: tests/health-metrics.test.mjs accesses `_internals.listWikiPages`.
+// Real walk now lives in wiki-walker.mjs (§46 N=3 refactor). Returns [{abs, rel}].
 async function listWikiPages(vault) {
-  const wikiDir = join(vault, 'wiki');
-  let baseStat;
-  try {
-    baseStat = await stat(wikiDir);
-  } catch (err) {
-    if (err.code === 'ENOENT') return [];
-    throw err;
-  }
-  if (!baseStat.isDirectory()) return [];
-
-  const out = [];
-  async function walk(absDir) {
-    let entries;
-    try {
-      entries = await readdir(absDir, { withFileTypes: true });
-    } catch (err) {
-      if (err.code === 'ENOENT') return;
-      throw err;
-    }
-    for (const ent of entries) {
-      if (ent.name.startsWith('.')) continue;
-      if (EXCLUDE_DIRS.has(ent.name)) continue;
-      const abs = join(absDir, ent.name);
-      if (ent.isDirectory()) {
-        await walk(abs);
-      } else if (ent.isFile() && ent.name.endsWith('.md')) {
-        out.push(abs);
-      }
-    }
-  }
-  await walk(wikiDir);
-  return out.map((abs) => ({ abs, rel: relative(wikiDir, abs).split(sep).join('/') }));
-}
-
-// 1 file から meta (frontmatter / body / mtime / wikilinks) を抽出。
-// 読み込み失敗時は null を返す (corrupt file は metrics 集計から除外、stderr に出さない)。
-async function readPageMeta(absPath) {
-  let text;
-  let st;
-  try {
-    [text, st] = await Promise.all([readFile(absPath, 'utf8'), stat(absPath)]);
-  } catch {
-    return null;
-  }
-  const { data, body } = parseFrontmatter(text);
-  return {
-    abs: absPath,
-    text,
-    body,
-    frontmatter: data,
-    mtime: st.mtime,
-    wikilinks: findWikilinks(text),
-  };
+  return listMarkdownRefs(vault, { subDir: 'wiki' });
 }
 
 // title 解決: frontmatter title > 本文 H1 > file basename (.md 除く)
@@ -463,37 +422,10 @@ export function detectWarmZonePages(
 
 // Metric 10: page count by type
 //
-// type 推論の優先順位:
-//   1. system page (basename match): index.md / log.md / hot.md
-//   2. frontmatter `type:` (string、trim 後 non-empty)
-//   3. top-level directory map (concepts → concept など、複数形 → 単数形に正規化)
-//   4. それ以外 → 'other'
-//
-// 戻り値は { <type>: <count> } の object (sort 済 entries)。
-const DIR_TO_TYPE = {
-  concepts: 'concept',
-  projects: 'project',
-  decisions: 'decision',
-  summaries: 'summary',
-  analyses: 'analysis',
-  patterns: 'pattern',
-  bugs: 'bug',
-  meta: 'meta',
-  viz: 'viz',
-  people: 'person',
-  sources: 'source',
-};
-
-export function inferPageType(rel, frontmatter) {
-  if (rel === 'index.md') return 'index';
-  if (rel === 'log.md') return 'log';
-  if (rel === 'hot.md') return 'hot';
-  const fmType = frontmatter?.type;
-  if (typeof fmType === 'string' && fmType.trim()) return fmType.trim();
-  const top = rel.split('/')[0];
-  if (DIR_TO_TYPE[top]) return DIR_TO_TYPE[top];
-  return 'other';
-}
+// type 推論の優先順位: system page (index/log/hot) → frontmatter.type → top-dir map → 'other'。
+// Implementation moved to wiki-walker.mjs#inferPageType (§46 N=3 refactor).
+// `export const inferPageType` near the top of the file is the active binding;
+// keeping countPagesByType here keeps the metrics API surface stable.
 
 export function countPagesByType(pages) {
   const counts = {};
@@ -693,12 +625,24 @@ export async function collectHealthMetrics(vault, options = {}) {
     ? options.staleThresholdDays
     : STALE_THRESHOLD_DAYS;
 
-  const pageRefs = await listWikiPages(vault);
-  const pages = [];
-  for (const ref of pageRefs) {
-    const meta = await readPageMeta(ref.abs);
-    if (meta) pages.push({ rel: ref.rel, meta });
-  }
+  // §46 N=3 refactor: single-pass walk via wiki-walker.mjs (replaces listWikiPages+readPageMeta).
+  // Mapped to legacy {rel, meta} shape so the existing detect* helpers (orphan / stale / dup / ...) keep working.
+  const walked = await walkPages(vault, {
+    subDir: 'wiki',
+    withBody: true,
+    withMtime: true,
+  });
+  const pages = walked.map((p) => ({
+    rel: p.rel,
+    meta: {
+      abs: p.abs,
+      text: p.text,
+      body: p.body,
+      frontmatter: p.frontmatter,
+      mtime: p.mtime,
+      wikilinks: p.wikilinks,
+    },
+  }));
 
   const orphans = detectOrphans(pages);
   const stale = detectStale(pages, { thresholdDays, now });
@@ -756,5 +700,4 @@ export const _internals = {
   listSessionLogs,
   PATH_SAMPLE_LIMIT,
   BROKEN_WIKILINK_SAMPLE_LIMIT,
-  DIR_TO_TYPE,
 };
