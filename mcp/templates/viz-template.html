@@ -4,14 +4,17 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <!--
-  KIOKU Wiki Visualizer (Phase D α v0.7)
+  KIOKU Wiki Visualizer (Phase 1+2 v0.8 β / Phase D α v0.7)
   正典: tools/claude-brain/plan/claude/26042402_visualizer-concept-sketch.md
+       + tools/claude-brain/plan/codex/260512_v0-8-visualizer-beta-scope.md (Sprint 3 β scope)
 
   Security / Trust posture:
     - self-contained HTML (外部 network 呼び出し 0)
     - data は frontmatter + wikilink のみ、page body は含まない (plan P1 絶対契約)
     - innerHTML 一切使用しない (clearing は while-removeChild、追加は createElement + textContent)
     - data は <script type="application/json"> に inline、tool 側で </  / U+2028 / U+2029 escape 済
+    - Phase 2 で追加した bar chart / sparkline / warm zone gradient は全て CSS + DOM のみ
+      (svg / canvas / external chart lib 一切使わず HTML self-contained 性を担保)
 -->
 <title>KIOKU Wiki Visualizer</title>
 <style>
@@ -132,6 +135,493 @@
     font-size: 12px;
     color: #ffcc9a;
   }
+
+  /* ─── Overview (first view, Sprint 3 v0.8 β) ─── */
+  .overview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 12px;
+  }
+  .overview-card {
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 8px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 200px;
+  }
+  .overview-card h2 {
+    margin: 0 0 4px 0;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .overview-card .big-num {
+    font-size: 32px;
+    font-weight: 600;
+    color: var(--fg);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .overview-card .sub-num { color: var(--muted); font-size: 12px; }
+  .overview-card .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 13px;
+  }
+  .overview-card .row .label { color: var(--muted); font-size: 12px; }
+  .overview-card .row .value {
+    color: var(--fg);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .overview-card ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .overview-card li { font-size: 12px; color: var(--fg); }
+  .overview-card .chip {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: #22262f;
+    color: var(--muted);
+    font-size: 11px;
+    margin-right: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .overview-card .chip.danger { background: #4a1c1c; color: #ffb3b3; }
+  .overview-card .chip.warn   { background: #4a3a18; color: #ffd9a3; }
+  .overview-card .chip.ok     { background: #1c4a2c; color: #b8f0c8; }
+  .overview-card .priority-P0 { color: var(--removed); font-weight: 600; }
+  .overview-card .priority-P1 { color: var(--modified); font-weight: 600; }
+  .overview-card .priority-P2 { color: var(--muted);   font-weight: 600; }
+  .overview-card .action-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--panel-edge);
+  }
+  .overview-card .action-item:last-child { border-bottom: none; }
+  .overview-card .action-reason { color: var(--fg); font-size: 12px; line-height: 1.4; }
+  .overview-card .action-next   { color: var(--muted); font-size: 11px; line-height: 1.4; }
+  .overview-card .action-cmd {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Monaco, Menlo, Consolas, monospace;
+    font-size: 11px;
+    color: var(--accent);
+    background: #161a22;
+    padding: 2px 6px;
+    border-radius: 3px;
+    display: inline-block;
+    word-break: break-all;
+  }
+  .overview-card .empty {
+    color: var(--muted);
+    font-size: 12px;
+    font-style: italic;
+  }
+
+  /* ─── Phase 2: Health overlay (status banner + bar chart + sparkline + warm gradient + cluster) ─── */
+  .status-banner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 12px;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    font-size: 12px;
+  }
+  .status-banner .sb-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: #22262f;
+    border: 1px solid var(--panel-edge);
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .status-banner .sb-chip .sb-label { font-size: 11px; }
+  .status-banner .sb-chip .sb-value { color: var(--fg); font-weight: 600; }
+  .status-banner .sb-chip.sev-ok      { border-color: #2a4a3a; color: #b8f0c8; }
+  .status-banner .sb-chip.sev-info    { border-color: #2a3a4a; color: #b8d4f0; }
+  .status-banner .sb-chip.sev-warn    { border-color: #4a3a18; background: #2a2218; color: #ffd9a3; }
+  .status-banner .sb-chip.sev-danger  { border-color: #4a1c1c; background: #2a1414; color: #ffb3b3; }
+
+  /* page_count_by_type compact bar chart */
+  .bar-chart { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+  .bar-chart .bc-row {
+    display: grid;
+    grid-template-columns: 70px 1fr 32px;
+    gap: 6px;
+    align-items: center;
+    font-size: 11px;
+  }
+  .bar-chart .bc-label { color: var(--muted); text-align: right; }
+  .bar-chart .bc-bar {
+    height: 10px;
+    background: #22262f;
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+  }
+  .bar-chart .bc-bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+  }
+  .bar-chart .bc-value { color: var(--fg); font-variant-numeric: tabular-nums; text-align: right; }
+
+  /* summaries growth sparkline (7d / 30d simple bars) */
+  .sparkline { display: flex; gap: 6px; align-items: flex-end; height: 36px; padding: 4px 0; }
+  .sparkline .spark-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    flex: 1;
+  }
+  .sparkline .spark-bar {
+    width: 100%;
+    max-width: 36px;
+    background: var(--accent);
+    border-radius: 2px 2px 0 0;
+    min-height: 2px;
+  }
+  .sparkline .spark-label { color: var(--muted); font-size: 10px; }
+  .sparkline .spark-value { color: var(--fg); font-size: 10px; font-variant-numeric: tabular-nums; }
+
+  /* warm zone gradient (fresh / warm / stale 3 bucket) */
+  .warm-gradient {
+    display: flex;
+    height: 16px;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-top: 6px;
+    border: 1px solid var(--panel-edge);
+  }
+  .warm-gradient .wg-seg {
+    height: 100%;
+    transition: width 0.2s ease;
+  }
+  .warm-gradient .wg-seg.fresh { background: linear-gradient(to right, #4cd07d, #6ed09a); }
+  .warm-gradient .wg-seg.warm  { background: linear-gradient(to right, #ffcc5c, #ffb840); }
+  .warm-gradient .wg-seg.stale { background: linear-gradient(to right, #ff8a5c, #ff6b6b); }
+  .warm-gradient-legend {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 4px;
+    font-size: 10px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .warm-gradient-legend .wg-leg-fresh { color: #b8f0c8; }
+  .warm-gradient-legend .wg-leg-warm  { color: #ffd9a3; }
+  .warm-gradient-legend .wg-leg-stale { color: #ffb3b3; }
+
+  /* broken_wikilink cluster + sha256_dup merge candidate */
+  .cluster-list { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+  .cluster-list .cluster-item {
+    background: #161a22;
+    border: 1px solid var(--panel-edge);
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+  .cluster-list .cluster-target {
+    color: var(--removed);
+    font-family: ui-monospace, SFMono-Regular, Monaco, monospace;
+    font-size: 11px;
+    word-break: break-all;
+  }
+  .cluster-list .cluster-meta { color: var(--muted); font-size: 10px; margin-top: 2px; }
+  .cluster-list .cluster-sources {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    margin-top: 3px;
+  }
+  .cluster-list .cluster-source {
+    color: var(--muted);
+    font-size: 10px;
+    font-family: ui-monospace, SFMono-Regular, Monaco, monospace;
+    word-break: break-all;
+  }
+
+  /* ─── Sprint 3 Phase 4: Quality notes drawer (auto-lint 4 観点 補助表示) ─── */
+  /* graph に断定表示せず "Quality notes" card で補助表示する設計 (PM 答え #3)。
+     report 不在時は "auto-lint 未実行" 案内、parse 成功時は 4 観点を mini-list で展示。 */
+  .qn-disclosure {
+    color: var(--muted);
+    font-size: 10px;
+    font-style: italic;
+    margin: 2px 0 6px 0;
+    line-height: 1.4;
+  }
+  .qn-meta {
+    color: var(--muted);
+    font-size: 10px;
+    margin-bottom: 4px;
+    font-variant-numeric: tabular-nums;
+  }
+  .qn-categories {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .qn-cat {
+    background: #161a22;
+    border: 1px solid var(--panel-edge);
+    border-radius: 4px;
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+  .qn-cat-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 6px;
+    color: var(--fg);
+    font-size: 11px;
+  }
+  .qn-cat-label {
+    color: var(--accent);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .qn-cat-count {
+    color: var(--muted);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+  }
+  .qn-cat-count.qn-empty { color: #6e7c4a; }
+  .qn-samples {
+    list-style: disc;
+    padding-left: 16px;
+    margin: 4px 0 0 0;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.5;
+  }
+  .qn-samples li {
+    font-size: 10px;
+    color: var(--muted);
+    word-break: break-word;
+  }
+  .qn-truncated-note {
+    color: #8a8a8a;
+    font-size: 9px;
+    font-style: italic;
+    margin-top: 2px;
+  }
+  .qn-source-link {
+    display: inline-block;
+    margin-top: 6px;
+    font-size: 10px;
+    color: var(--accent);
+    text-decoration: none;
+    word-break: break-all;
+  }
+  .qn-source-link:hover { text-decoration: underline; }
+  .qn-missing {
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .qn-missing code {
+    font-family: ui-monospace, SFMono-Regular, Monaco, monospace;
+    background: #161a22;
+    color: var(--accent);
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 10px;
+  }
+
+  /* ─── Sprint 3 Phase 3: Lineage tab (raw-sources → summaries → wiki best-effort graph) ─── */
+  .ln-banner {
+    margin: 0 0 12px 0;
+    padding: 8px 12px;
+    border: 1px solid #3a3a18;
+    background: #1f1f10;
+    color: #ffd9a3;
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .ln-banner b { color: #ffe9c0; }
+  .ln-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+  }
+  .ln-controls label { font-size: 12px; color: var(--muted); }
+  .ln-controls input[type="search"],
+  .ln-controls select {
+    background: var(--panel);
+    color: var(--fg);
+    border: 1px solid var(--panel-edge);
+    padding: 4px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+  .ln-summary {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+    font-size: 11px;
+  }
+  .ln-summary .ln-totals {
+    display: flex; gap: 8px;
+    padding: 4px 8px;
+    border: 1px solid var(--panel-edge);
+    background: var(--panel);
+    border-radius: 3px;
+  }
+  .ln-summary .ln-edge-counts { display: flex; gap: 6px; }
+  .ln-edge-chip {
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid var(--panel-edge);
+    background: #181818;
+    color: var(--muted);
+  }
+  .ln-edge-chip b { color: var(--fg); }
+  .ln-edge-chip.kind-sha256       { border-color: #2a4a3a; }
+  .ln-edge-chip.kind-derived_from { border-color: #2a4a3a; }
+  .ln-edge-chip.kind-wikilink     { border-color: #2a3a4a; }
+  .ln-edge-chip.kind-filename     { border-color: #4a3a18; }
+  .ln-edge-chip.kind-time         { border-color: #4a2a4a; }
+
+  .ln-layout {
+    display: grid;
+    grid-template-columns: minmax(220px, 30%) 1fr;
+    gap: 12px;
+    min-height: 300px;
+  }
+  .ln-node-list {
+    border: 1px solid var(--panel-edge);
+    background: var(--panel);
+    padding: 6px;
+    border-radius: 4px;
+    max-height: 480px;
+    overflow-y: auto;
+    font-size: 12px;
+  }
+  .ln-node-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    padding: 4px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .ln-node-row:hover { background: #1f2530; }
+  .ln-node-row.selected { background: #2a3a4a; }
+  .ln-node-row .ln-layer-pill {
+    display: inline-block;
+    min-width: 56px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    font-size: 10px;
+    text-align: center;
+    color: var(--fg);
+    border: 1px solid var(--panel-edge);
+  }
+  .ln-layer-raw     { background: #1f1f10; border-color: #4a3a18; color: #ffd9a3; }
+  .ln-layer-summary { background: #102018; border-color: #2a4a3a; color: #b8f0c8; }
+  .ln-layer-wiki    { background: #101820; border-color: #2a3a4a; color: #b8d4f0; }
+  .ln-node-row .ln-name {
+    font-family: ui-monospace, SFMono-Regular, Monaco, monospace;
+    color: var(--fg);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
+  .ln-detail {
+    border: 1px solid var(--panel-edge);
+    background: var(--panel);
+    padding: 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    overflow-y: auto;
+    max-height: 480px;
+  }
+  .ln-detail h3 {
+    margin: 0 0 6px 0;
+    font-size: 14px;
+    color: var(--fg);
+  }
+  .ln-detail .ln-path {
+    font-family: ui-monospace, SFMono-Regular, Monaco, monospace;
+    color: var(--muted);
+    font-size: 11px;
+    margin-bottom: 8px;
+    word-break: break-all;
+  }
+  .ln-detail .ln-edge-list {
+    list-style: none;
+    padding: 0;
+    margin: 4px 0 8px 0;
+  }
+  .ln-detail .ln-edge-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 3px 0;
+    border-bottom: 1px dotted #2a2a2a;
+  }
+  .ln-detail .ln-edge-kind {
+    display: inline-block;
+    min-width: 90px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    text-align: center;
+    color: var(--muted);
+    border: 1px solid var(--panel-edge);
+    background: #181818;
+  }
+  .ln-detail .ln-edge-conf {
+    font-family: ui-monospace, SFMono-Regular, Monaco, monospace;
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .ln-detail .ln-edge-target {
+    font-family: ui-monospace, SFMono-Regular, Monaco, monospace;
+    color: var(--fg);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ln-detail .ln-edge-hint {
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .ln-detail .ln-empty {
+    color: var(--muted);
+    font-style: italic;
+    padding: 8px 0;
+  }
 </style>
 </head>
 <body>
@@ -142,15 +632,41 @@
 </header>
 
 <nav class="tabs">
-  <button id="tab-timeline" class="active" data-view="view-timeline">Timeline Player</button>
+  <button id="tab-overview" class="active" data-view="view-overview">Overview</button>
+  <button id="tab-timeline" data-view="view-timeline">Timeline Player</button>
   <button id="tab-diff" data-view="view-diff">Diff Viewer</button>
+  <button id="tab-lineage" data-view="view-lineage">Lineage</button>
 </nav>
 
 <main>
   <div id="warnings"></div>
 
+  <!-- View 0: Overview (Sprint 3 v0.8 β default, codex doc Axis 3 §First view 4 layer + Phase 2 overlay) -->
+  <section id="view-overview" class="view active">
+    <!-- Phase 2: P1 metrics status banner (6 chip) -->
+    <div class="status-banner" id="ov-status-banner"></div>
+    <div class="overview-grid">
+      <div class="overview-card" id="ov-vault-overview">
+        <h2>Vault overview</h2>
+      </div>
+      <div class="overview-card" id="ov-health-focus">
+        <h2>Health focus</h2>
+      </div>
+      <div class="overview-card" id="ov-graph-preview">
+        <h2>Graph preview</h2>
+      </div>
+      <div class="overview-card" id="ov-action-queue">
+        <h2>Action queue</h2>
+      </div>
+      <!-- Sprint 3 v0.8 β Phase 4: Quality notes drawer (auto-lint 4 観点、graph 上断定なし) -->
+      <div class="overview-card" id="ov-quality-notes">
+        <h2>Quality notes (auto-lint)</h2>
+      </div>
+    </div>
+  </section>
+
   <!-- View 1: Timeline Player -->
-  <section id="view-timeline" class="view active">
+  <section id="view-timeline" class="view">
     <div class="controls">
       <button id="tp-prev" title="1 つ前の snapshot へ">← Prev</button>
       <button id="tp-play">▶ Play</button>
@@ -181,6 +697,41 @@
       <svg class="graph" id="dv-svg" viewBox="0 0 800 520" preserveAspectRatio="xMidYMid meet"></svg>
     </div>
     <div class="detail" id="dv-detail"></div>
+  </section>
+
+  <!-- View 3: Lineage (Sprint 3 v0.8 β Phase 3, codex doc Axis 4)
+       raw-sources → summaries → wiki pages の 3 layer best-effort 推定。
+       confidence 階層化 (sha256=1.0 ≥ derived_from=0.95 ≥ wikilink=0.85 ≥ filename=0.7 ≥ time=0.4) で
+       UI 上 transparency を担保。"estimated lineage" disclosure banner で user trust を保護。 -->
+  <section id="view-lineage" class="view">
+    <div id="ln-banner" class="ln-banner"></div>
+    <div class="ln-controls">
+      <label>Layer filter
+        <select id="ln-layer">
+          <option value="all">All</option>
+          <option value="raw">Raw sources</option>
+          <option value="summary">Summaries</option>
+          <option value="wiki">Wiki pages</option>
+        </select>
+      </label>
+      <label>Search
+        <input type="search" id="ln-search" placeholder="name / path 部分一致" />
+      </label>
+      <label>Hops
+        <select id="ln-hops">
+          <option value="1">1-hop</option>
+          <option value="2" selected>2-hop</option>
+        </select>
+      </label>
+      <span class="counter" id="ln-counter"></span>
+    </div>
+    <div class="ln-summary" id="ln-summary"></div>
+    <div class="ln-layout">
+      <aside class="ln-node-list" id="ln-node-list"></aside>
+      <div class="ln-detail" id="ln-detail">
+        <p class="muted">左の node 一覧から 1 つ選ぶと、その node を中心に 1-2 hop の lineage が表示されます。</p>
+      </div>
+    </div>
   </section>
 </main>
 
@@ -252,6 +803,737 @@
     w.className = "warning";
     w.textContent = "git history が 16MiB cap で truncate されました。古い commit は一部欠落している可能性があります。";
     document.getElementById("warnings").appendChild(w);
+  }
+  if (data.first_view_error) {
+    const w = document.createElement("div");
+    w.className = "warning";
+    w.textContent = "first view 計算失敗 (Timeline / Diff は引き続き利用可): " + data.first_view_error;
+    document.getElementById("warnings").appendChild(w);
+  }
+
+  // ───────────────────────── View 0: Overview (Sprint 3 v0.8 β Phase 1+2) ─────────────────────────
+  // codex strategic doc Axis 3 §First view 4 layer ordering:
+  //   status_banner (Phase 2) → vault overview → health focus → graph preview → action queue
+  renderOverview(data.first_view || null, data.first_view_error || null);
+
+  function renderOverview(firstView, firstViewError) {
+    const ovBanner  = document.getElementById("ov-status-banner");
+    const ovVault   = document.getElementById("ov-vault-overview");
+    const ovHealth  = document.getElementById("ov-health-focus");
+    const ovGraph   = document.getElementById("ov-graph-preview");
+    const ovAction  = document.getElementById("ov-action-queue");
+    const ovQuality = document.getElementById("ov-quality-notes");
+
+    if (firstViewError) {
+      [ovBanner, ovVault, ovHealth, ovGraph, ovAction, ovQuality].forEach(function (el) {
+        const div = document.createElement("div");
+        div.className = "empty";
+        div.textContent = "first view 計算に失敗 (詳細は上の warning banner): " + firstViewError;
+        el.appendChild(div);
+      });
+      return;
+    }
+    if (!firstView) {
+      [ovBanner, ovVault, ovHealth, ovGraph, ovAction, ovQuality].forEach(function (el) {
+        const div = document.createElement("div");
+        div.className = "empty";
+        div.textContent = "first view データ未注入 (この HTML は古い visualizer.mjs で生成された可能性あり)";
+        el.appendChild(div);
+      });
+      return;
+    }
+
+    // ── Phase 2: Status banner (P1 metrics 6 件、severity 付き chip) ──
+    (function renderStatusBanner() {
+      const sb = firstView.status_banner || {};
+      const items = [
+        { key: "orphan",            label: "orphan",      get: function (m) { return m.count; } },
+        { key: "stale",             label: "stale",       get: function (m) { return m.count; } },
+        { key: "duplicate_title",   label: "dup-title",   get: function (m) { return m.count; } },
+        { key: "hot_md_age",        label: "hot.md",      get: function (m) { return m.age_human || "—"; } },
+        { key: "last_ingest",       label: "last-ingest", get: function (m) { return m.age_human || "—"; } },
+        { key: "unprocessed_logs",  label: "unprocessed", get: function (m) { return m.count; } },
+      ];
+      items.forEach(function (it) {
+        const m = sb[it.key];
+        if (!m) return;
+        const chip = document.createElement("span");
+        chip.className = "sb-chip sev-" + (m.severity || "ok");
+        const lbl = document.createElement("span");
+        lbl.className = "sb-label";
+        lbl.textContent = it.label + ":";
+        const val = document.createElement("span");
+        val.className = "sb-value";
+        val.textContent = String(it.get(m));
+        chip.appendChild(lbl);
+        chip.appendChild(val);
+        ovBanner.appendChild(chip);
+      });
+    })();
+
+    // ── Layer 1: Vault overview (Phase 2 で sparkline + bar chart 追加) ──
+    (function renderVaultOverview() {
+      const vo = firstView.vault_overview || {};
+      const totalDiv = document.createElement("div");
+      totalDiv.className = "big-num";
+      totalDiv.textContent = String(vo.pages_total != null ? vo.pages_total : 0);
+      ovVault.appendChild(totalDiv);
+      const totalSub = document.createElement("div");
+      totalSub.className = "sub-num";
+      totalSub.textContent = "pages total in wiki/";
+      ovVault.appendChild(totalSub);
+
+      // Phase 2: summaries growth + sparkline
+      const g = vo.summaries_growth;
+      if (g) {
+        const row = document.createElement("div");
+        row.className = "row";
+        const lbl = document.createElement("span");
+        lbl.className = "label";
+        lbl.textContent = "summaries growth";
+        const val = document.createElement("span");
+        val.className = "value";
+        if (g.vault_is_git) {
+          val.textContent = "+" + ((g.day_7 && g.day_7.added) || 0)
+            + "/7d, +" + ((g.day_30 && g.day_30.added) || 0) + "/30d";
+        } else {
+          val.textContent = "n/a (not a git vault)";
+        }
+        row.appendChild(lbl);
+        row.appendChild(val);
+        ovVault.appendChild(row);
+
+        if (g.vault_is_git) {
+          const spark = document.createElement("div");
+          spark.className = "sparkline";
+          const r7 = (g.day_7 && g.day_7.per_day) || 0;
+          const r30 = (g.day_30 && g.day_30.per_day) || 0;
+          const maxRate = Math.max(r7, r30, 0.1); // div by zero 回避
+          const cols = [
+            { lbl: "7d", val: (g.day_7 && g.day_7.added) || 0, rate: r7 },
+            { lbl: "30d", val: (g.day_30 && g.day_30.added) || 0, rate: r30 },
+          ];
+          cols.forEach(function (c) {
+            const col = document.createElement("div");
+            col.className = "spark-col";
+            const v = document.createElement("div");
+            v.className = "spark-value";
+            v.textContent = "+" + c.val;
+            col.appendChild(v);
+            const bar = document.createElement("div");
+            bar.className = "spark-bar";
+            bar.style.height = Math.round((c.rate / maxRate) * 24) + "px";
+            col.appendChild(bar);
+            const l = document.createElement("div");
+            l.className = "spark-label";
+            l.textContent = c.lbl;
+            col.appendChild(l);
+            spark.appendChild(col);
+          });
+          ovVault.appendChild(spark);
+        }
+      }
+
+      // Phase 2: page_count_by_type compact bar chart (sorted_entries 経由)
+      const pct = vo.page_count_by_type;
+      if (pct && Array.isArray(pct.sorted_entries) && pct.sorted_entries.length > 0) {
+        const lblDiv = document.createElement("div");
+        lblDiv.className = "row";
+        const lblSpan = document.createElement("span");
+        lblSpan.className = "label";
+        lblSpan.textContent = "type distribution (top 6)";
+        lblDiv.appendChild(lblSpan);
+        ovVault.appendChild(lblDiv);
+
+        const chart = document.createElement("div");
+        chart.className = "bar-chart";
+        const entries = pct.sorted_entries.slice(0, 6);
+        const maxCount = entries.reduce(function (m, e) { return Math.max(m, e[1]); }, 0) || 1;
+        entries.forEach(function (e) {
+          const r = document.createElement("div");
+          r.className = "bc-row";
+          const lblEl = document.createElement("span");
+          lblEl.className = "bc-label";
+          lblEl.textContent = e[0];
+          const barWrap = document.createElement("span");
+          barWrap.className = "bc-bar";
+          const barFill = document.createElement("span");
+          barFill.className = "bc-bar-fill";
+          barFill.style.width = Math.round((e[1] / maxCount) * 100) + "%";
+          barWrap.appendChild(barFill);
+          const valEl = document.createElement("span");
+          valEl.className = "bc-value";
+          valEl.textContent = String(e[1]);
+          r.appendChild(lblEl);
+          r.appendChild(barWrap);
+          r.appendChild(valEl);
+          chart.appendChild(r);
+        });
+        ovVault.appendChild(chart);
+      }
+    })();
+
+    // ── Layer 2: Health focus (Phase 2 で warm gradient + broken cluster + sha256 cluster 追加) ──
+    (function renderHealthFocus() {
+      const hf = firstView.health_focus || {};
+      function row(label, count, severityClass) {
+        const r = document.createElement("div");
+        r.className = "row";
+        const lbl = document.createElement("span");
+        lbl.className = "label";
+        lbl.textContent = label;
+        const chip = document.createElement("span");
+        chip.className = "chip " + (count > 0 ? severityClass : "ok");
+        chip.textContent = String(count);
+        r.appendChild(lbl);
+        r.appendChild(chip);
+        return r;
+      }
+      const broken = hf.broken_wikilink || { count: 0, samples: [], clusters: [] };
+      const sha    = hf.source_sha256_duplicate || { count: 0, groups: [] };
+      const warm   = hf.pages_warm_zone || { count: 0, lower_days: 7, upper_days: 30, distribution: null };
+      ovHealth.appendChild(row("broken wikilinks", broken.count, "danger"));
+      ovHealth.appendChild(row("source_sha256 duplicates", sha.count, "danger"));
+      ovHealth.appendChild(
+        row("warm zone (" + warm.lower_days + "-" + warm.upper_days + "d)", warm.count, "warn"),
+      );
+
+      // Phase 2: warm zone gradient bar (fresh / warm / stale 3 bucket)
+      if (warm.distribution && warm.distribution.total_classified > 0) {
+        const dist = warm.distribution;
+        const grad = document.createElement("div");
+        grad.className = "warm-gradient";
+        const total = dist.total_classified;
+        const segs = [
+          { cls: "fresh", val: dist.fresh },
+          { cls: "warm", val: dist.warm },
+          { cls: "stale", val: dist.stale },
+        ];
+        segs.forEach(function (s) {
+          if (s.val <= 0) return;
+          const seg = document.createElement("div");
+          seg.className = "wg-seg " + s.cls;
+          seg.style.width = ((s.val / total) * 100).toFixed(1) + "%";
+          seg.setAttribute("title", s.cls + ": " + s.val + " pages");
+          grad.appendChild(seg);
+        });
+        ovHealth.appendChild(grad);
+
+        const legend = document.createElement("div");
+        legend.className = "warm-gradient-legend";
+        const lf = document.createElement("span");
+        lf.className = "wg-leg-fresh";
+        lf.textContent = "fresh " + dist.fresh;
+        const lw = document.createElement("span");
+        lw.className = "wg-leg-warm";
+        lw.textContent = "warm " + dist.warm;
+        const ls = document.createElement("span");
+        ls.className = "wg-leg-stale";
+        ls.textContent = "stale " + dist.stale;
+        legend.appendChild(lf);
+        legend.appendChild(lw);
+        legend.appendChild(ls);
+        ovHealth.appendChild(legend);
+      }
+
+      // Phase 2: broken_wikilink cluster (target でグループ化、merge target view)
+      if (broken.clusters && broken.clusters.length > 0) {
+        const clusterHeader = document.createElement("div");
+        clusterHeader.className = "row";
+        const clusterLbl = document.createElement("span");
+        clusterLbl.className = "label";
+        clusterLbl.textContent = "broken targets (top "
+          + Math.min(broken.clusters.length, 3) + ")";
+        clusterHeader.appendChild(clusterLbl);
+        ovHealth.appendChild(clusterHeader);
+
+        const list = document.createElement("div");
+        list.className = "cluster-list";
+        broken.clusters.slice(0, 3).forEach(function (c) {
+          const item = document.createElement("div");
+          item.className = "cluster-item";
+          const target = document.createElement("div");
+          target.className = "cluster-target";
+          target.textContent = "[[" + c.target + "]]";
+          item.appendChild(target);
+          const meta = document.createElement("div");
+          meta.className = "cluster-meta";
+          meta.textContent = c.inbound_broken_count + " broken inbound link"
+            + (c.inbound_broken_count > 1 ? "s" : "");
+          item.appendChild(meta);
+          const sources = document.createElement("div");
+          sources.className = "cluster-sources";
+          c.sources.slice(0, 3).forEach(function (s) {
+            const src = document.createElement("div");
+            src.className = "cluster-source";
+            src.textContent = "← " + s;
+            sources.appendChild(src);
+          });
+          if (c.sources.length > 3) {
+            const more = document.createElement("div");
+            more.className = "cluster-source";
+            more.textContent = "  +" + (c.sources.length - 3) + " more";
+            sources.appendChild(more);
+          }
+          item.appendChild(sources);
+          list.appendChild(item);
+        });
+        ovHealth.appendChild(list);
+      }
+
+      // Phase 2: source_sha256_duplicate cluster (merge candidate)
+      if (sha.groups && sha.groups.length > 0) {
+        const shaHeader = document.createElement("div");
+        shaHeader.className = "row";
+        const shaLbl = document.createElement("span");
+        shaLbl.className = "label";
+        shaLbl.textContent = "merge candidates (sha256)";
+        shaHeader.appendChild(shaLbl);
+        ovHealth.appendChild(shaHeader);
+
+        const shaList = document.createElement("div");
+        shaList.className = "cluster-list";
+        sha.groups.slice(0, 3).forEach(function (gr) {
+          const item = document.createElement("div");
+          item.className = "cluster-item";
+          const target = document.createElement("div");
+          target.className = "cluster-target";
+          target.textContent = gr.source_sha256.slice(0, 16) + "…";
+          item.appendChild(target);
+          const meta = document.createElement("div");
+          meta.className = "cluster-meta";
+          meta.textContent = gr.paths.length + " pages share this source";
+          item.appendChild(meta);
+          const sources = document.createElement("div");
+          sources.className = "cluster-sources";
+          gr.paths.slice(0, 4).forEach(function (p) {
+            const src = document.createElement("div");
+            src.className = "cluster-source";
+            src.textContent = p;
+            sources.appendChild(src);
+          });
+          item.appendChild(sources);
+          shaList.appendChild(item);
+        });
+        ovHealth.appendChild(shaList);
+      }
+    })();
+
+    // ── Layer 3: Graph preview ──
+    (function renderGraphPreview() {
+      const gp = firstView.graph_preview || {};
+      function section(title, items, formatter) {
+        if (!items || items.length === 0) return false;
+        const header = document.createElement("div");
+        header.className = "row";
+        const lbl = document.createElement("span");
+        lbl.className = "label";
+        lbl.textContent = title + " (" + items.length + ")";
+        header.appendChild(lbl);
+        ovGraph.appendChild(header);
+        const ul = document.createElement("ul");
+        items.slice(0, 5).forEach(function (it) {
+          const li = document.createElement("li");
+          li.textContent = formatter(it);
+          ul.appendChild(li);
+        });
+        ovGraph.appendChild(ul);
+        return true;
+      }
+      const hasHot     = section("hot pages", gp.hot_pages,
+        function (p) { return p.name + "  · links=" + (p.degree || 0); });
+      const hasProj    = section("active projects", gp.active_projects,
+        function (p) { return p.title || p.name; });
+      const hasDecis   = section("recent decisions", gp.recent_decisions,
+        function (p) { return p.title || p.name; });
+      if (!hasHot && !hasProj && !hasDecis) {
+        const e = document.createElement("div");
+        e.className = "empty";
+        e.textContent = "snapshot がないため preview なし (まず Vault を git commit してください)";
+        ovGraph.appendChild(e);
+      }
+    })();
+
+    // ── Layer 4: Action queue ──
+    (function renderActionQueue() {
+      const aq = Array.isArray(firstView.action_queue) ? firstView.action_queue : [];
+      if (aq.length === 0) {
+        const e = document.createElement("div");
+        e.className = "empty";
+        e.textContent = "健全な状態です — action 不要 (P0 / P1 metric が全てゼロ)";
+        ovAction.appendChild(e);
+        return;
+      }
+      aq.forEach(function (item) {
+        const div = document.createElement("div");
+        div.className = "action-item";
+
+        const reason = document.createElement("div");
+        reason.className = "action-reason";
+        const pr = document.createElement("span");
+        pr.className = "priority-" + item.priority;
+        pr.textContent = "[" + item.priority + "] ";
+        reason.appendChild(pr);
+        const txt = document.createElement("span");
+        txt.textContent = item.reason;
+        reason.appendChild(txt);
+        div.appendChild(reason);
+
+        const next = document.createElement("div");
+        next.className = "action-next";
+        next.textContent = "→ " + item.next_action;
+        div.appendChild(next);
+
+        if (item.command) {
+          const cmd = document.createElement("div");
+          cmd.className = "action-cmd";
+          cmd.textContent = item.command;
+          div.appendChild(cmd);
+        }
+        ovAction.appendChild(div);
+      });
+    })();
+
+    // ── Phase 4: Quality notes drawer (auto-lint 4 観点、補助表示) ──
+    // graph に断定表示せず "estimated" 性質を明示 (PM 答え #3「user trust 落とさない」)。
+    // report 不在時は "auto-lint 未実行" 案内、parse 成功時は 4 観点を mini-list で表示。
+    (function renderQualityNotes() {
+      const al = firstView.auto_lint || null;
+      if (!al || !al.report_exists) {
+        const wrap = document.createElement("div");
+        wrap.className = "qn-missing";
+        const p1 = document.createElement("div");
+        p1.textContent = "auto-lint 未実行 — wiki/lint-report.md がまだ生成されていません。";
+        const p2 = document.createElement("div");
+        p2.style.marginTop = "6px";
+        const cmd = document.createElement("code");
+        cmd.textContent = "bash scripts/auto-lint.sh";
+        p2.appendChild(document.createTextNode("実行コマンド: "));
+        p2.appendChild(cmd);
+        wrap.appendChild(p1);
+        wrap.appendChild(p2);
+        ovQuality.appendChild(wrap);
+        return;
+      }
+
+      const disclosure = document.createElement("div");
+      disclosure.className = "qn-disclosure";
+      disclosure.textContent = "LLM 推定 (deterministic ではない) — 詳細は wiki/lint-report.md を参照";
+      ovQuality.appendChild(disclosure);
+
+      const meta = document.createElement("div");
+      meta.className = "qn-meta";
+      const metaBits = [];
+      if (al.generated_at) metaBits.push("updated " + al.generated_at);
+      metaBits.push("total " + (typeof al.total_findings === "number" ? al.total_findings : "—") + " findings");
+      if (al.source_truncated) metaBits.push("source truncated");
+      meta.textContent = metaBits.join("  ·  ");
+      ovQuality.appendChild(meta);
+
+      const list = document.createElement("div");
+      list.className = "qn-categories";
+      const categories = Array.isArray(al.categories) ? al.categories : [];
+      categories.forEach(function (cat) {
+        const wrap = document.createElement("div");
+        wrap.className = "qn-cat";
+        const head = document.createElement("div");
+        head.className = "qn-cat-head";
+        const label = document.createElement("span");
+        label.className = "qn-cat-label";
+        label.textContent = cat.label || cat.key || "(unknown)";
+        const count = document.createElement("span");
+        const isEmpty = !cat.count || cat.count === 0;
+        count.className = "qn-cat-count" + (isEmpty ? " qn-empty" : "");
+        const suffix = cat.count_estimated ? " (推定)" : "";
+        count.textContent = (cat.count || 0) + " findings" + suffix;
+        head.appendChild(label);
+        head.appendChild(count);
+        wrap.appendChild(head);
+
+        const samples = Array.isArray(cat.samples) ? cat.samples : [];
+        if (samples.length > 0) {
+          const ul = document.createElement("ul");
+          ul.className = "qn-samples";
+          samples.forEach(function (s) {
+            const li = document.createElement("li");
+            li.textContent = s;
+            ul.appendChild(li);
+          });
+          wrap.appendChild(ul);
+          if (cat.sample_truncated) {
+            const trunc = document.createElement("div");
+            trunc.className = "qn-truncated-note";
+            trunc.textContent = "(showing top " + samples.length + " — see lint-report.md for full list)";
+            wrap.appendChild(trunc);
+          }
+        }
+        list.appendChild(wrap);
+      });
+      ovQuality.appendChild(list);
+
+      const link = document.createElement("a");
+      link.className = "qn-source-link";
+      link.href = "../../" + (al.source_path || "wiki/lint-report.md");
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.textContent = "Open full report → " + (al.source_path || "wiki/lint-report.md");
+      ovQuality.appendChild(link);
+    })();
+  }
+
+  // ───────────────────────── View 3: Lineage (Sprint 3 v0.8 β Phase 3) ─────────────────────────
+  renderLineage(data.lineage || null, data.lineage_error || null);
+
+  function renderLineage(lineage, lineageError) {
+    const banner = document.getElementById("ln-banner");
+    const counter = document.getElementById("ln-counter");
+    const summary = document.getElementById("ln-summary");
+    const nodeList = document.getElementById("ln-node-list");
+    const detail = document.getElementById("ln-detail");
+    const layerSel = document.getElementById("ln-layer");
+    const searchInput = document.getElementById("ln-search");
+    const hopsSel = document.getElementById("ln-hops");
+
+    if (lineageError) {
+      const div = document.createElement("div");
+      div.className = "warning";
+      div.textContent = "lineage 計算失敗 (他 view は引き続き利用可): " + lineageError;
+      banner.appendChild(div);
+      return;
+    }
+    if (!lineage) {
+      const p = document.createElement("p");
+      p.className = "muted";
+      p.textContent = "lineage データ未注入 (古い visualizer.mjs で生成された HTML の可能性あり)";
+      banner.appendChild(p);
+      return;
+    }
+
+    // ★ estimated lineage disclosure (best-effort hint shape、user trust 保護)
+    const note = document.createElement("div");
+    const star = document.createElement("b"); star.textContent = "★ estimated lineage";
+    const text = document.createTextNode(
+      " — " + (lineage.hint_note || "best-effort heuristics") +
+      ". 100% 再現ではなく、heuristic に基づく「説明可能な lineage 推測」を表示しています。"
+    );
+    note.appendChild(star);
+    note.appendChild(text);
+    banner.appendChild(note);
+
+    // Summary chips (totals + per-edge-kind counts)
+    (function renderSummary() {
+      const totals = lineage.totals || { nodes: 0, raw: 0, summary: 0, wiki: 0, edges: 0 };
+      const totalsDiv = document.createElement("div");
+      totalsDiv.className = "ln-totals";
+      function addTotal(label, val) {
+        const span = document.createElement("span");
+        const b = document.createElement("b"); b.textContent = String(val);
+        const t = document.createTextNode(" " + label);
+        span.appendChild(b); span.appendChild(t);
+        totalsDiv.appendChild(span);
+      }
+      addTotal("nodes", totals.nodes);
+      addTotal("raw", totals.raw);
+      addTotal("summary", totals.summary);
+      addTotal("wiki", totals.wiki);
+      addTotal("edges", totals.edges);
+      summary.appendChild(totalsDiv);
+
+      const edgeCounts = document.createElement("div");
+      edgeCounts.className = "ln-edge-counts";
+      const kinds = ["sha256", "derived_from", "wikilink", "filename", "time"];
+      const hintSummary = lineage.hint_summary || {};
+      kinds.forEach(function (k) {
+        const chip = document.createElement("span");
+        chip.className = "ln-edge-chip kind-" + k;
+        const b = document.createElement("b"); b.textContent = String(hintSummary[k] || 0);
+        const t = document.createTextNode(" " + k);
+        chip.appendChild(b); chip.appendChild(t);
+        edgeCounts.appendChild(chip);
+      });
+      summary.appendChild(edgeCounts);
+
+      if (lineage.truncated) {
+        const trunc = document.createElement("span");
+        trunc.className = "ln-edge-chip";
+        trunc.textContent = "truncated to " + (lineage.node_cap || 300) + " nodes";
+        summary.appendChild(trunc);
+      }
+    })();
+
+    // Build adjacency for runtime 1-2 hop subgraph
+    const nodes = Array.isArray(lineage.nodes) ? lineage.nodes : [];
+    const edges = Array.isArray(lineage.edges) ? lineage.edges : [];
+    const nodeById = {};
+    nodes.forEach(function (n) { nodeById[n.id] = n; });
+    const adj = {};
+    edges.forEach(function (e) {
+      (adj[e.source] = adj[e.source] || []).push(e);
+      (adj[e.target] = adj[e.target] || []).push(e);
+    });
+
+    let selectedId = null;
+
+    function renderNodeList() {
+      clearNode(nodeList);
+      const layerFilter = layerSel.value;
+      const q = (searchInput.value || "").trim().toLowerCase();
+      let visible = nodes;
+      if (layerFilter !== "all") visible = visible.filter(function (n) { return n.layer === layerFilter; });
+      if (q) {
+        visible = visible.filter(function (n) {
+          return n.name.toLowerCase().indexOf(q) !== -1 ||
+                 (n.path || "").toLowerCase().indexOf(q) !== -1;
+        });
+      }
+      counter.textContent = visible.length + " / " + nodes.length + " nodes";
+      visible.slice(0, 200).forEach(function (n) {
+        const row = document.createElement("div");
+        row.className = "ln-node-row";
+        if (n.id === selectedId) row.classList.add("selected");
+        const pill = document.createElement("span");
+        pill.className = "ln-layer-pill ln-layer-" + n.layer;
+        pill.textContent = n.layer;
+        const name = document.createElement("span");
+        name.className = "ln-name";
+        name.textContent = n.name;
+        name.title = n.path || n.id;
+        row.appendChild(pill);
+        row.appendChild(name);
+        row.addEventListener("click", function () { selectNode(n.id); });
+        nodeList.appendChild(row);
+      });
+      if (visible.length > 200) {
+        const more = document.createElement("div");
+        more.className = "muted";
+        more.style.padding = "4px 6px";
+        more.textContent = "(" + (visible.length - 200) + " more — refine the search)";
+        nodeList.appendChild(more);
+      }
+    }
+
+    function selectNode(id) {
+      selectedId = id;
+      renderNodeList();
+      renderDetail(id);
+    }
+
+    function subgraph(centerId, hops) {
+      const visited = {}; visited[centerId] = 0;
+      const queue = [[centerId, 0]];
+      while (queue.length > 0) {
+        const head = queue.shift();
+        const cid = head[0]; const depth = head[1];
+        if (depth >= hops) continue;
+        const neighbors = adj[cid] || [];
+        for (let i = 0; i < neighbors.length; i += 1) {
+          const e = neighbors[i];
+          const next = e.source === cid ? e.target : e.source;
+          if (next in visited) continue;
+          visited[next] = depth + 1;
+          queue.push([next, depth + 1]);
+        }
+      }
+      return visited;
+    }
+
+    function renderDetail(centerId) {
+      clearNode(detail);
+      const center = nodeById[centerId];
+      if (!center) {
+        const p = document.createElement("p"); p.className = "muted";
+        p.textContent = "node not found"; detail.appendChild(p);
+        return;
+      }
+      const hops = parseInt(hopsSel.value, 10) || 1;
+      const visited = subgraph(centerId, hops);
+      const visitedIds = Object.keys(visited);
+      const sub = edges.filter(function (e) {
+        return (e.source in visited) && (e.target in visited);
+      });
+
+      const h3 = document.createElement("h3"); h3.textContent = center.title || center.name;
+      detail.appendChild(h3);
+      const pathDiv = document.createElement("div");
+      pathDiv.className = "ln-path";
+      pathDiv.textContent = center.path || center.id;
+      detail.appendChild(pathDiv);
+
+      const meta = document.createElement("p");
+      meta.className = "muted";
+      meta.textContent =
+        "layer: " + center.layer +
+        " · type: " + (center.type || "—") +
+        " · " + (hops === 2 ? "2-hop" : "1-hop") +
+        " subgraph: " + visitedIds.length + " nodes, " + sub.length + " edges";
+      detail.appendChild(meta);
+
+      // Group edges by kind
+      const byKind = {};
+      sub.forEach(function (e) {
+        if (e.source !== centerId && e.target !== centerId && hops < 2) return;
+        (byKind[e.kind] = byKind[e.kind] || []).push(e);
+      });
+      const kindOrder = ["sha256", "derived_from", "wikilink", "filename", "time"];
+      let any = false;
+      kindOrder.forEach(function (k) {
+        const list = byKind[k];
+        if (!list || list.length === 0) return;
+        any = true;
+        const h4 = document.createElement("h4");
+        h4.textContent = k + "  (" + list.length + " edge" + (list.length > 1 ? "s" : "") + ")";
+        h4.style.fontSize = "12px";
+        h4.style.marginTop = "10px";
+        h4.style.marginBottom = "4px";
+        h4.style.color = "var(--muted)";
+        detail.appendChild(h4);
+        const ul = document.createElement("ul");
+        ul.className = "ln-edge-list";
+        list.forEach(function (e) {
+          const li = document.createElement("li");
+          li.className = "ln-edge-row";
+          const kind = document.createElement("span");
+          kind.className = "ln-edge-kind";
+          kind.textContent = k;
+          const conf = document.createElement("span");
+          conf.className = "ln-edge-conf";
+          conf.textContent = "conf " + (Math.round((e.confidence || 0) * 100) / 100).toFixed(2);
+          const otherId = e.source === centerId ? e.target : e.source;
+          const arrow = e.source === centerId ? "→" : "←";
+          const targetSpan = document.createElement("span");
+          targetSpan.className = "ln-edge-target";
+          const otherNode = nodeById[otherId];
+          targetSpan.textContent = arrow + " " + (otherNode ? (otherNode.path || otherNode.name) : otherId);
+          targetSpan.title = otherId;
+          targetSpan.style.cursor = "pointer";
+          targetSpan.addEventListener("click", function () { selectNode(otherId); });
+          const hint = document.createElement("span");
+          hint.className = "ln-edge-hint";
+          hint.textContent = e.hint || "";
+          li.appendChild(kind);
+          li.appendChild(conf);
+          li.appendChild(targetSpan);
+          li.appendChild(hint);
+          ul.appendChild(li);
+        });
+        detail.appendChild(ul);
+      });
+      if (!any) {
+        const p = document.createElement("p");
+        p.className = "ln-empty";
+        p.textContent = "この node には 1-2 hop の lineage hint が見つかりません (孤立 node)。";
+        detail.appendChild(p);
+      }
+
+      addObsidianLink(detail, data.vault_name, center.path);
+    }
+
+    layerSel.addEventListener("change", renderNodeList);
+    searchInput.addEventListener("input", renderNodeList);
+    hopsSel.addEventListener("change", function () {
+      if (selectedId) renderDetail(selectedId);
+    });
+    renderNodeList();
   }
 
   // ───────────────────────── tab switch ─────────────────────────

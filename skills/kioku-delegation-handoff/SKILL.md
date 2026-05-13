@@ -167,10 +167,38 @@ ls {{target-files}} 2>&1
 # 3. LEARN#10 逆方向: main にも該当 commit が無いか
 git log -10 origin/main --oneline | grep -iE "{{keyword}}"
 
-# 4. {{additional precheck commands}}
+# 4. LEARN#12 Rule 2: PM main hygiene
+git log --oneline origin/main..main
+# (empty=clean)
+
+# 5. {{additional precheck commands}}
+
+# 6. LEARN#15 mandatory: session current-branch verify (parallel session contention 防御)
+git symbolic-ref HEAD
+# 期待: refs/heads/{{expected-branch}} (例: feature/<scope-topic>)
+# 想定 branch と異なれば parallel session contention の可能性 → abort + escalate
+# 加えて作業 milestones 毎 (file edit 前 / commit 直前 / push 直前) に再 verify 推奨
 ```
 
 discrepancy 発見時 → PM session に escalate、本 handoff の更新依頼。**着手前停止が原則**。
+
+## LEARN#15 milestone 毎 branch verify (mandatory pattern、commit / push 直前)
+
+```bash
+EXPECTED_BRANCH="feature/{{scope-topic}}"
+
+# commit 直前 chained assert
+git symbolic-ref HEAD | grep -q "refs/heads/${EXPECTED_BRANCH}" \
+  && git commit -m "..." \
+  || (echo "ABORT: expected ${EXPECTED_BRANCH}, got $(git symbolic-ref HEAD)"; exit 1)
+
+# push 直前 chained assert
+git symbolic-ref HEAD | grep -q "refs/heads/${EXPECTED_BRANCH}" \
+  && git push -u origin "${EXPECTED_BRANCH}" \
+  || (echo "ABORT: expected ${EXPECTED_BRANCH}, got $(git symbolic-ref HEAD)"; exit 1)
+```
+
+→ 誤 branch flip があれば commit / push 前に abort、recovery flow (branch 戻し + working tree 保持) へ
 
 ---
 
@@ -284,6 +312,14 @@ PR #90 URL test 安定化 (N=5): scope = quick/full suite 分離、target = 10 �
 
 PR #96 README mode-based (N=6): scope = Mode A/B/C onboarding + doctor mode detection、target = README.md + README.ja.md + `scripts/doctor.sh` + `tests/doctor.test.sh`、TEST-PREFIX = `BLUE-DOCTOR-MODE-`、想定工数 1-2h、5 点セット
 
+PR #103 health metrics core (N=7): scope = Sprint 2 着手 (`kioku_health` MCP tool + 6 core metrics + `generate-health.mjs` + dashboard view)、target = `mcp/lib/health-metrics.mjs` + `mcp/tools/health.mjs` + `scripts/generate-health.mjs` + `templates/wiki/meta/dashboard.base` + `tests/health-metrics.test.mjs` + `tests/mcp/tools-health.test.mjs`、TEST-PREFIX = `BLUE-HEALTH-` + `MCP-HEALTH-`、想定工数 8-12h、6 点セット (real Vault dogfood 数値を完了報告に含める)。**skill 初使用 cycle**
+
+PR #109 stretch metrics + auto-lint refactor (N=8): scope = Sprint 2 完走 (stretch 5 metrics + LINT_PROMPT 6→4 観点 refactor)、target = N=7 と同 file 拡張 + `scripts/auto-lint.sh` + `tests/auto-lint.test.sh`、TEST-PREFIX = `BLUE-HEALTH-STRETCH-` + `BLUE-LINT-PROMPT-`、想定工数 8-15h、6 点セット (LEARN#5 grep audit が 2 箇所 hardcoded "6 metric" drift catch、LEARN#6 5 layer boundary table を完了報告に組み込み)
+
+### マーケ系 retrospect article 制作 (N=2 マーケ系)
+
+PR #115 v0.7.2-v0.7.5 Sprint 1+2 retrospect (マーケ N=2): scope = 4 release 集約 retrospect article × 2 媒体 (dev.to + Zenn)、target = `marketing/article/dev.to/26050X_*-devto.md` + `marketing/article/zen/26050X_*-zenn.md`、想定工数 4-6h、5 点セット (Zenn 英語混入 audit + dev.to technical depth + Sprint 3 narrative boundary check 含む)
+
 ## 関連 (本 skill が参照する正典)
 
 - `.claude/rules/workflow.md` LEARN#5 (cross-suite test) / LEARN#6 (cross-boundary integration review) / LEARN#10 (双方向 PM precheck) / LEARN#11 (release cycle sync boundary) / LEARN#12 (delegation = branch + PR mandatory)
@@ -295,4 +331,39 @@ PR #96 README mode-based (N=6): scope = Mode A/B/C onboarding + doctor mode dete
 
 - **新 N cycle で本 skill 利用** = N counter / Metadata 更新
 - **8 cycle 以上経過時に本 skill 自体を refactor**: 共通要素の更なる抽出 / scope-specific 入力の自動推論強化
-- **session type 別の specialized variant**: 制作 Claude / codex / マーケ で handoff 内容が大きく異なる場合は別 skill 化検討 (現状は 1 skill で 3 type cover、N=6 cycle 中は 制作 N=6 / codex N=0 / マーケ N=1 で 制作 偏重、要 observe)
+- **session type 別の specialized variant**: 制作 Claude / codex / マーケ で handoff 内容が大きく異なる場合は別 skill 化検討
+
+### N=8 retrospect (2026-05-08、PM session 振り返り)
+
+skill 化 (PR #101、N=6 codify) → N=7 (PR #103、初使用) → N=8 (PR #109) で 2 cycle 完走後の retrospect:
+
+**結論**: **light refactor のみ実施、heavy refactor は N=10 (Sprint 3 完走 = 6月) まで defer**
+
+#### 観察された pattern
+
+- **impl 系 (制作 Claude) handoff は stable**: N=7 (268 行) と N=8 (277 行) で構造的 mutation 少ない、template が固定化されている。boilerplate 部分 (`Workflow requirements` / `LEARN#10 precheck` / `Test requirements regression list` / `Metadata`) は そのまま再利用可能
+- **scope-specific section (`Scope` / `file 構成` / `per-axis unit test`) は task ごとに完全書き換え** = これは設計通り、handoff 価値の core 部分
+- **マーケ系 N=2 で template に **「Quality requirements (article 制作特有)」 section を後付け追加**** が必要だった (Zenn 英語混入 audit / dev.to technical depth / boundary check)、impl 系 boilerplate そのままでは article 制作 task type に対応できない
+- **codex 系 (strategic doc 委譲) はまだ N=0**、本 SKILL.md 起動例には書いてあるが実例なし → variant 不足を確認できる data 不足
+
+#### 累積 cycle 分布 (N=8 時点)
+
+| session type | N | example PRs |
+|---|---|---|
+| 制作 Claude (impl) | 8 | #70/#74/#84/#89/#90/#96/#103/#109 |
+| マーケ Claude (article) | 2 | #115 (本 retrospect 起票)、kickoff resource list (4/23) |
+| codex CLI (strategic) | 0 | (未実例、Sprint 3 = v0.8 Visualizer β scope 検討で N=1 to be) |
+
+→ **制作 偏重 8:2:0**、これは予想通りの分布 (release engineering の主軸が impl)
+
+#### N=8 で実施した light refactor
+
+1. ✅ §「過去 handoff 例」 section に N=7 (PR #103) + N=8 (PR #109) + マーケ N=2 (PR #115) entry 追加
+2. ✅ §メタ運用 に本 retrospect note 追加 (将来の N=10 retrospect での比較 baseline)
+
+#### N=10 で trigger される heavy refactor candidate
+
+- **`--to=マーケ` variant boilerplate**: 「Quality requirements (article 制作特有)」section を skill template に組み込み、マーケ retrospect 起票時に self-include
+- **`--to=codex` variant boilerplate**: codex strategic doc 委譲が N=2 以上累積した時点で、scope 検討 / 競合分析 / roadmap 執筆向けの section template を抽出
+- **共通 boilerplate の prompt 自動推論強化**: scope-topic から TEST-PREFIX / target file path を heuristic 推論する rule 追加 (現状は user 入力)
+- **boilerplate の monolithic SKILL.md → 分割 file 化**: SKILL.md 298 行 + `templates/<session-type>.md.tmpl` 化で reading cost 削減
