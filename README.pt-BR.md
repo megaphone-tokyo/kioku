@@ -326,6 +326,19 @@ Se voce encontrar um problema de seguranca, por favor reporte via [SECURITY.md](
 
 ## Histórico de mudanças
 
+### 2026-05-15 — v0.9.0: "Abra seu wiki no navegador, busque com Claude, ate do celular" — Sprint 4 concluido (4 pillar: Shell + Search + Mobile + Sync polish)
+
+v0.9.0 marca o **Sprint 4 全 phase 完走**. 4 pillar narrative: **Hardened LLM Wiki for Professionals + Claude-augmented Search + Mobile responsive + Sync polished**. Path C+β progress 70% → 100% concluido, Sprint 4 全 cycle completion marker.
+
+- **Phase 1 (Web UI shell + Bases dashboard)**: `kioku_generate_viz mode=shell` para HTML 8-tab self-contained, Bases dashboard renderer (`.base` parseado apenas com Node stdlib), Path C+β design boundary (sem editor, sem CDN externo, sem fetch)
+- **Phase 2 (Claude-augmented Search)**: `kioku_search` com `intent` param + discoverQueries 3→7 sources, shell Search tab com Tier 1 offline filter + Tier 2 "Claude para busca profunda" deep-link, superficie de ataque 0 (sem HTTP server)
+- **Phase 3 (Mobile responsive)**: shell + viz responsive CSS + hamburger menu + tap target 44pt+, Tier 2 Mobile deep-link `claude://` URI + timeout 1.5s + claude.ai fallback, Mobile simplified view (textContent only) + 300KB performance budget
+- **Phase 4 (Sync polish)**: `sync-vault.mjs` Git push retry queue + exponential backoff + persistent resume, `classifyGitError` (5 categorias), `maskCredentials` (token/SSH redact), `doctor.sh` sync state diagnostic
+- **Hardened design contract**: offline-first / textContent only / 0 dependencias externas / 0 superficie de ataque adicionada — mantido nas 4 phases
+- **Tests**: 44 novos BLUE-* (Phase 4 cumulativo, retry / classify / mask / doctor diagnostic + sync-diagnostic.test.sh)
+- **subagent-driven N=28 of 28 cycle** — Sprint 4 全 cycle concluido, formula LEARN#7 5-camadas × 4 phases
+- [Release v0.9.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.9.0) — `kioku-wiki-0.9.0.mcpb` attached
+
 ### 2026-05-13 — v0.8.0: "Abra KIOKU e veja como sua memoria parece" — HTML Visualizer β (Sprint 3 concluido)
 
 v0.8.0 marca a **conclusao do Sprint 3 (価値の可視化)**. Primeiro release onde KIOKU pode mostrar seu valor sem Obsidian — drag-and-drop o HTML gerado em qualquer browser e veja seu second brain.

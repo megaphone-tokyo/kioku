@@ -263,6 +263,19 @@ KIOKU एक Hook सिस्टम है जो **सभी Claude Code स�
 
 ## परिवर्तन इतिहास
 
+### 2026-05-15 — v0.9.0: "अपनी wiki को browser में खोलें, Claude के साथ search करें, phone से भी" — Sprint 4 पूर्ण (4 pillar: Shell + Search + Mobile + Sync polish)
+
+v0.9.0 **Sprint 4 全 phase 完走** marker है। 4 pillar narrative: **Hardened LLM Wiki for Professionals + Claude-augmented Search + Mobile responsive + Sync polished**। Path C+β progress 70% → 100% पूर्ण, Sprint 4 全 cycle completion।
+
+- **Phase 1 (Web UI shell + Bases dashboard)**: `kioku_generate_viz mode=shell` से 8-tab self-contained HTML, Bases dashboard renderer (`.base` केवल Node stdlib से parse), Path C+β design boundary (कोई editor नहीं, कोई external CDN नहीं, कोई fetch नहीं)
+- **Phase 2 (Claude-augmented Search)**: `kioku_search` में `intent` param + discoverQueries 3→7 sources, shell Search tab में Tier 1 offline filter + Tier 2 "Claude से deep search" deep-link, attack surface 0 (कोई HTTP server नहीं)
+- **Phase 3 (Mobile responsive)**: shell + viz responsive CSS + hamburger menu + tap target 44pt+, Tier 2 Mobile deep-link `claude://` URI + 1.5s timeout + claude.ai fallback, Mobile simplified view (textContent only) + 300KB performance budget
+- **Phase 4 (Sync polish)**: `sync-vault.mjs` Git push retry queue + exponential backoff + persistent resume, `classifyGitError` (5 categories), `maskCredentials` (token/SSH redact), `doctor.sh` sync state diagnostic
+- **Hardened design contract**: offline-first / textContent only / 0 external deps / 0 added attack surface — 4 phases में निरंतर
+- **Tests**: 44 नए BLUE-* (Phase 4 cumulative, retry / classify / mask / doctor diagnostic + sync-diagnostic.test.sh)
+- **subagent-driven N=28 of 28 cycle** — Sprint 4 全 cycle पूर्ण, LEARN#7 5-layer formula × 4 phases
+- [Release v0.9.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.9.0) — `kioku-wiki-0.9.0.mcpb` attached
+
 ### 2026-05-13 — v0.8.0: "KIOKU खोलें और देखें कि आपकी memory कैसी दिखती है" — HTML Visualizer β (Sprint 3 पूर्ण)
 
 v0.8.0 **Sprint 3 (価値の可視化) पूर्ण होने** को mark करता है। पहला release जहाँ KIOKU अपना value Obsidian के बिना दिखा सकता है — generated HTML को किसी भी browser में drag-and-drop करें और अपना second brain देखें।
