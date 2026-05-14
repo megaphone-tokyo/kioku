@@ -465,6 +465,40 @@ If you find a security issue, please report it via [SECURITY.md](SECURITY.md) �
 
 ## Changelog
 
+### 2026-05-15 — v0.9.0: "Open your wiki in a browser, search with Claude, even from your phone" — Sprint 4 完走 (4 pillar: Shell + Search + Mobile + Sync polish)
+
+v0.9.0 ships **Sprint 4 全 phase 完走** — Sprint 3 (v0.8.0 Visualizer β) で「過去が見える」が揃った上で、Sprint 4 は **「使いたい時に使える体験」を 4 軸** で揃える。「Obsidian を起動せずブラウザで Wiki を一望」「ブラウザで keyword 検索 → Claude で深掘り」「スマホで Wiki を読める」「Git push が静かに失敗しない」 — この 4 つの疑問に 3 日間 (5/13–5/15) で 4 phase land。
+
+KIOKU positioning が **"Hardened LLM Wiki for Professionals + Claude-augmented Search + Mobile responsive + Sync polished"** の 4 pillar narrative に確立。Path C+β progress 70% → 100% 達成、Sprint 4 全 cycle 完走 marker。
+
+- **Phase 1 (5/13) — Web UI shell + Bases dashboard renderer** ("Obsidian なしで Wiki を一望"):
+  - `kioku_generate_viz mode=shell` で **8-tab self-contained HTML** を出力 ([Dashboard] [Overview] [Timeline] [Diff] [Lineage] [Search] [Navigation] [Wikilink])
+  - **Bases dashboard renderer** — `wiki/meta/*.base` を Node stdlib のみで parse、Obsidian Bases plugin の view を Obsidian なしで再現 (Hot Cache / Active Projects / Concepts / Decisions など)
+  - **Path C+β 設計境界**: editor は作らない (Monaco / CodeMirror 全部 forbidden keyword)、新規ページ作成 UI なし、外部 CDN / fetch / WebSocket 0、Canvas alternative 外。Wiki を**書く**ツールは Obsidian / VS Code に任せ、KIOKU は **Markdown 解析プラットフォーム** に徹する分業
+  - 8 タブの placeholder で「Phase 2 で実装予定」label — 後から追加する shape を最初に固定して、ユーザーの URL `#tab=...` を将来 stable に
+- **Phase 2 (5/14) — Claude-augmented Search** ("ブラウザで keyword → Claude で深掘り"):
+  - `kioku_search` に **`intent` param** + `discoverQueries` 3→7 source 拡張 (LLM が「何を探しているか」を伝えて snippet 精度向上)
+  - shell **Search tab UI** — **Tier 1 offline filter** (precomputed JSON inline、HTTP サーバ不要、CSRF / port 衝突 / CORS 攻撃面 全 0)
+  - **Tier 2 deep-link** "Claude で深掘り検索" — Tier 1 で足りない時 1 click で Claude session 起動、Claude が KIOKU MCP tool を叩いて深掘り回答
+  - Visualizer β **URL fragment `#q=...`** → graph node highlight 連動 (shell Search tab から "view in graph" deep-link)
+  - **Option C 採用 meeting** (6 role) で「localhost HTTP サーバ立てない」を意図的決定 — Hardened LLM Wiki positioning と整合、攻撃面追加なし
+- **Phase 3 (5/14 夜) — Mobile responsive** ("スマホで Wiki を読みたい"):
+  - shell + viz **responsive CSS + hamburger menu** + tap target 44pt+ (iOS Safari + Android Chrome real device verified)
+  - **Tier 2 Mobile deep-link** — `claude://` URI scheme + 1.5s timeout + `claude.ai` web fallback (Claude モバイルアプリ未 install でも graceful degrade)
+  - iOS auto-zoom 防止 16px font-size + virtual keyboard scroll 対応
+  - **Mobile simplified view** (`renderMobileFallback` textContent only) + **300KB performance budget guard** — 大きな graph は scroll listview に degrade
+  - CSP `navigate-to` policy で `claude://` URI scheme 許可、他 URI scheme は blocked
+- **Phase 4 (5/15) — Sync polish** ("Git push が静かに失敗しない"):
+  - `sync-vault.mjs` **Git push retry queue** — network 一時失敗を 3 回 exponential backoff + persistent queue で次回起動時 resume
+  - **`classifyGitError`** — push failure を 5 category 分類 (network / auth / conflict / quota / unknown)、user-facing message + recovery hint
+  - **`maskCredentials`** — error message から token / password / SSH key path を redact、log を共有しても秘密が漏れない
+  - `doctor.sh` **sync state diagnostic** (`check_sync_state`) — `git status` + `git log @{u}..` を read-only audit、retry queue 残件を visualize
+  - 44 件新規 BLUE-* test (Phase 4 累計、retry / classify / mask / doctor diagnostic + sync-diagnostic.test.sh)
+- **Sprint 3 + Sprint 4 全 phase 累積 stats** — Sprint 3 (4 phase) + Sprint 4 (4 phase × 15 sub-PR) = **8 phase / ~19 sub-PR を 4 月後半～5 月中旬の 3 週間** で land、Path C+β 70% → 100% completion
+- **Hardened 設計契約 4 phase 通底** — offline-first / textContent only / 外部依存ゼロ / 攻撃面追加ゼロ、を 4 phase ずっと崩さない (Phase 2 Search の Option C / Phase 3 Mobile の textContent only / Phase 4 Sync の credential masking で連続して効いた)
+- **subagent-driven N=28 of 28 cycle** — Sprint 4 全 cycle で subagent-driven development pattern (LEARN#7 中規模 feature の 5 層 formula) を 4 phase × 4 cycle 連続適用、累計 N=28
+- [Release v0.9.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.9.0) — `kioku-wiki-0.9.0.mcpb` attached
+
 ### 2026-05-13 — v0.8.0: "Open KIOKU and see what your memory looks like" — HTML Visualizer β (Sprint 3 完走)
 
 v0.8.0 ships **Sprint 3 (価値の可視化) completion** — Sprint 1 (信頼性) と Sprint 2 (記憶品質) で 「自分の KIOKU は動いてる? Wiki は腐ってない?」 に答える土台ができた上で、Sprint 3 は **「自分の記憶がどう育っているか」 を 5 秒で見せる HTML Visualizer β** を提供する。Obsidian なしで開ける self-contained HTML として、`kioku_generate_viz` MCP tool が 4 view (Overview / Timeline / Diff / Lineage) を 1 ファイルに包む。

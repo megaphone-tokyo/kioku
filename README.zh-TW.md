@@ -331,6 +331,19 @@ KIOKU 是一個存取**所有 Claude Code 工作階段 I/O** 的 Hook 系統。
 
 ## 更新歷史
 
+### 2026-05-15 — v0.9.0：「在瀏覽器裡打開 wiki，用 Claude 搜尋，手機也能用」— Sprint 4 完成 (4 pillar: Shell + Search + Mobile + Sync polish)
+
+v0.9.0 是 **Sprint 4 全 phase 完走** marker。4 pillar narrative：**Hardened LLM Wiki for Professionals + Claude-augmented Search + Mobile responsive + Sync polished**。Path C+β progress 70% → 100% 達成，Sprint 4 全 cycle completion marker。
+
+- **Phase 1 (Web UI shell + Bases dashboard)**：`kioku_generate_viz mode=shell` 輸出 8-tab self-contained HTML，Bases dashboard renderer（僅用 Node stdlib 解析 `.base`），Path C+β design boundary（無 editor、無 external CDN、無 fetch）
+- **Phase 2 (Claude-augmented Search)**：`kioku_search` 加入 `intent` param + discoverQueries 3→7 sources，shell Search tab 含 Tier 1 offline filter + Tier 2「用 Claude 深入搜尋」deep-link，attack surface 0（無 HTTP server）
+- **Phase 3 (Mobile responsive)**：shell + viz responsive CSS + 漢堡選單 + tap target 44pt+，Tier 2 Mobile deep-link `claude://` URI + 1.5s timeout + claude.ai fallback，Mobile simplified view（textContent only）+ 300KB performance budget
+- **Phase 4 (Sync polish)**：`sync-vault.mjs` Git push retry queue + exponential backoff + persistent resume，`classifyGitError`（5 categories），`maskCredentials`（token/SSH redact），`doctor.sh` sync state diagnostic
+- **Hardened design contract**：offline-first / textContent only / 0 external deps / 0 added attack surface — 4 phase 一以貫之
+- **Tests**：44 個新增 BLUE-*（Phase 4 累計，retry / classify / mask / doctor diagnostic + sync-diagnostic.test.sh）
+- **subagent-driven N=28 of 28 cycle** — Sprint 4 全 cycle 完成，LEARN#7 5-layer formula × 4 phases
+- [Release v0.9.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.9.0) — `kioku-wiki-0.9.0.mcpb` attached
+
 ### 2026-05-13 — v0.8.0：「打開 KIOKU 看看你的記憶長什麼樣」— HTML Visualizer β (Sprint 3 完成)
 
 v0.8.0 標記著 **Sprint 3 (価値の可視化) 完成**。KIOKU 首次能夠不需 Obsidian 展示價值 — 將生成的 HTML 拖入任何 browser，即可看到你的 second brain。
