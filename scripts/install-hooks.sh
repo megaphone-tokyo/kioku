@@ -26,6 +26,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 HOOK_ABS="$(cd "${SCRIPT_DIR}/.." && pwd)/hooks/session-logger.mjs"
 INJECTOR_ABS="$(cd "${SCRIPT_DIR}/.." && pwd)/hooks/wiki-context-injector.mjs"
+SYNC_VAULT_ABS="$(cd "${SCRIPT_DIR}/.." && pwd)/hooks/sync-vault.mjs"
 
 # -----------------------------------------------------------------------------
 # 引数パース
@@ -112,6 +113,10 @@ if [[ ! -f "${INJECTOR_ABS}" ]]; then
   WARNINGS+=("Wiki context injector not found at expected path: ${INJECTOR_ABS}")
 fi
 
+if [[ ! -f "${SYNC_VAULT_ABS}" ]]; then
+  WARNINGS+=("Sync vault helper not found at expected path: ${SYNC_VAULT_ABS}")
+fi
+
 # -----------------------------------------------------------------------------
 # JSON スニペット生成関数 (stdout / --apply 両方で使う)
 #
@@ -127,7 +132,7 @@ emit_snippet_json() {
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"${OBSIDIAN_VAULT}\" && git pull --rebase --quiet 2>/dev/null || true"
+            "command": "OBSIDIAN_VAULT=\"${OBSIDIAN_VAULT}\" node '${SYNC_VAULT_ABS}' --pull-and-retry"
           }
         ]
       },
@@ -194,7 +199,7 @@ emit_snippet_json() {
         "hooks": [
           {
             "type": "command",
-            "command": "[ \"\${KIOKU_NO_LOG:-0}\" = \"1\" ] || { cd \"${OBSIDIAN_VAULT}\" && grep -q '^session-logs/' .gitignore 2>/dev/null && git symbolic-ref -q HEAD >/dev/null 2>&1 && git add wiki/ raw-sources/ templates/ CLAUDE.md 2>/dev/null && (git diff --cached --quiet || (git commit -m \"auto: wiki update \$(date +%Y%m%d-%H%M)\" --quiet && git push --quiet)) 2>/dev/null; } || true"
+            "command": "OBSIDIAN_VAULT=\"${OBSIDIAN_VAULT}\" node '${SYNC_VAULT_ABS}' --push"
           }
         ]
       }
@@ -310,7 +315,7 @@ apply_merge() {
   rm -f "${snippet_file}"
 
   # VULN-014: Hook スクリプトのパーミッションを制御 (所有者のみ書き込み可能)
-  for hook_file in "${HOOK_ABS}" "${INJECTOR_ABS}"; do
+  for hook_file in "${HOOK_ABS}" "${INJECTOR_ABS}" "${SYNC_VAULT_ABS}"; do
     if [[ -f "${hook_file}" ]]; then
       chmod 755 "${hook_file}"
       echo "  chmod 755 ${hook_file}"
@@ -353,6 +358,7 @@ cat <<EOF
 #   OBSIDIAN_VAULT  = ${OBSIDIAN_VAULT}
 #   hook script     = ${HOOK_ABS}
 #   wiki injector   = ${INJECTOR_ABS}
+#   sync vault      = ${SYNC_VAULT_ABS}
 #
 EOF
 
@@ -368,18 +374,24 @@ fi
 
 cat <<'EOF'
 # Design notes (important):
-#   - SessionStart chains two commands: first 'git pull --rebase' against the
-#     Vault repository, then wiki-context-injector.mjs which outputs
-#     { "additionalContext": ... } containing wiki/index.md (+ wiki/hot.md
-#     if present) so Claude picks up the knowledge base automatically at
-#     session start. CLAUDE_HOOK_EVENT=SessionStart is exported so the
-#     injector branches correctly even if the stdin JSON path is unused.
+#   - SessionStart chains two commands: first sync-vault.mjs --pull-and-retry
+#     runs 'git pull --rebase' against the Vault repository and drains any
+#     pending retry queue (Sprint 4 Phase 4 PR A4); then
+#     wiki-context-injector.mjs outputs { "additionalContext": ... } containing
+#     wiki/index.md (+ wiki/hot.md if present) so Claude picks up the
+#     knowledge base automatically at session start. CLAUDE_HOOK_EVENT=
+#     SessionStart is exported so the injector branches correctly even if the
+#     stdin JSON path is unused.
 #   - PostCompact (v0.5.1 Phase B) invokes the same injector with
 #     CLAUDE_HOOK_EVENT=PostCompact, which injects ONLY wiki/hot.md. This
 #     restores the short hand-off context after Claude Code compacts the
 #     conversation. If wiki/hot.md is absent, the injector silently no-ops.
 #   - SessionEnd runs two chained commands: first session-logger.mjs appends
-#     the session summary, then 'git add / commit / push' syncs wiki changes.
+#     the session summary, then sync-vault.mjs --push stages wiki/,
+#     raw-sources/, templates/, CLAUDE.md, commits if anything is staged, and
+#     pushes. On push failure the helper records a masked entry in
+#     $OBSIDIAN_VAULT/.kioku-sync-retry.json which the next SessionStart drains
+#     automatically.
 #   - Normal coding sessions do NOT trigger a push because Hook only writes
 #     to session-logs/, which is gitignored. You'll only see commits after
 #     running the weekly Ingest command or manually editing wiki/ files.

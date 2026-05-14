@@ -1,0 +1,1044 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<!-- Sprint 4 Phase 3 PR B3: CSP navigate-to policy (plan 26051405 §「PR B3 セキュリティ contract」L314-318)
+     Tier 2 Mobile deep-link で window.location.href へ代入する scheme/host を claude: + https://claude.ai のみに pin。
+     navigate-to は CSP3 draft directive (現状 browser support 限定的) だが forward-compat hardening として宣言、
+     JS-side でも openTier2Search 内で whitelist 検証する 2 段防御 design。 -->
+<meta http-equiv="Content-Security-Policy" content="navigate-to 'self' claude: https://claude.ai">
+<title>KIOKU Web UI — Path C+β v0.9</title>
+<style>
+:root {
+  --bg: #0d0f12;
+  --bg-soft: #161b22;
+  --fg: #e6edf3;
+  --accent: #58a6ff;
+  --accent-soft: rgba(88, 166, 255, 0.15);
+  --muted: #7d8590;
+  --border: #30363d;
+  --warning: #f0883e;
+  --danger: #ff7b72;
+  --success: #56d364;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", "Noto Sans CJK JP", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.shell-header {
+  padding: 14px 24px 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.shell-header h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+.shell-header .vault-name {
+  color: var(--muted);
+  font-size: 14px;
+  margin-left: 8px;
+}
+.shell-header .meta-line {
+  color: var(--muted);
+  font-size: 12px;
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.shell-header .meta-line strong { color: var(--fg); }
+.shell-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+  flex-wrap: wrap;
+}
+.tab {
+  position: relative;
+  padding: 9px 14px;
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-family: inherit;
+  border-bottom: 2px solid transparent;
+  transition: color 0.08s, border-color 0.08s;
+}
+.tab:hover { color: var(--fg); }
+.tab.active { color: var(--fg); border-bottom-color: var(--accent); }
+.tab.disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.tab .gate-pill {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 9px;
+  background: var(--border);
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.tab-content {
+  padding: 20px 24px;
+  min-height: 320px;
+}
+.tab-content[hidden] { display: none; }
+.dashboard-view {
+  margin-bottom: 28px;
+  padding: 14px 16px;
+  background: var(--bg-soft);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.dashboard-view h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.dashboard-view h4 {
+  margin: 14px 0 6px;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 500;
+}
+.dashboard-view table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.dashboard-view th,
+.dashboard-view td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.dashboard-view th {
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.dashboard-view tbody tr:last-child td { border-bottom: 0; }
+.dashboard-view ul {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+}
+.dashboard-view li { padding: 2px 0; }
+.dashboard-view .empty-note {
+  color: var(--muted);
+  font-style: italic;
+  font-size: 12px;
+}
+.dashboard-warnings {
+  margin-top: 16px;
+  padding: 10px 12px;
+  background: rgba(240, 136, 62, 0.1);
+  border-left: 3px solid var(--warning);
+  border-radius: 4px;
+  font-size: 12px;
+}
+.dashboard-error {
+  padding: 14px;
+  background: rgba(255, 123, 114, 0.1);
+  border-left: 3px solid var(--danger);
+  border-radius: 4px;
+}
+.viz-stub {
+  padding: 14px 18px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 14px;
+}
+.viz-stub h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.viz-stub p, .viz-stub li {
+  margin: 4px 0;
+  font-size: 13px;
+  color: var(--fg);
+}
+.viz-stub .muted { color: var(--muted); }
+.placeholder-note {
+  padding: 14px;
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+.search-tab-hint {
+  padding: 12px 14px;
+  background: var(--bg-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.search-tab-hint strong { color: var(--fg); }
+.search-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.search-controls input[type="search"] {
+  flex: 1 1 240px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: var(--fg);
+  font: inherit;
+  font-size: 13px;
+}
+.search-controls input[type="search"]:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: 0;
+  border-color: var(--accent);
+}
+.search-controls select {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+}
+.search-query-block {
+  margin-bottom: 18px;
+  padding: 12px 14px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.search-query-block h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.search-query-block .mode-pill {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  background: var(--border);
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 9px;
+}
+.search-result-item {
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  background: var(--bg);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.search-result-item strong { color: var(--fg); font-size: 13px; }
+.search-result-item .rel { color: var(--muted); margin-left: 6px; }
+.search-result-item p {
+  margin: 4px 0 0;
+  color: var(--fg);
+  line-height: 1.45;
+  word-break: break-word;
+}
+.search-empty-note {
+  color: var(--muted);
+  font-style: italic;
+  font-size: 12px;
+  padding: 12px 0;
+}
+.search-deepdive {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--bg-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.search-deepdive code {
+  background: var(--border);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--fg);
+}
+.search-view-graph {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  text-decoration: none;
+}
+.search-view-graph:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+
+/* ---- Mobile responsive (Sprint 4 Phase 3 PR A3) ----
+   plan 26051405 §「PR A3」L120-235 canonical impl spec
+   - Breakpoint: < 768px (max-width: 767px)
+   - Layout: horizontal tab nav → hamburger menu + vertical stack overlay
+   - Touch UX: tap target 44pt+ enforcement on interactive elements
+   - Class names use kioku- prefix per plan, mapped onto existing shell tabs */
+.kioku-mobile-menu-button {
+  display: none;
+  background: var(--bg-soft);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 18px;
+  cursor: pointer;
+}
+@media (max-width: 767px) {
+  .shell-tabs {
+    display: none; /* hamburger menu に切替 */
+  }
+  .kioku-mobile-menu-button {
+    display: block;
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    min-width: 44px;
+    min-height: 44px;
+    z-index: 110;
+  }
+  .tab {
+    padding: 1rem 0.5rem; /* tap target 44pt+ */
+    min-height: 44px;
+  }
+  .shell-tabs.mobile-open {
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--bg);
+    z-index: 100;
+    padding: 56px 16px 16px;
+    overflow-y: auto;
+  }
+  .shell-tabs.mobile-open .tab {
+    width: 100%;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .shell-header {
+    padding: 10px 16px 8px;
+  }
+  .tab-content {
+    padding: 14px 16px;
+  }
+  /* ---- Sprint 4 Phase 3 PR B3: Search tab Mobile UX ----
+     plan 26051405 §「PR B3」L276-289 canonical impl spec
+     - kioku-search-input: font-size 16px (iOS Safari < 16px で input focus 時 auto-zoom 発生、UX 阻害)
+     - kioku-search-results: max-height + overflow-y + -webkit-overflow-scrolling
+       (virtual keyboard 開時にも viewport 内に収まり momentum scroll を維持) */
+  .kioku-search-input,
+  #kioku-search-input {
+    font-size: 16px; /* iOS Safari auto-zoom 防止 (16px 以上必須) */
+  }
+  .kioku-search-results,
+  #kioku-search-results {
+    max-height: calc(100vh - 200px); /* virtual keyboard 開時の viewport 縮小に追随 */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch; /* iOS momentum scroll */
+  }
+  .kioku-tier2-search-btn {
+    width: 100%;
+    margin-top: 12px;
+    min-height: 44px; /* tap target */
+  }
+}
+/* tap target 44pt+ enforcement (全 interactive element、breakpoint 外でも適用)
+   plan 26051405 §PR A3 line 169-172 */
+button, a, input, select {
+  min-width: 44px;
+  min-height: 44px;
+}
+/* ---- Sprint 4 Phase 3 PR B3: Tier 2 deep-link button (desktop でも表示) ---- */
+.kioku-tier2-search-btn {
+  margin-top: 10px;
+  padding: 8px 16px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+.kioku-tier2-search-btn:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+.kioku-tier2-search-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+</style>
+</head>
+<body>
+<header class="shell-header">
+  <div>
+    <h1>KIOKU Web UI <span class="vault-name" id="vault-name"></span></h1>
+    <div class="meta-line" id="meta-line"></div>
+  </div>
+</header>
+<button class="kioku-mobile-menu-button" id="kioku-mobile-menu-button" type="button" aria-label="Toggle menu" aria-expanded="false" aria-controls="shell-tabs">☰</button>
+<nav class="shell-tabs" id="shell-tabs" aria-label="KIOKU shell tabs"></nav>
+<main id="shell-main">
+  <section class="tab-content" id="tab-dashboard"></section>
+  <section class="tab-content" id="tab-overview" hidden></section>
+  <section class="tab-content" id="tab-timeline" hidden></section>
+  <section class="tab-content" id="tab-diff" hidden></section>
+  <section class="tab-content" id="tab-lineage" hidden></section>
+  <section class="tab-content" id="tab-search" hidden></section>
+</main>
+<!--
+  Visualizer β body content from viz-template.html is parked inside the
+  template element below. <template> content is parsed but not rendered and
+  its scripts are not executed automatically — this lets us stash the full
+  Sprint 3 UI for Phase 1.5 / PR C activation without colliding with shell
+  DOM ids or running viz scripts at shell boot.
+-->
+<template id="kioku-viz-body">__KIOKU_VIZ_INLINE__</template>
+<script id="kioku-shell-data" type="application/json">__KIOKU_SHELL_DATA__</script>
+<script>
+(() => {
+  'use strict';
+
+  const dataNode = document.getElementById('kioku-shell-data');
+  if (!dataNode) return;
+  let data;
+  try {
+    data = JSON.parse(dataNode.textContent);
+  } catch (err) {
+    document.body.appendChild(buildErrorBanner('Shell data parse error: ' + err.message));
+    return;
+  }
+
+  // ---- Header --------------------------------------------------------------
+  document.getElementById('vault-name').textContent = data.shell_meta.vault_name || '';
+  const meta = document.getElementById('meta-line');
+  appendMetaItem(meta, 'mode', data.shell_meta.mode);
+  appendMetaItem(meta, 'generated', shortTimestamp(data.shell_meta.generated_at));
+  appendMetaItem(meta, 'shell schema', String(data.schema_version));
+  if (data.visualizer && typeof data.visualizer.schema_version === 'number') {
+    appendMetaItem(meta, 'viz schema', String(data.visualizer.schema_version));
+  }
+  if (data.visualizer && typeof data.visualizer.commits_total === 'number') {
+    appendMetaItem(meta, 'commits', String(data.visualizer.commits_total));
+  }
+
+  // ---- Tabs ----------------------------------------------------------------
+  const tabsEl = document.getElementById('shell-tabs');
+  for (const tab of data.shell_meta.tabs) {
+    const btn = document.createElement('button');
+    btn.className = 'tab' + (tab.enabled ? '' : ' disabled');
+    btn.type = 'button';
+    btn.dataset.tabId = tab.id;
+    btn.textContent = tab.label;
+    if (!tab.enabled && tab.gate) {
+      const pill = document.createElement('span');
+      pill.className = 'gate-pill';
+      pill.textContent = tab.gate + ' で実装予定';
+      btn.appendChild(pill);
+      btn.title = tab.gate + ' で実装予定';
+      btn.disabled = true;
+    } else {
+      btn.addEventListener('click', () => activateTab(tab.id));
+    }
+    tabsEl.appendChild(btn);
+  }
+
+  // ---- Hamburger menu (Sprint 4 Phase 3 PR A3、Mobile responsive)
+  // plan 26051405 §「PR A3」L120-235、< 768px breakpoint で hamburger menu toggle
+  const hamburgerBtn = document.getElementById('kioku-mobile-menu-button');
+  if (hamburgerBtn) {
+    hamburgerBtn.addEventListener('click', () => {
+      const isOpen = tabsEl.classList.toggle('mobile-open');
+      hamburgerBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    });
+  }
+
+  // ---- Render each enabled tab --------------------------------------------
+  renderDashboard(data.dashboard);
+  renderOverview(data.visualizer);
+  renderTimeline(data.visualizer);
+  renderDiff(data.visualizer);
+  renderLineage(data.visualizer);
+  renderSearch(data.search_index);
+
+  activateTab(data.shell_meta.default_tab || 'dashboard');
+
+  // ---- helpers -------------------------------------------------------------
+
+  function activateTab(id) {
+    document.querySelectorAll('.tab').forEach((b) => {
+      b.classList.toggle('active', b.dataset.tabId === id);
+    });
+    document.querySelectorAll('.tab-content').forEach((s) => {
+      s.hidden = s.id !== 'tab-' + id;
+    });
+    // Mobile: tab 選択時 hamburger menu を閉じる + aria-expanded 同期 (PR A3)
+    if (tabsEl.classList.contains('mobile-open')) {
+      tabsEl.classList.remove('mobile-open');
+      if (hamburgerBtn) hamburgerBtn.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  function appendMetaItem(parent, label, value) {
+    const span = document.createElement('span');
+    span.textContent = label + ': ';
+    const strong = document.createElement('strong');
+    strong.textContent = value;
+    span.appendChild(strong);
+    parent.appendChild(span);
+  }
+
+  function shortTimestamp(iso) {
+    if (typeof iso !== 'string') return '';
+    return iso.replace('T', ' ').replace(/\..*$/, ' UTC');
+  }
+
+  function buildErrorBanner(message) {
+    const div = document.createElement('div');
+    div.className = 'dashboard-error';
+    div.textContent = message;
+    return div;
+  }
+
+  // ---- Dashboard rendering (PR A renderBases output) ----------------------
+  function renderDashboard(dashboard) {
+    const root = document.getElementById('tab-dashboard');
+    clearChildren(root);
+    if (!dashboard) {
+      root.appendChild(buildErrorBanner('Dashboard data is missing.'));
+      return;
+    }
+    if (dashboard.base_error) {
+      const err = buildErrorBanner('Dashboard error: ' + dashboard.base_error);
+      root.appendChild(err);
+      return;
+    }
+    if (!Array.isArray(dashboard.views) || dashboard.views.length === 0) {
+      const note = document.createElement('div');
+      note.className = 'placeholder-note';
+      note.textContent = 'Dashboard has no views yet. Configure ' + (dashboard.base_source || 'wiki/meta/dashboard.base') + '.';
+      root.appendChild(note);
+      return;
+    }
+    for (const view of dashboard.views) {
+      root.appendChild(renderDashboardView(view));
+    }
+    if (Array.isArray(dashboard.warnings) && dashboard.warnings.length > 0) {
+      const w = document.createElement('div');
+      w.className = 'dashboard-warnings';
+      const head = document.createElement('strong');
+      head.textContent = 'Warnings (' + dashboard.warnings.length + '): ';
+      w.appendChild(head);
+      const text = document.createTextNode(dashboard.warnings.join('; '));
+      w.appendChild(text);
+      root.appendChild(w);
+    }
+  }
+
+  function renderDashboardView(view) {
+    const block = document.createElement('div');
+    block.className = 'dashboard-view';
+    const h = document.createElement('h3');
+    h.textContent = view.name || '(unnamed view)';
+    block.appendChild(h);
+    if (Array.isArray(view.groups) && view.groups.length > 0) {
+      for (const g of view.groups) {
+        const gh = document.createElement('h4');
+        gh.textContent = g.key + ' (' + (Array.isArray(g.pages) ? g.pages.length : 0) + ')';
+        block.appendChild(gh);
+        block.appendChild(renderPagesByType(g.pages, view.type));
+      }
+    } else {
+      block.appendChild(renderPagesByType(view.pages, view.type));
+    }
+    return block;
+  }
+
+  function renderPagesByType(pages, type) {
+    const safePages = Array.isArray(pages) ? pages : [];
+    if (safePages.length === 0) {
+      const note = document.createElement('div');
+      note.className = 'empty-note';
+      note.textContent = '— (no pages matched)';
+      return note;
+    }
+    if (type === 'table') return renderPagesTable(safePages);
+    return renderPagesList(safePages);
+  }
+
+  function renderPagesTable(pages) {
+    const t = document.createElement('table');
+    const thead = document.createElement('thead');
+    const headRow = document.createElement('tr');
+    ['Name', 'Type', 'Status', 'Updated', 'Days'].forEach((h) => {
+      const th = document.createElement('th');
+      th.textContent = h;
+      headRow.appendChild(th);
+    });
+    thead.appendChild(headRow);
+    t.appendChild(thead);
+    const tb = document.createElement('tbody');
+    for (const p of pages) {
+      const fm = p.frontmatter || {};
+      const computed = p.computed || {};
+      const row = [
+        p.name || '',
+        fm.type || '',
+        fm.status || '',
+        fm.updated || '',
+        computed.age_days != null ? String(computed.age_days) : '',
+      ];
+      const tr = document.createElement('tr');
+      for (const cell of row) {
+        const td = document.createElement('td');
+        td.textContent = cell;
+        tr.appendChild(td);
+      }
+      tb.appendChild(tr);
+    }
+    t.appendChild(tb);
+    return t;
+  }
+
+  function renderPagesList(pages) {
+    const ul = document.createElement('ul');
+    for (const p of pages) {
+      const li = document.createElement('li');
+      const fm = p.frontmatter || {};
+      let text = p.name || '(unnamed)';
+      if (fm.type) text += ' [' + fm.type + ']';
+      if (fm.status) text += ' — ' + fm.status;
+      li.textContent = text;
+      ul.appendChild(li);
+    }
+    return ul;
+  }
+
+  function clearChildren(node) {
+    while (node.firstChild) node.removeChild(node.firstChild);
+  }
+
+  // ---- Visualizer β tab stubs ---------------------------------------------
+  // Phase 1 PR B: surface summary info from data.visualizer so users see live
+  // Sprint 3 data inside the shell. Full interactive UI is staged in PR C via
+  // the visualizer.mjs `mode` parameter (the viz body is parked in
+  // <template id="kioku-viz-body"> for future activation).
+
+  function renderOverview(viz) {
+    const root = document.getElementById('tab-overview');
+    clearChildren(root);
+    if (!viz) {
+      root.appendChild(buildErrorBanner('Visualizer data is missing.'));
+      return;
+    }
+    const card = document.createElement('div');
+    card.className = 'viz-stub';
+    const h = document.createElement('h3');
+    h.textContent = 'Overview — Visualizer β summary';
+    card.appendChild(h);
+    if (viz.first_view_error) {
+      const p = document.createElement('p');
+      p.className = 'muted';
+      p.textContent = 'first_view error: ' + viz.first_view_error;
+      card.appendChild(p);
+    }
+    const summary = viz.first_view && viz.first_view.summary ? viz.first_view.summary : null;
+    if (summary) {
+      const ul = document.createElement('ul');
+      const fields = ['total_pages', 'live_pages', 'orphan_pages', 'stale_pages'];
+      for (const f of fields) {
+        if (typeof summary[f] !== 'number') continue;
+        const li = document.createElement('li');
+        li.textContent = f + ': ' + summary[f];
+        ul.appendChild(li);
+      }
+      card.appendChild(ul);
+    } else {
+      const p = document.createElement('p');
+      p.className = 'muted';
+      p.textContent = 'No first_view summary available yet.';
+      card.appendChild(p);
+    }
+    root.appendChild(card);
+    appendVizFootnote(root);
+  }
+
+  function renderTimeline(viz) {
+    const root = document.getElementById('tab-timeline');
+    clearChildren(root);
+    if (!viz) {
+      root.appendChild(buildErrorBanner('Visualizer data is missing.'));
+      return;
+    }
+    const card = document.createElement('div');
+    card.className = 'viz-stub';
+    const h = document.createElement('h3');
+    h.textContent = 'Timeline — ' + (Array.isArray(viz.snapshots) ? viz.snapshots.length : 0) + ' commit(s)';
+    card.appendChild(h);
+    if (Array.isArray(viz.snapshots) && viz.snapshots.length > 0) {
+      const ul = document.createElement('ul');
+      for (const snap of viz.snapshots) {
+        const li = document.createElement('li');
+        const ts = snap.timestamp || '';
+        const subj = snap.subject || '';
+        li.textContent = (snap.shortSha || '????') + '  ' + ts + '  — ' + subj;
+        ul.appendChild(li);
+      }
+      card.appendChild(ul);
+    } else {
+      const p = document.createElement('p');
+      p.className = 'muted';
+      p.textContent = 'No snapshots available.';
+      card.appendChild(p);
+    }
+    root.appendChild(card);
+    appendVizFootnote(root);
+  }
+
+  function renderDiff(viz) {
+    const root = document.getElementById('tab-diff');
+    clearChildren(root);
+    const card = document.createElement('div');
+    card.className = 'viz-stub';
+    const h = document.createElement('h3');
+    h.textContent = 'Diff — Visualizer β summary';
+    card.appendChild(h);
+    const snapshots = (viz && Array.isArray(viz.snapshots)) ? viz.snapshots : [];
+    if (snapshots.length >= 2) {
+      const a = snapshots[snapshots.length - 1];
+      const b = snapshots[snapshots.length - 2];
+      const p = document.createElement('p');
+      p.textContent = 'Latest two snapshots: ' + (b.shortSha || '?') + ' → ' + (a.shortSha || '?');
+      card.appendChild(p);
+      const ap = Array.isArray(a.pages) ? a.pages.length : 0;
+      const bp = Array.isArray(b.pages) ? b.pages.length : 0;
+      const stat = document.createElement('p');
+      stat.className = 'muted';
+      stat.textContent = 'Page counts: ' + bp + ' → ' + ap + ' (Δ ' + (ap - bp) + ')';
+      card.appendChild(stat);
+    } else {
+      const p = document.createElement('p');
+      p.className = 'muted';
+      p.textContent = 'Diff needs at least 2 snapshots.';
+      card.appendChild(p);
+    }
+    root.appendChild(card);
+    appendVizFootnote(root);
+  }
+
+  function renderLineage(viz) {
+    const root = document.getElementById('tab-lineage');
+    clearChildren(root);
+    const card = document.createElement('div');
+    card.className = 'viz-stub';
+    const h = document.createElement('h3');
+    h.textContent = 'Lineage — Visualizer β summary';
+    card.appendChild(h);
+    if (viz && viz.lineage_error) {
+      const p = document.createElement('p');
+      p.className = 'muted';
+      p.textContent = 'lineage error: ' + viz.lineage_error;
+      card.appendChild(p);
+    }
+    const lineage = viz && viz.lineage ? viz.lineage : null;
+    if (lineage && Array.isArray(lineage.nodes) && Array.isArray(lineage.edges)) {
+      const p1 = document.createElement('p');
+      p1.textContent = 'Nodes: ' + lineage.nodes.length + ', Edges: ' + lineage.edges.length;
+      card.appendChild(p1);
+      if (typeof lineage.truncated === 'boolean') {
+        const p2 = document.createElement('p');
+        p2.className = 'muted';
+        p2.textContent = 'truncated: ' + lineage.truncated;
+        card.appendChild(p2);
+      }
+    } else {
+      const p = document.createElement('p');
+      p.className = 'muted';
+      p.textContent = 'No lineage graph available.';
+      card.appendChild(p);
+    }
+    root.appendChild(card);
+    appendVizFootnote(root);
+  }
+
+  function appendVizFootnote(root) {
+    const note = document.createElement('p');
+    note.className = 'placeholder-note';
+    note.textContent = 'Full interactive Visualizer β UI is staged for PR C (mode param in visualizer.mjs).';
+    root.appendChild(note);
+  }
+
+  // ---- Sprint 4 Phase 3 PR B3: Tier 2 Mobile deep-link helpers ----
+  // plan 26051405 §「PR B3」L240-274 canonical impl spec
+  //
+  // openTier2Search(query):
+  //   - Mobile (< 768px): claude:// URI scheme attempt + 1.5s timeout で claude.ai/new fallback。
+  //     visibility change (app 起動成功 = tab hidden) を観測したら timeout cancel し fallback 抑止。
+  //   - Desktop: copyMcpToolPrompt 経由で MCP tool 呼び出し prompt を clipboard へ転送。
+  //
+  // Security contract: window.location.href には claude:// + https://claude.ai のみ assign。
+  //                    user input (query) は encodeURIComponent 経由で escape。
+  //                    CSP navigate-to directive (head の meta) と JS-side whitelist で 2 段防御。
+  function openTier2Search(query) {
+    const encoded = encodeURIComponent(typeof query === 'string' ? query : '');
+    const isMobile = typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(max-width: 767px)').matches;
+    if (isMobile) {
+      const claudeAppUrl = 'claude://chat?prompt=Search%20KIOKU%20for:%20' + encoded;
+      const claudeWebUrl = 'https://claude.ai/new?q=Search%20KIOKU%20for:%20' + encoded;
+      // 1.5s timeout で web fallback (URI scheme handler が無ければ web へ)
+      let timeoutId = setTimeout(function () {
+        window.location.href = claudeWebUrl;
+      }, 1500);
+      // visibility change で timeout cancel (claude:// app 起動成功時)
+      const onVisChange = function () {
+        if (document.hidden) {
+          clearTimeout(timeoutId);
+          document.removeEventListener('visibilitychange', onVisChange);
+        }
+      };
+      document.addEventListener('visibilitychange', onVisChange);
+      window.location.href = claudeAppUrl;
+    } else {
+      copyMcpToolPrompt(query);
+    }
+  }
+
+  // Desktop path: MCP tool 呼び出し prompt を clipboard へ転送。
+  // navigator.clipboard が未対応な場合は graceful degrade (silent skip)。
+  function copyMcpToolPrompt(query) {
+    const safeQuery = typeof query === 'string' ? query : '';
+    const prompt = 'kioku_search query: ' + safeQuery;
+    if (typeof navigator !== 'undefined' &&
+        navigator.clipboard &&
+        typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(prompt).catch(function () {
+        // clipboard 権限 deny 等 → graceful degrade、UI 上は無反応で OK (description text が代替案内)
+      });
+    }
+  }
+
+  // ---- Search tab (Phase 2 Tier 1: shell offline quick filter; Tier 2: Claude conversation deep-dive) ----
+  function renderSearch(searchIndex) {
+    const root = document.getElementById('tab-search');
+    clearChildren(root);
+    const hint = document.createElement('div');
+    hint.className = 'search-tab-hint';
+    const hintStrong1 = document.createElement('strong');
+    hintStrong1.textContent = 'Tier 1: shell 単独 quick lookup';
+    hint.appendChild(hintStrong1);
+    hint.appendChild(document.createTextNode(' — 事前計算された候補から、入力中の文字でローカル絞り込み (offline)。'));
+    hint.appendChild(document.createElement('br'));
+    const hintStrong2 = document.createElement('strong');
+    hintStrong2.textContent = 'Tier 2: Claude conversation で深掘り';
+    hint.appendChild(hintStrong2);
+    hint.appendChild(document.createTextNode(' — free-text 検索や関連ページ探索は MCP tool '));
+    const hintCode = document.createElement('code');
+    hintCode.textContent = 'kioku_search';
+    hint.appendChild(hintCode);
+    hint.appendChild(document.createTextNode(' を Claude 会話から呼び出す。'));
+    root.appendChild(hint);
+
+    if (searchIndex && typeof searchIndex.error === 'string' && searchIndex.error.length > 0) {
+      const errorNote = document.createElement('div');
+      errorNote.className = 'search-empty-note';
+      errorNote.textContent = 'Search index build failed: ' + searchIndex.error;
+      root.appendChild(errorNote);
+      return;
+    }
+    if (!searchIndex || !Array.isArray(searchIndex.queries) || searchIndex.queries.length === 0) {
+      const note = document.createElement('div');
+      note.className = 'search-empty-note';
+      note.textContent = 'Search index is empty. Run kioku_generate_viz with mode="shell" on a vault with content.';
+      root.appendChild(note);
+      return;
+    }
+
+    const controls = document.createElement('div');
+    controls.className = 'search-controls';
+    const input = document.createElement('input');
+    input.type = 'search';
+    input.id = 'kioku-search-input';
+    // Sprint 4 Phase 3 PR B3: class 付与で Mobile media query (font-size 16px iOS auto-zoom 防止) 対象化
+    input.className = 'kioku-search-input';
+    input.placeholder = 'Quick filter (offline)。詳しくは Claude で深掘り';
+    input.setAttribute('autocomplete', 'off');
+    input.setAttribute('aria-label', 'Filter precomputed queries');
+    controls.appendChild(input);
+    // Mode selector is only meaningful when buildSearchIndex emitted queries
+    // tagged with multiple modes. In the current Tier 1 single-mode design
+    // (default 'hybrid'), every precomputed query carries the same mode, so
+    // the selector would be dead UI: picking 'lex' or 'vec' would always
+    // render "No queries match". Gate the selector on distinctModes.size > 1
+    // and skip the mode filter step in applyFilter when omitted.
+    const distinctModes = new Set(searchIndex.queries.map((q) => q.mode));
+    let modeSelect = null;
+    if (distinctModes.size > 1) {
+      modeSelect = document.createElement('select');
+      modeSelect.id = 'kioku-search-mode';
+      modeSelect.setAttribute('aria-label', 'Search mode filter');
+      const modes = [
+        { value: 'all', label: 'All modes' },
+        { value: 'lex', label: 'BM25 (lex)' },
+        { value: 'vec', label: 'Embedding (vec)' },
+        { value: 'hybrid', label: 'Hybrid' },
+      ];
+      for (const m of modes) {
+        // Only offer modes that are actually present in the precomputed data,
+        // plus the synthetic 'all' aggregate option.
+        if (m.value !== 'all' && !distinctModes.has(m.value)) continue;
+        const opt = document.createElement('option');
+        opt.value = m.value;
+        opt.textContent = m.label;
+        if (m.value === 'all') opt.selected = true;
+        modeSelect.appendChild(opt);
+      }
+      controls.appendChild(modeSelect);
+    }
+    root.appendChild(controls);
+
+    const resultsRoot = document.createElement('div');
+    resultsRoot.id = 'kioku-search-results';
+    // Sprint 4 Phase 3 PR B3: class 付与で Mobile scroll behavior (overflow-y / -webkit-overflow-scrolling) 対象化
+    resultsRoot.className = 'kioku-search-results';
+    resultsRoot.setAttribute('role', 'list');
+    root.appendChild(resultsRoot);
+
+    const deepDive = document.createElement('div');
+    deepDive.className = 'search-deepdive';
+    deepDive.appendChild(document.createTextNode('深掘り検索や全文検索が必要なときは、Claude conversation で '));
+    const ddCode = document.createElement('code');
+    ddCode.textContent = 'kioku_search';
+    deepDive.appendChild(ddCode);
+    deepDive.appendChild(document.createTextNode(' tool を呼び出してください (Tier 2、LLM-augmented)。'));
+    // Sprint 4 Phase 3 PR B3: Tier 2 Mobile deep-link button — Mobile では claude:// URI scheme 試行 + claude.ai web fallback、
+    //                         Desktop では clipboard へ MCP tool prompt を copy (copyMcpToolPrompt)、両 path で actionable 化。
+    //                         plan 26051405 §「PR B3」L240-274 canonical impl spec。
+    deepDive.appendChild(document.createElement('br'));
+    const tier2Btn = document.createElement('button');
+    tier2Btn.type = 'button';
+    tier2Btn.className = 'kioku-tier2-search-btn';
+    tier2Btn.textContent = 'Claude で深掘り検索';
+    tier2Btn.setAttribute('aria-label', 'Open current query in Claude conversation (Tier 2)');
+    tier2Btn.addEventListener('click', function () {
+      openTier2Search(input.value);
+    });
+    deepDive.appendChild(tier2Btn);
+    root.appendChild(deepDive);
+
+    function applyFilter() {
+      const filter = input.value.trim().toLowerCase();
+      const modeFilter = modeSelect ? modeSelect.value : 'all';
+      clearChildren(resultsRoot);
+      let renderedCount = 0;
+      for (const q of searchIndex.queries) {
+        if (modeSelect && modeFilter !== 'all' && q.mode !== modeFilter) continue;
+        if (filter && !q.query.toLowerCase().includes(filter)) continue;
+        const block = document.createElement('article');
+        block.className = 'search-query-block';
+        block.setAttribute('role', 'listitem');
+        const h = document.createElement('h3');
+        h.textContent = q.query;
+        const pill = document.createElement('span');
+        pill.className = 'mode-pill';
+        pill.textContent = q.mode || '';
+        h.appendChild(pill);
+        block.appendChild(h);
+        const results = Array.isArray(q.results) ? q.results : [];
+        if (results.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'search-empty-note';
+          empty.textContent = '(no results for this query)';
+          block.appendChild(empty);
+        } else {
+          for (const r of results.slice(0, 10)) {
+            const item = document.createElement('div');
+            item.className = 'search-result-item';
+            const titleEl = document.createElement('strong');
+            titleEl.textContent = r.title || '';
+            item.appendChild(titleEl);
+            if (r.rel) {
+              const relEl = document.createElement('span');
+              relEl.className = 'rel';
+              relEl.textContent = '— ' + r.rel;
+              item.appendChild(relEl);
+            }
+            if (r.snippet) {
+              const snipEl = document.createElement('p');
+              snipEl.textContent = r.snippet;
+              item.appendChild(snipEl);
+            }
+            // View in graph link — deep-link to snapshot HTML's URL fragment highlight (PR C2)
+            // Uses visualizer-graph.html as the target filename (separate snapshot mode output path).
+            // Convention: generate snapshot mode to visualizer-graph.html alongside the shell HTML.
+            const graphLink = document.createElement('a');
+            graphLink.className = 'search-view-graph';
+            graphLink.textContent = ' [view in graph]';
+            graphLink.href = 'visualizer-graph.html#q=' + encodeURIComponent(q.query);
+            item.appendChild(graphLink);
+            block.appendChild(item);
+          }
+        }
+        resultsRoot.appendChild(block);
+        renderedCount++;
+      }
+      if (renderedCount === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'search-empty-note';
+        empty.setAttribute('role', 'listitem');
+        empty.textContent = filter ? 'No queries match filter "' + filter + '".' : 'No queries match.';
+        resultsRoot.appendChild(empty);
+      }
+    }
+
+    let initialQuery = '';
+    try {
+      initialQuery = decodeURIComponent((window.location.hash || '').replace(/^#q=/, ''));
+    } catch (_) {
+      // Malformed URI fragment — degrade silently rather than crash the shell.
+    }
+    if (initialQuery) input.value = initialQuery;
+    input.addEventListener('input', applyFilter);
+    if (modeSelect) modeSelect.addEventListener('change', applyFilter);
+    applyFilter();
+  }
+})();
+</script>
+</body>
+</html>

@@ -31,6 +31,7 @@
     --node-removed: #ff6b6b;
     --panel: #171a21;
     --panel-edge: #262a33;
+    --highlight: #ff6b35;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; height: 100%; }
@@ -103,6 +104,15 @@
   svg.graph .node.modified circle { fill: var(--modified); }
   svg.graph .node text { fill: var(--muted); font-size: 10px; pointer-events: none; }
   svg.graph .node:hover text { fill: var(--fg); }
+  svg.graph .node.kioku-viz-highlighted circle {
+    stroke: var(--highlight);
+    stroke-width: 3;
+    filter: drop-shadow(0 0 4px var(--highlight));
+  }
+  svg.graph .node.kioku-viz-highlighted text {
+    fill: var(--highlight);
+    font-weight: 600;
+  }
 
   .legend { display: flex; gap: 12px; font-size: 11px; color: var(--muted); padding: 4px 12px; }
   .legend .chip { display: inline-flex; align-items: center; gap: 4px; }
@@ -622,6 +632,30 @@
     font-style: italic;
     padding: 8px 0;
   }
+
+  /* ---- Mobile responsive (Sprint 4 Phase 3 PR A3) ----
+     plan 26051405 §「PR A3」L181-202 canonical impl spec
+     - .visualizer-graph wraps SVG graph (existing .canvas-wrap), hidden on Mobile
+     - .visualizer-graph-mobile-fallback section displays simplified text view
+       (PR A3 では section 配置のみ、PR C3 で renderMobileFallback で content 注入) */
+  .visualizer-graph-mobile-fallback {
+    display: none;
+  }
+  @media (max-width: 767px) {
+    .visualizer-graph {
+      /* Mobile: simplified message + link to text list view (PR C3 で実装) */
+      display: none;
+    }
+    .visualizer-graph-mobile-fallback {
+      display: block;
+      padding: 2rem;
+      text-align: center;
+    }
+    .visualizer-graph-mobile-fallback p {
+      font-size: 1.1em;
+      color: var(--muted);
+    }
+  }
 </style>
 </head>
 <body>
@@ -637,6 +671,15 @@
   <button id="tab-diff" data-view="view-diff">Diff Viewer</button>
   <button id="tab-lineage" data-view="view-lineage">Lineage</button>
 </nav>
+
+<!-- Sprint 4 Phase 3 PR A3: Mobile fallback section (section 配置のみ).
+     Sprint 4 Phase 3 PR C3: content 注入を renderMobileFallback で実装、
+     placeholder <p> は JS が clearNode して page list を生成。
+     CSS @media (max-width: 767px) で .visualizer-graph を hide、
+     本 section を display: block にして simplified view へ誘導。 -->
+<section class="visualizer-graph-mobile-fallback" id="visualizer-graph-mobile-fallback" aria-label="Visualizer Mobile fallback">
+  <p>Loading simplified view…</p>
+</section>
 
 <main>
   <div id="warnings"></div>
@@ -1677,6 +1720,37 @@
     svg.appendChild(gNodes);
   }
 
+  // ───────────────────────── URL fragment search highlight (Sprint 4 Phase 2 PR C2) ─────────────────────────
+  // Clears prior .kioku-viz-highlighted, reads location.hash (#q=<query>), then re-applies the
+  // class to g.node whose text content (case-insensitive substring) matches the query.
+  // Idempotent across renderGraph re-render (nodes are recreated) AND across hashchange
+  // (existing highlights are cleared before re-application).
+  function applySearchHighlight(svg) {
+    if (!svg) return;
+    const previouslyHighlighted = svg.querySelectorAll('g.node.kioku-viz-highlighted');
+    for (const node of previouslyHighlighted) {
+      node.classList.remove('kioku-viz-highlighted');
+    }
+    const raw = String(location.hash || '');
+    if (raw.indexOf('#q=') !== 0) return;
+    let query;
+    try {
+      query = decodeURIComponent(raw.slice(3));
+    } catch (_e) {
+      return;
+    }
+    if (!query) return;
+    const needle = query.toLowerCase();
+    const nodes = svg.querySelectorAll('g.node');
+    for (const node of nodes) {
+      const labelEl = node.querySelector('text');
+      const label = labelEl ? (labelEl.textContent || '') : '';
+      if (label.toLowerCase().includes(needle)) {
+        node.classList.add('kioku-viz-highlighted');
+      }
+    }
+  }
+
   // ───────────────────────── View 1: Timeline Player ─────────────────────────
   const tpSvg = document.getElementById("tp-svg");
   const tpSlider = document.getElementById("tp-slider");
@@ -1698,6 +1772,7 @@
     function renderTimelineAt(idx) {
       const snap = ordered[idx];
       renderGraph(tpSvg, snap.pages, snap.links, null, function (node) { showTimelineNodeDetail(snap, node); });
+      applySearchHighlight(tpSvg);
       const date = new Date(snap.timestamp).toISOString().slice(0, 19).replace("T", " ");
       tpCounter.textContent = "[" + (idx + 1) + "/" + ordered.length + "]  " + date
         + "  pages=" + snap.pages.length + "  links=" + snap.links.length;
@@ -1855,6 +1930,7 @@
     renderGraph(dvSvg, after.pages, after.links, d, function (node) {
       showDiffNodeDetail(node, beforeMap.get(node.name), afterMap.get(node.name));
     });
+    applySearchHighlight(dvSvg);
     dvCounter.textContent = "added=" + d.added.length
       + "  removed=" + d.removed.length
       + "  modified=" + d.modified.length
@@ -1863,6 +1939,65 @@
   }
   dvDiff.addEventListener("click", runDiff);
   if (snapshots.length >= 2) runDiff();
+
+  // Re-apply highlight when URL fragment changes (e.g. user navigates from shell "view in graph" link)
+  window.addEventListener('hashchange', function () {
+    // Both views render their own SVG; applying to both is cheap and idempotent.
+    applySearchHighlight(tpSvg);
+    applySearchHighlight(dvSvg);
+  });
+
+  // ───────────── Sprint 4 Phase 3 PR C3: Mobile simplified view ─────────────
+  // plan 26051405 §「Visualizer β Mobile simplified view」 canonical impl spec.
+  // graph SVG は CSS @media (max-width: 767px) で hidden、本関数で text page list を注入。
+  // 全 DOM 操作は textContent + createElement のみ (Path C+β boundary policy: innerHTML
+  // assignment / outerHTML assignment / legacy doc-write API いずれも 0 hit 維持)。
+  function renderMobileFallback(rootData) {
+    const container = document.querySelector('.visualizer-graph-mobile-fallback');
+    if (!container) return;
+    clearNode(container);
+
+    const intro = document.createElement('p');
+    intro.textContent = 'Mobile では graph 表示を簡略化しています。下記 page list をご利用ください。';
+    container.appendChild(intro);
+
+    // page 出典: 最新 snapshot の pages を優先 (visualizer.mjs L186: snapshots[0].pages 由来)。
+    // 空 vault や lineage-only 構成では空 list を出して noisy 警告は出さない。
+    const snaps = Array.isArray(rootData.snapshots) ? rootData.snapshots : [];
+    const pages = (snaps.length > 0 && Array.isArray(snaps[0].pages)) ? snaps[0].pages : [];
+
+    if (pages.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'muted';
+      empty.textContent = '(pages not available in this snapshot)';
+      container.appendChild(empty);
+      return;
+    }
+
+    const ul = document.createElement('ul');
+    for (let i = 0; i < pages.length; i += 1) {
+      const page = pages[i] || {};
+      const li = document.createElement('li');
+      const a = document.createElement('a');
+      // anchor href = '#' + page.name 相当 (graph node id と同等の hash navigation、
+      // PR A3 の hashchange listener と互換、external navigation 無し = CSP safe)。
+      a.href = '#' + encodeURIComponent(page.name || '');
+      a.textContent = page.title || page.name || '(untitled)';
+      li.appendChild(a);
+      ul.appendChild(li);
+    }
+    container.appendChild(ul);
+  }
+
+  // Mobile breakpoint 検出 (CSS @media (max-width: 767px) と同基準)。
+  // SSR / non-browser env では window.matchMedia 不在の可能性、defensive guard。
+  if (typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function') {
+    const mobileMQ = window.matchMedia('(max-width: 767px)');
+    if (mobileMQ && mobileMQ.matches) {
+      renderMobileFallback(data);
+    }
+  }
 })();
 </script>
 </body>

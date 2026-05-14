@@ -210,11 +210,13 @@ describe('kioku_ingest_pdf', { skip: !HAS_POPPLER ? 'poppler not installed' : fa
     assert.ok(logStat.isFile(), 'per-vault detached log file should exist');
 
     // detached stub claude は shared stubClaudeLog に追記する。polling で確認。
+    // env section は ARGV の後に書かれるので、`--- end env ---` marker で wait する
+    // (ARGV: -p で break すると env がまだ flush されておらず race で fail する)。
     let sharedLog = '';
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 80; i++) {
       await new Promise((r) => setTimeout(r, 25));
       sharedLog = await readFile(stubClaudeLog, 'utf8');
-      if (sharedLog.includes('ARGV: -p')) break;
+      if (sharedLog.includes('--- end env ---')) break;
     }
     assert.match(sharedLog, /ARGV: -p/,
       `detached claude stub should log its invocation, got: ${sharedLog.slice(0, 200)}`);

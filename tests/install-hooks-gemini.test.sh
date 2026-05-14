@@ -99,12 +99,14 @@ else
   fail "IH-GEMINI-5: SessionEnd has ${session_end_count} hooks (expected 2)"
 fi
 
-# git add pattern が Claude install-hooks.sh と byte-identical (LEARN#9 single source of truth)
+# Sprint 4 Phase 4 PR A4: sync-vault.mjs --push invocation が Claude install-hooks.sh と
+# byte-identical (LEARN#9 single source of truth、git add/commit/push ロジック自体は
+# hooks/sync-vault.mjs に集約済)
 git_sync_cmd="$(jq -r '.hooks.SessionEnd[0].hooks[1].command' "${GEMINI_SETTINGS_FILE}")"
-if [[ "${git_sync_cmd}" == *"git add wiki/ raw-sources/ templates/ CLAUDE.md"* ]]; then
-  ok "IH-GEMINI-5: git-sync command matches install-hooks.sh Claude SessionEnd (single source of truth)"
+if [[ "${git_sync_cmd}" == *"sync-vault.mjs"*"--push"* ]]; then
+  ok "IH-GEMINI-5: sync-vault.mjs --push invocation matches install-hooks.sh Claude SessionEnd (single source of truth)"
 else
-  fail "IH-GEMINI-5: git-sync command diverged from Claude version"
+  fail "IH-GEMINI-5: sync-vault.mjs --push invocation diverged from Claude version"
 fi
 
 # -----------------------------------------------------------------------------

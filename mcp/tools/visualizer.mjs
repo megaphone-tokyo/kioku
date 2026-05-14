@@ -24,6 +24,7 @@ import { buildWikiSnapshot, diffSnapshots } from '../lib/wiki-snapshot.mjs';
 import { collectHealthMetrics } from '../lib/health-metrics.mjs';
 import { collectFirstViewData } from '../lib/visualizer-data.mjs';
 import { buildLineageGraph } from '../lib/lineage-graph.mjs';
+import { buildShellHtml } from '../lib/web-ui-shell.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_PATH = join(__dirname, '..', 'templates', 'viz-template.html');
@@ -44,7 +45,7 @@ export const VISUALIZER_TOOL_DEF = {
   name: 'kioku_generate_viz',
   title: 'Generate KIOKU wiki visualizer (local HTML)',
   description:
-    'Generates a self-contained HTML visualizer of the wiki with 4 views: Overview (first view = vault overview + health focus + graph preview + action queue), Timeline Player (temporal evolution), Diff Viewer (2 時点の差分), and Lineage (raw-sources → summaries → wiki best-effort 3 layer lineage graph, Sprint 3 v0.8 β). Data is embedded as inline JSON — only frontmatter and wikilinks, never page body. Output is written to the vault .cache/viz/ directory and opened directly in a browser (no external network). Does NOT modify wiki/. Requires the vault to be a git repository.',
+    'Generates a self-contained HTML visualizer of the wiki with 4 views: Overview (first view = vault overview + health focus + graph preview + action queue), Timeline Player (temporal evolution), Diff Viewer (2 時点の差分), and Lineage (raw-sources → summaries → wiki best-effort 3 layer lineage graph, Sprint 3 v0.8 β). Data is embedded as inline JSON — only frontmatter and wikilinks, never page body. Output is written to the vault .cache/viz/ directory and opened directly in a browser (no external network). Does NOT modify wiki/. Requires the vault to be a git repository. mode=snapshot (default, backward compat): Sprint 3 4-view HTML. mode=shell (v0.9 Sprint 4 Phase 1): KIOKU Web UI shell with Dashboard tab (renders .base file) + Visualizer β 4 views integrated as a tab system.',
   inputShape: {
     output_path: z
       .string()
@@ -68,6 +69,16 @@ export const VISUALIZER_TOOL_DEF = {
       .boolean()
       .optional()
       .describe('Semantic cluster view (View 4). Deferred to v0.8; currently rejected if true.'),
+    mode: z
+      .enum(['snapshot', 'shell'])
+      .optional()
+      .describe('Output mode. "snapshot" (default, backward compat): Sprint 3 Visualizer β 4-view HTML. "shell" (v0.9 Sprint 4 Phase 1): KIOKU Web UI shell with Dashboard tab + Visualizer β views integrated.'),
+    base_source: z
+      .string()
+      .min(1)
+      .max(512)
+      .optional()
+      .describe('Path to .base file (vault-relative), used in shell mode for the Dashboard tab. Ignored in snapshot mode. Default: "wiki/meta/dashboard.base".'),
   },
 };
 
@@ -107,6 +118,46 @@ export async function handleGenerateViz(vault, args = {}) {
       throw new Error(`invalid output_path: ${err.message}`);
     }
     throw err;
+  }
+
+  // Sprint 4 Phase 1: mode dispatch.
+  //   - mode === 'shell'  → buildShellHtml (PR B web-ui-shell) で Dashboard + Visualizer β 統合 HTML 出力
+  //   - それ以外          → 既存 snapshot path (Sprint 3 既存 logic を bit-equal で実行、zero regression)
+  // mode が undefined / 'snapshot' / 不正値の何れでも snapshot path に fall through するため、
+  // backward-compat caller (mode 未指定) と explicit 'snapshot' caller が同一コードを通ることが保証される。
+  const mode = args.mode === 'shell' ? 'shell' : 'snapshot';
+  if (mode === 'shell') {
+    const baseSource =
+      typeof args.base_source === 'string' && args.base_source.length > 0
+        ? args.base_source
+        : undefined;
+    const html = await buildShellHtml(vault, {
+      since,
+      max_commits: maxCommits,
+      base_source: baseSource,
+    });
+    await mkdir(dirname(absOutputPath), { recursive: true });
+    const tmpPath = `${absOutputPath}.tmp-${randomBytes(6).toString('hex')}`;
+    try {
+      await writeFile(tmpPath, html, 'utf8');
+      await rename(tmpPath, absOutputPath);
+    } catch (err) {
+      try {
+        const { unlink } = await import('node:fs/promises');
+        await unlink(tmpPath);
+      } catch {
+        /* ignore */
+      }
+      throw err;
+    }
+    return {
+      path: absOutputPath,
+      path_relative: outputPathRel,
+      mode: 'shell',
+      since,
+      max_commits: maxCommits,
+      note: 'Open the generated shell HTML in a browser. Dashboard + Visualizer β 4 views available (Search / Navigation / Wikilink graph tabs are placeholders for Phase 2-4).',
+    };
   }
 
   // 1. git history 収集
