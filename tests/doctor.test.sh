@@ -209,6 +209,30 @@ EOF
   (cd "${vault}" && git init --quiet 2>/dev/null) || true
 }
 
+# Same as init_full_vault, but adds an empty initial commit so
+# `check_sync_state` finds a `git log -1` timestamp. Sprint 4 Phase 4 PR B4.
+init_full_vault_with_commit() {
+  local vault="$1"
+  init_full_vault "${vault}"
+  (
+    cd "${vault}"
+    git -c user.email=test@local -c user.name=test \
+        commit --allow-empty -m "initial" --quiet 2>/dev/null
+  ) || true
+}
+
+# curl stub that always succeeds — used by EXIT-CODE-1/MODE-1 healthy-state
+# tests so the new check_sync_state network probe doesn't accidentally emit a
+# warn when the host happens to be offline. Sprint 4 Phase 4 PR B4.
+stub_curl_ok() {
+  local bin="$1"
+  cat >"${bin}/curl" <<'EOF'
+#!/usr/bin/env bash
+exit 0
+EOF
+  chmod +x "${bin}/curl"
+}
+
 # -----------------------------------------------------------------------------
 # BLUE-DOCTOR-ENV-1: OBSIDIAN_VAULT unset → fail
 # -----------------------------------------------------------------------------
@@ -616,7 +640,10 @@ test_exit_code_all_ok() {
   d="$(new_case "exit-all-ok")"
   stub_full_clis "${d}/bin"
   stub_node_18 "${d}/bin"
-  init_full_vault "${d}/vault"
+  stub_curl_ok "${d}/bin"
+  # Sprint 4 Phase 4 PR B4: check_sync_state now part of doctor flow — needs a
+  # real commit (for `git log -1`) and a curl stub (network probe).
+  init_full_vault_with_commit "${d}/vault"
 
   # Configure all hook configs and MCP configs so no fail/warn arises (other
   # than info-level checks that always pass).
@@ -769,6 +796,7 @@ test_install_mode_full() {
   d="$(new_case "mode-full")"
   stub_full_clis "${d}/bin"
   stub_node_18 "${d}/bin"
+  stub_curl_ok "${d}/bin"
   init_full_vault "${d}/vault"
 
   # Claude hook ok
@@ -935,6 +963,55 @@ EOF
 }
 
 # -----------------------------------------------------------------------------
+# BLUE-DOCTOR-SYNC-INT-1: check_sync_state is wired into the main flow
+#
+# Sprint 4 Phase 4 PR B4 integration assertion. Detailed scenario coverage
+# (healthy / pending-retry / network-unreachable) lives in
+# tests/sync-diagnostic.test.sh — this assertion exists solely to guard
+# against the `check_sync_state` call being dropped from doctor.sh's main()
+# in a future refactor (LEARN#5 cross-suite reference pinning).
+# -----------------------------------------------------------------------------
+test_sync_state_integrated() {
+  echo "BLUE-DOCTOR-SYNC-INT-1: check_sync_state lines appear in default doctor output"
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "  skip  jq not available"
+    return 0
+  fi
+  local d
+  d="$(new_case "sync-integrated")"
+  stub_full_clis "${d}/bin"
+  stub_node_18 "${d}/bin"
+  stub_curl_ok "${d}/bin"
+  init_full_vault_with_commit "${d}/vault"
+
+  # Pre-populate a retry queue with the production schema so the integration
+  # assertion also pins schema parity with hooks/sync-vault.mjs.
+  cat >"${d}/vault/.kioku-sync-retry.json" <<'EOF'
+{
+  "errorType": "auth",
+  "message": "permission denied (publickey)",
+  "firstAttempt": "2026-05-15T01:00:00.000Z",
+  "lastAttempt": "2026-05-15T02:00:00.000Z",
+  "retryCount": 1
+}
+EOF
+
+  local out
+  set +e
+  out="$(run_doctor "${d}" OBSIDIAN_VAULT="${d}/vault" 2>&1)"
+  set -e
+
+  assert_contains "${out}" "Last Vault commit:" \
+    "SYNC-INT-1: last commit line surfaces in integrated output"
+  assert_contains "${out}" "Pending sync retry queue" \
+    "SYNC-INT-1: pending retry line surfaces in integrated output"
+  assert_contains "${out}" "last error: auth" \
+    "SYNC-INT-1: errorType parsed from production-schema queue file"
+  assert_contains "${out}" "Network: github.com reachable" \
+    "SYNC-INT-1: network probe surfaces in integrated output"
+}
+
+# -----------------------------------------------------------------------------
 # Run all
 # -----------------------------------------------------------------------------
 test_env_unset
@@ -960,6 +1037,7 @@ test_install_mode_full
 test_install_mode_mcp_only
 test_install_mode_unknown
 test_install_mode_json
+test_sync_state_integrated
 
 echo ""
 echo "doctor.test.sh: ${PASS} passed, ${FAIL} failed"

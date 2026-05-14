@@ -24,6 +24,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ADAPTER_ABS="$(cd "${SCRIPT_DIR}/.." && pwd)/hooks/adapters/gemini.mjs"
+SYNC_VAULT_ABS="$(cd "${SCRIPT_DIR}/.." && pwd)/hooks/sync-vault.mjs"
 
 # -----------------------------------------------------------------------------
 # 引数パース
@@ -148,7 +149,7 @@ emit_snippet_json() {
         "hooks": [
           {
             "type": "command",
-            "command": "cd \"${OBSIDIAN_VAULT}\" && git pull --rebase --quiet 2>/dev/null || true"
+            "command": "OBSIDIAN_VAULT=\"${OBSIDIAN_VAULT}\" node '${SYNC_VAULT_ABS}' --pull-and-retry"
           }
         ]
       }
@@ -205,7 +206,7 @@ emit_snippet_json() {
           {
             "name": "claude-brain-git-sync",
             "type": "command",
-            "command": "[ \"\${KIOKU_NO_LOG:-0}\" = \"1\" ] || { cd \"${OBSIDIAN_VAULT}\" && grep -q '^session-logs/' .gitignore 2>/dev/null && git symbolic-ref -q HEAD >/dev/null 2>&1 && git add wiki/ raw-sources/ templates/ CLAUDE.md 2>/dev/null && (git diff --cached --quiet || (git commit -m \"auto: wiki update \$(date +%Y%m%d-%H%M)\" --quiet && git push --quiet)) 2>/dev/null; } || true",
+            "command": "OBSIDIAN_VAULT=\"${OBSIDIAN_VAULT}\" node '${SYNC_VAULT_ABS}' --push",
             "timeout": 30000
           }
         ]

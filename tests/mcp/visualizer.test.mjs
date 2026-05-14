@@ -337,6 +337,116 @@ describe('kioku_generate_viz (Phase D α V-2)', () => {
     }
   });
 
+  test('VIZ-T11: mode=shell generates KIOKU Web UI shell HTML (Sprint 4 Phase 1)', async () => {
+    if (!gitAvailable) return;
+    const root = await makeFixtureVault();
+    try {
+      // Install the default .base so the shell Dashboard tab has source content.
+      await mkdir(join(root, 'wiki', 'meta'), { recursive: true });
+      await writeFile(
+        join(root, 'wiki', 'meta', 'dashboard.base'),
+        'views:\n  - type: list\n    name: "All pages"\n',
+        'utf8',
+      );
+      const result = await handleGenerateViz(root, { mode: 'shell' });
+      assert.equal(result.mode, 'shell');
+      assert.match(result.path, /\.cache\/viz\/wiki-graph\.html$/);
+      const html = await readFile(result.path, 'utf8');
+      // shell-specific markers (mirrors web-ui-shell + shell-template contract)
+      assert.match(html, /id="kioku-shell-data"/, 'shell-data script block present');
+      assert.match(html, /id="tab-dashboard"/, 'Dashboard tab control present');
+      // shell embeds the visualizer body inline via the <template id="kioku-viz-body">
+      assert.match(html, /id="kioku-viz-body"/, 'embedded viz body template present');
+      // Verify the inline shell JSON has mode=snapshot + default_tab=dashboard
+      const m = html.match(/<script id="kioku-shell-data" type="application\/json">([\s\S]*?)<\/script>/);
+      assert.ok(m, 'kioku-shell-data inline JSON missing');
+      const parsed = JSON.parse(m[1]);
+      assert.equal(parsed.shell_meta.default_tab, 'dashboard');
+      assert.equal(parsed.shell_meta.mode, 'snapshot');
+      // visualizer data layer is bundled inside the shell JSON
+      assert.ok(parsed.visualizer && Array.isArray(parsed.visualizer.snapshots));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('VIZ-T12: mode=snapshot (default) preserves Sprint 3 backward compat', async () => {
+    if (!gitAvailable) return;
+    const root = await makeFixtureVault();
+    try {
+      const result = await handleGenerateViz(root, {});
+      // Sprint 3 既存 caller は mode field を含まない返り値を期待 (additive な field 追加は OK)
+      assert.ok(!result.mode || result.mode === 'snapshot');
+      assert.deepEqual(result.views, ['overview', 'timeline-player', 'diff-viewer', 'lineage']);
+      const html = await readFile(result.path, 'utf8');
+      // Sprint 3 marker (Phase 4 Quality notes drawer)
+      assert.match(html, /id="ov-quality-notes"/);
+      // shell-only markers MUST NOT leak into snapshot HTML
+      assert.ok(!html.includes('id="kioku-shell-data"'), 'shell-data block must not appear in snapshot mode');
+      assert.ok(!html.includes('id="tab-dashboard"'), 'Dashboard tab must not appear in snapshot mode');
+      // Sprint 3 inline JSON marker is preserved
+      assert.match(html, /<script type="application\/json" id="kioku-data">/);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('VIZ-T13: mode=shell with base_source override loads custom .base file', async () => {
+    if (!gitAvailable) return;
+    const root = await makeFixtureVault();
+    try {
+      await mkdir(join(root, 'wiki', 'custom-views'), { recursive: true });
+      await writeFile(
+        join(root, 'wiki', 'custom-views', 'custom.base'),
+        'views:\n  - type: list\n    name: "Custom override view"\n',
+        'utf8',
+      );
+      const result = await handleGenerateViz(root, {
+        mode: 'shell',
+        base_source: 'wiki/custom-views/custom.base',
+      });
+      assert.equal(result.mode, 'shell');
+      const html = await readFile(result.path, 'utf8');
+      const m = html.match(/<script id="kioku-shell-data" type="application\/json">([\s\S]*?)<\/script>/);
+      assert.ok(m, 'shell-data inline JSON missing');
+      const parsed = JSON.parse(m[1]);
+      assert.equal(parsed.dashboard.base_source, 'wiki/custom-views/custom.base',
+        'dashboard.base_source reflects override');
+      // The override path must NOT collide with the default — proves the override took effect
+      assert.notEqual(parsed.dashboard.base_source, 'wiki/meta/dashboard.base');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('VIZ-T14: existing path 100% regression — mode unset and mode="snapshot" produce bit-equal HTML (zero regression critical gate)', async () => {
+    if (!gitAvailable) return;
+    const root = await makeFixtureVault();
+    try {
+      // Generate twice via the same vault: once without mode (Sprint 3 caller), once with explicit 'snapshot'.
+      // The two callers MUST hit the same code path → byte-equal HTML after normalizing the wall-clock timestamp.
+      const r1 = await handleGenerateViz(root, {});
+      const html1 = await readFile(r1.path, 'utf8');
+      const r2 = await handleGenerateViz(root, { mode: 'snapshot' });
+      const html2 = await readFile(r2.path, 'utf8');
+
+      // Only "generated_at" (top-level wall clock at function entry) is allowed to drift between calls.
+      // All other fields are derived from the same fixture state → must be byte-identical.
+      const normalize = (s) => s.replace(/"generated_at":"[^"]+"/g, '"generated_at":"<NORMALIZED>"');
+      assert.equal(
+        normalize(html1),
+        normalize(html2),
+        'mode unset and mode="snapshot" must produce byte-equal HTML (zero regression for existing callers)',
+      );
+
+      // Belt-and-suspenders: shell-mode markers must not bleed into snapshot output on either side.
+      assert.ok(!html1.includes('id="kioku-shell-data"'));
+      assert.ok(!html2.includes('id="kioku-shell-data"'));
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test('VIZ-T10: Phase 3 lineage graph embeds 3-layer nodes + 5 edge kinds + HTML tab/CSS', async () => {
     if (!gitAvailable) return;
     const root = await makeFixtureVault();
@@ -398,6 +508,66 @@ describe('kioku_generate_viz (Phase D α V-2)', () => {
       // JS render path
       assert.match(html, /renderLineage\s*\(/, 'renderLineage JS function called');
       assert.match(html, /estimated lineage/, 'best-effort disclosure text in JS');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('VIZ-T15: viz-template.html に applySearchHighlight 関数 + kioku-viz-highlighted CSS + hashchange listener が含まれる (Sprint 4 Phase 2 PR C2)', async () => {
+    if (!gitAvailable) return;
+    const root = await makeFixtureVault();
+    try {
+      const result = await handleGenerateViz(root, {});
+      const html = await readFile(result.path, 'utf8');
+      // helper function name の literal 存在 (impl が削除されたら red)
+      assert.match(html, /function applySearchHighlight\b/, 'applySearchHighlight helper function must be defined in snapshot HTML');
+      // highlight CSS class が CSS section に存在
+      assert.match(html, /\.kioku-viz-highlighted\b/, 'kioku-viz-highlighted CSS rule must be present');
+      // hashchange listener が登録される
+      assert.match(html, /addEventListener\(["']hashchange["']/, 'hashchange listener must be wired');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('VIZ-T16: URL fragment #q=<query> で highlight ロジックが適切な node を選ぶ (string-level verify、jsdom 不要)', async () => {
+    if (!gitAvailable) return;
+    const root = await makeFixtureVault();
+    try {
+      const result = await handleGenerateViz(root, {});
+      const html = await readFile(result.path, 'utf8');
+      // helper 本体が SVG `g.node` selector を使う (実コードと整合)
+      assert.match(html, /querySelectorAll\(["']g\.node["']\)/, 'applySearchHighlight must select g.node elements');
+      // label includes match logic を含む
+      assert.match(html, /label\.toLowerCase\(\)\.includes\(needle\)/, 'case-insensitive substring match logic must be present');
+      // highlight class toggle
+      assert.match(html, /classList\.add\(["']kioku-viz-highlighted["']\)/, 'kioku-viz-highlighted class toggle must be present');
+      // clear prior highlights so hashchange does not accumulate stale matches (PR C2 code review fix)
+      assert.match(html, /classList\.remove\(["']kioku-viz-highlighted["']\)/, 'previous kioku-viz-highlighted must be cleared on each apply (hashchange stale-state guard)');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test('VIZ-T17: shell-template.html の Search tab result item に "view in graph" deep-link が含まれる (Sprint 4 Phase 2 PR C2)', async () => {
+    if (!gitAvailable) return;
+    const root = await makeFixtureVault();
+    try {
+      // Install dashboard.base so shell mode renders fully
+      await mkdir(join(root, 'wiki', 'meta'), { recursive: true });
+      await writeFile(
+        join(root, 'wiki', 'meta', 'dashboard.base'),
+        'views:\n  - type: list\n    name: "All pages"\n',
+        'utf8',
+      );
+      const result = await handleGenerateViz(root, { mode: 'shell' });
+      const html = await readFile(result.path, 'utf8');
+      // deep-link to viz HTML with fragment query encoding
+      assert.match(html, /visualizer-graph\.html#q=/, 'deep-link to visualizer-graph.html#q= must be in shell renderSearch');
+      // anchor element with class for styling
+      assert.match(html, /['"]search-view-graph['"]/, 'search-view-graph class must be present on the link');
+      // encodeURIComponent must be used to safely pass query
+      assert.match(html, /encodeURIComponent\(q\.query\)/, 'q.query must be URL-encoded');
     } finally {
       await rm(root, { recursive: true, force: true });
     }

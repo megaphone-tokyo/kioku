@@ -115,26 +115,30 @@ else
   fail "SessionEnd should have two chained entries"
 fi
 
-# SessionStart should have 2 entries (git pull + wiki-context-injector)
+# SessionStart should have 2 entries (sync-vault --pull-and-retry + wiki-context-injector)
 if node -e "const j=require('${tmpjson}'); process.exit(j.hooks.SessionStart.length===2?0:1)"; then
   pass "SessionStart has two chained entries"
 else
-  fail "SessionStart should have two chained entries (git pull + injector)"
+  fail "SessionStart should have two chained entries (sync-vault --pull-and-retry + injector)"
 fi
 
-if node -e "const j=require('${tmpjson}'); const cmds=j.hooks.SessionStart.map(e=>e.hooks[0].command).join(' '); process.exit(/git pull/.test(cmds) && /wiki-context-injector\.mjs/.test(cmds) ? 0 : 1)"; then
-  pass "SessionStart includes git pull and wiki-context-injector.mjs"
+# Sprint 4 Phase 4 PR A4 (2026-05-15): inline `git pull` シェルは hooks/sync-vault.mjs
+# --pull-and-retry に migrate (retry queue drain を統合)。SessionStart 第 1 段は
+# sync-vault.mjs --pull-and-retry、第 2 段は従来通り wiki-context-injector.mjs。
+if node -e "const j=require('${tmpjson}'); const cmds=j.hooks.SessionStart.map(e=>e.hooks[0].command).join(' '); process.exit(/sync-vault\.mjs.*--pull-and-retry/.test(cmds) && /wiki-context-injector\.mjs/.test(cmds) ? 0 : 1)"; then
+  pass "SessionStart includes sync-vault.mjs --pull-and-retry and wiki-context-injector.mjs"
 else
-  fail "SessionStart should include both git pull and wiki-context-injector.mjs"
+  fail "SessionStart should include both sync-vault.mjs --pull-and-retry and wiki-context-injector.mjs"
 fi
 
-# v0.4.0 Tier A#2 (2026-04-21): SessionEnd の git one-liner に detached HEAD ガード
-# (git symbolic-ref -q HEAD) が含まれていること。detached 状態で commit が貯まって
-# push 失敗 → ローカル drift する regression を防ぐため。
-if node -e "const j=require('${tmpjson}'); const gitCmd=j.hooks.SessionEnd[1].hooks[0].command; process.exit(/git symbolic-ref -q HEAD/.test(gitCmd) ? 0 : 1)"; then
-  pass "SessionEnd git one-liner has detached HEAD guard (git symbolic-ref -q HEAD)"
+# v0.4.0 Tier A#2 (2026-04-21) + Sprint 4 Phase 4 PR A4 (2026-05-15): detached HEAD
+# ガードは hooks/sync-vault.mjs の shouldRunPush() に移行 (shell から Node 側へ集約)。
+# regression は unit test tests/sync-retry.test.mjs BLUE-SYNC-A4-4 で保護。
+# 本 install-hooks test は SessionEnd[1] が sync-vault.mjs --push を呼ぶことを確認する。
+if node -e "const j=require('${tmpjson}'); const gitCmd=j.hooks.SessionEnd[1].hooks[0].command; process.exit(/sync-vault\.mjs.*--push/.test(gitCmd) ? 0 : 1)"; then
+  pass "SessionEnd second hook invokes sync-vault.mjs --push (detached HEAD guard moved to shouldRunPush)"
 else
-  fail "SessionEnd git one-liner missing 'git symbolic-ref -q HEAD' guard (v0.4.0 Tier A#2 regression)"
+  fail "SessionEnd second hook should invoke sync-vault.mjs --push (Sprint 4 Phase 4 PR A4 migration)"
 fi
 
 # -----------------------------------------------------------------------------
@@ -244,7 +248,7 @@ JSON
   user_len=$(jq '.hooks.UserPromptSubmit | length' "${APPLY_TARGET}")
   assert_eq "2" "${user_len}" "--apply appended to existing UserPromptSubmit array (preserved user's entry)"
 
-  # SessionStart has 2 (git pull + injector)
+  # SessionStart has 2 (sync-vault --pull-and-retry + injector)
   ss_len=$(jq '.hooks.SessionStart | length' "${APPLY_TARGET}")
   assert_eq "2" "${ss_len}" "--apply SessionStart has 2 entries"
 

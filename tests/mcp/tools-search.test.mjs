@@ -128,4 +128,45 @@ echo "[]"
       assert.deepEqual(r.results, []);
     });
   });
+
+  // Sprint 4 Phase 2 PR A2: intent param (qmd disambiguation hint)。
+  // qmd subprocess の argv を file 経由で capture して --intent flag の presence/absence を verify。
+  test('MCP11 passes intent flag to qmd subprocess when provided', async () => {
+    const argvLog = join(await mkdtemp(join(tmpdir(), 'kioku-argv-')), 'argv.log');
+    const stub = `#!/usr/bin/env bash
+printf '%s\\n' "$@" > "${argvLog}"
+echo "[]"
+`;
+    await withQmdStub(stub, async () => {
+      await handleSearch(vault, { query: 'foo', mode: 'lex', intent: 'optimize for recent docs' });
+    });
+    const { readFile } = await import('node:fs/promises');
+    const captured = await readFile(argvLog, 'utf8');
+    assert.match(captured, /--intent/);
+    assert.match(captured, /optimize for recent docs/);
+    // positional query は最後の line
+    const lines = captured.trim().split('\n');
+    assert.equal(lines[lines.length - 1], 'foo');
+  });
+
+  test('MCP12 omits intent flag when intent param is undefined or empty', async () => {
+    const argvLog = join(await mkdtemp(join(tmpdir(), 'kioku-argv-')), 'argv.log');
+    const stub = `#!/usr/bin/env bash
+printf '%s\\n' "$@" > "${argvLog}"
+echo "[]"
+`;
+    await withQmdStub(stub, async () => {
+      await handleSearch(vault, { query: 'foo', mode: 'lex' }); // no intent
+    });
+    const { readFile } = await import('node:fs/promises');
+    const captured = await readFile(argvLog, 'utf8');
+    assert.doesNotMatch(captured, /--intent/);
+
+    // empty string も skip 扱い
+    await withQmdStub(stub, async () => {
+      await handleSearch(vault, { query: 'foo', mode: 'lex', intent: '   ' });
+    });
+    const captured2 = await readFile(argvLog, 'utf8');
+    assert.doesNotMatch(captured2, /--intent/);
+  });
 });

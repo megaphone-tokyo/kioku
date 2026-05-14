@@ -27,6 +27,11 @@ export const SEARCH_TOOL_DEF = {
       .enum(['lex', 'vec', 'hybrid'])
       .optional()
       .describe('lex=BM25, vec=embedding similarity, hybrid=qmd query (BM25+vec+rerank).'),
+    intent: z
+      .string()
+      .max(MAX_QUERY_LEN)
+      .optional()
+      .describe('Optional intent disambiguation for the query, passed to qmd if available.'),
   },
 };
 
@@ -39,8 +44,15 @@ export async function handleSearch(vault, args) {
   }
   const limit = clamp(args?.limit ?? 10, 1, MAX_LIMIT);
   const mode = args?.mode ?? 'hybrid';
+  // intent は qmd subprocess に転送する optional な disambiguation hint。
+  // undefined / 空文字なら subprocess flag を一切渡さない (qmd 旧 version 互換)。
+  const rawIntent = args?.intent;
+  const intent =
+    typeof rawIntent === 'string' && rawIntent.trim().length > 0
+      ? rawIntent.trim().slice(0, MAX_QUERY_LEN)
+      : null;
 
-  const qmdResult = await tryQmd(query, limit, mode);
+  const qmdResult = await tryQmd(query, limit, mode, intent);
   if (qmdResult) return qmdResult;
 
   const fallback = await fallbackSearch(vault, query, limit);
@@ -50,9 +62,14 @@ export async function handleSearch(vault, args) {
   };
 }
 
-async function tryQmd(query, limit, mode) {
+async function tryQmd(query, limit, mode, intent) {
   const subcommand = mode === 'lex' ? 'search' : mode === 'vec' ? 'vsearch' : 'query';
-  const args = [subcommand, '--json', '-n', String(limit), '-c', COLLECTION, query];
+  const args = [subcommand, '--json', '-n', String(limit), '-c', COLLECTION];
+  // intent flag は subcommand と query の間に挿入 (qmd CLI convention: flags 先、positional 末)。
+  if (intent) {
+    args.push('--intent', intent);
+  }
+  args.push(query);
   return new Promise((resolve) => {
     const child = spawn('qmd', args, {
       stdio: ['ignore', 'pipe', 'pipe'],

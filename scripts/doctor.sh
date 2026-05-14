@@ -520,6 +520,84 @@ check_metadata_parity() {
 }
 
 # -----------------------------------------------------------------------------
+# Section: Sync state (Sprint 4 Phase 4 PR B4)
+#
+# Vault が Git repo 配下である前提で、cloud sync (auto push/pull) の 3 軸の
+# 現在 state を表示する read-only diagnostic。retry queue file は
+# `hooks/sync-vault.mjs` (PR A4) が write/update する schema を read-only で
+# inspect する (write は一切しない)。
+#
+# - sync-last-commit    : `git log -1` の最新 commit timestamp
+# - sync-pending-retry  : `.kioku-sync-retry.json` の有無 + retryCount + errorType
+# - sync-network        : `github.com` reachability (curl --max-time 5、fail-fast)
+#
+# Vault が Git repo でない / OBSIDIAN_VAULT 未設定の場合は本 section を丸ごと
+# skip して "warn" 1 行のみ残す (existing env-vault-git check が既に状態を
+# 伝えているため重複を避ける)。
+# -----------------------------------------------------------------------------
+check_sync_state() {
+  if [[ -z "${OBSIDIAN_VAULT:-}" ]] || [[ ! -d "${OBSIDIAN_VAULT}" ]]; then
+    return 0
+  fi
+  if ! git -C "${OBSIDIAN_VAULT}" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    add_check "sync-state" "warn" \
+      "Vault is not a Git repo — sync state diagnostic skipped"
+    return 0
+  fi
+
+  # Last commit timestamp (auto-commit と user commit を区別しない、最終 push 候補時刻として活用)
+  local last_commit_time
+  last_commit_time="$(git -C "${OBSIDIAN_VAULT}" log -1 --format='%cI' 2>/dev/null || true)"
+  if [[ -n "${last_commit_time}" ]]; then
+    add_check "sync-last-commit" "ok" \
+      "Last Vault commit: ${last_commit_time}"
+  else
+    add_check "sync-last-commit" "warn" \
+      "Vault has no commits yet (first session not run?)"
+  fi
+
+  # Pending retry queue (.kioku-sync-retry.json) inspect
+  # schema: { errorType, message, firstAttempt, lastAttempt, retryCount }
+  local retry_queue="${OBSIDIAN_VAULT}/.kioku-sync-retry.json"
+  if [[ ! -f "${retry_queue}" ]]; then
+    add_check "sync-pending-retry" "ok" \
+      "No pending sync retry"
+  elif [[ "${HAS_JQ}" -eq 1 ]]; then
+    local retry_count error_type first_attempt
+    retry_count="$(jq -r '.retryCount // "?"' "${retry_queue}" 2>/dev/null || echo "?")"
+    error_type="$(jq -r '.errorType // "unknown"' "${retry_queue}" 2>/dev/null || echo "unknown")"
+    first_attempt="$(jq -r '.firstAttempt // ""' "${retry_queue}" 2>/dev/null || echo "")"
+    local detail="${retry_count} attempts, last error: ${error_type}"
+    if [[ -n "${first_attempt}" ]]; then
+      detail="${detail}, since: ${first_attempt}"
+    fi
+    add_check "sync-pending-retry" "warn" \
+      "Pending sync retry queue: ${detail}" \
+      "Next Claude session will retry automatically (or run: node hooks/sync-vault.mjs --pull-and-retry)"
+  else
+    # jq 不在 fallback: file 存在のみ報告
+    add_check "sync-pending-retry" "warn" \
+      "Pending sync retry queue exists (install jq to inspect details)" \
+      "brew install jq  # or: apt-get install jq"
+  fi
+
+  # Network reachability — github.com への HEAD-only probe (curl --max-time 5)
+  # curl が無い環境では skip (warn)
+  if command -v curl >/dev/null 2>&1; then
+    if curl -fsS --head --max-time 5 https://github.com >/dev/null 2>&1; then
+      add_check "sync-network" "ok" \
+        "Network: github.com reachable"
+    else
+      add_check "sync-network" "warn" \
+        "Network: github.com unreachable (auto-sync will queue until reconnected)"
+    fi
+  else
+    add_check "sync-network" "warn" \
+      "curl not installed — cannot probe network reachability"
+  fi
+}
+
+# -----------------------------------------------------------------------------
 # Section: Dependencies
 # -----------------------------------------------------------------------------
 check_dependencies() {
@@ -692,6 +770,7 @@ check_hook_configs
 check_mcp_configs
 check_metadata_parity
 check_dependencies
+check_sync_state
 detect_install_mode
 
 if [[ "${JSON_MODE}" -eq 1 ]]; then

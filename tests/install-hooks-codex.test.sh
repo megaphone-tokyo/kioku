@@ -114,10 +114,10 @@ else
   fail "IH-CODEX-GIT-SYNC-1: stage 1 unexpected: ${stage1_cmd}"
 fi
 
-if [[ "${stage2_cmd}" == *"git add wiki/ raw-sources/ templates/ CLAUDE.md"* ]]; then
-  ok "IH-CODEX-GIT-SYNC-1: stage 2 git-sync command present"
+if [[ "${stage2_cmd}" == *"sync-vault.mjs"*"--push"* ]]; then
+  ok "IH-CODEX-GIT-SYNC-1: stage 2 sync-vault.mjs --push invocation present"
 else
-  fail "IH-CODEX-GIT-SYNC-1: stage 2 missing expected git add pattern"
+  fail "IH-CODEX-GIT-SYNC-1: stage 2 missing expected sync-vault.mjs --push invocation"
 fi
 
 # single source of truth check (PM A3 指示): install-hooks.sh Claude SessionEnd

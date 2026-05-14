@@ -15,7 +15,7 @@
 //   - LEARN#6 cross-boundary drift 回避: builder の output path は absolute、消費側は
 //     `await rm(vault, { recursive: true, force: true })` で必ず cleanup する責務。
 
-import { cp, mkdir, mkdtemp, readdir, writeFile, rm } from 'node:fs/promises';
+import { copyFile, cp, mkdir, mkdtemp, readdir, writeFile, rm } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -24,6 +24,9 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const EMPTY_FIXTURE_DIR = join(__dirname, 'visualizer-empty-vault');
 const SMALL_FIXTURE_DIR = join(__dirname, 'visualizer-small-vault');
+// Real repo source for dashboard.base — copied into small vault so shell
+// BLUE-WEBUI-SHELL-3 can render the canonical 10-view dashboard (Sprint 4 PR B).
+const DASHBOARD_BASE_SRC = join(__dirname, '..', '..', 'templates', 'wiki', 'meta', 'dashboard.base');
 
 // SAFE_CONFIG と同等の "侵害された .git/config を読まない" git 呼び出し。
 // builder は user vault 内で動かないので fsmonitor 脅威は低いが、CI / reviewer 安心のため
@@ -98,9 +101,22 @@ export async function cloneEmptyVault() {
 
 // Small vault: 5 wiki page + auto-lint report、2 commit (snapshot 切替確認可)。
 // 2nd commit は "concept の追記" として小さな update を加える (Diff view が空にならないため)。
+// Sprint 4 PR B: templates/wiki/meta/dashboard.base を vault 内に copy。
+// shell の Dashboard tab (PR A renderBases consumption) が fixture 上で動くようにする。
 export async function cloneSmallVault() {
   const vault = await bootstrapTmpVault(SMALL_FIXTURE_DIR, 'kioku-viz-fixture-small-');
   try {
+    // Copy dashboard.base into the fixture at the canonical location written by
+    // tools/claude-brain/scripts/setup-vault.sh:221-222 (`wiki/meta/dashboard.base`)
+    // so shell BLUE-WEBUI-SHELL-3 can render the canonical 10-view dashboard via
+    // PR A renderBases. Committed as a dedicated step between initial and the
+    // jwt update so downstream visualizer tests see a stable shape.
+    const baseDst = join(vault, 'wiki', 'meta', 'dashboard.base');
+    await mkdir(dirname(baseDst), { recursive: true });
+    await copyFile(DASHBOARD_BASE_SRC, baseDst);
+    await git(vault, ['add', 'wiki/meta/dashboard.base']);
+    await git(vault, ['commit', '-q', '-m', 'fixture: add dashboard.base for shell PR B']);
+
     // 2nd commit: jwt.md に小さい追記を加える (Diff 用)
     const jwtPath = join(vault, 'wiki', 'concepts', 'jwt.md');
     const updated = [
