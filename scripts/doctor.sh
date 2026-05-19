@@ -598,6 +598,221 @@ check_sync_state() {
 }
 
 # -----------------------------------------------------------------------------
+# Section: Auto-ingest state (Sprint 5 PR B5)
+#
+# Sprint 5 PR A5 で導入した auto-ingest retry queue + manual review queue を
+# read-only で集約表示する。doctor.sh はユーザーが「最後に Wiki が更新されたのは
+# いつか」「extract / LLM 失敗で retry を待っている file はあるか」「人手 review
+# が必要な entry はあるか」を一目で把握できるようにする。
+#
+# 集約する 3 axis:
+# - auto-ingest-last  : raw-sources/ 配下 .processed marker の最新 mtime
+#                       (extract-pdf.sh / extract-epub.mjs / extract-docx.mjs
+#                       が成功時に touch する規約 — 現状未定義の場合は
+#                       wiki/summaries/ の最新 mtime で fallback)
+# - auto-ingest-retry : .kioku-auto-ingest-retry.json の entries 件数 + 最新 errorType
+# - auto-ingest-manual: .kioku-auto-ingest-manual-review.json の entries 件数
+#
+# Vault が存在しない / OBSIDIAN_VAULT 未設定の場合は本 section を丸ごと skip
+# (existing env-vault check が既に状態を伝えている)。
+# -----------------------------------------------------------------------------
+check_auto_ingest_state() {
+  if [[ -z "${OBSIDIAN_VAULT:-}" ]] || [[ ! -d "${OBSIDIAN_VAULT}" ]]; then
+    return 0
+  fi
+
+  # axis 1: last successful auto-ingest 時刻
+  # raw-sources/ 配下 .processed marker (extract-* 成功時に touch、現状は
+  # extract scripts 側 PR で導入予定) → 無ければ wiki/summaries/ 最新 mtime fallback
+  local last_marker_epoch=""
+  if [[ -d "${OBSIDIAN_VAULT}/raw-sources" ]]; then
+    last_marker_epoch="$(find "${OBSIDIAN_VAULT}/raw-sources" -name ".processed" -type f \
+      -exec stat -f '%m' {} + 2>/dev/null | sort -rn | head -1 || true)"
+  fi
+  if [[ -z "${last_marker_epoch}" ]] && [[ -d "${OBSIDIAN_VAULT}/wiki/summaries" ]]; then
+    last_marker_epoch="$(find "${OBSIDIAN_VAULT}/wiki/summaries" -type f -name "*.md" \
+      -exec stat -f '%m' {} + 2>/dev/null | sort -rn | head -1 || true)"
+  fi
+  if [[ -n "${last_marker_epoch}" ]]; then
+    local last_iso
+    last_iso="$(date -r "${last_marker_epoch}" -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
+      || date -u -d "@${last_marker_epoch}" '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
+      || echo "${last_marker_epoch}")"
+    add_check "auto-ingest-last" "ok" \
+      "Last auto-ingest activity: ${last_iso}"
+  else
+    # Both raw-sources/ markers and wiki/summaries/ are empty.
+    # Treat as fresh-install state: silent (matches the auto-ingest-manual
+    # convention of "absent = healthy default"). doctor.sh's existing
+    # "no message = nothing to flag" convention preserves the EXIT-CODE-1 (all
+    # ok) test expectation when wiki/summaries/ is empty.
+    :
+  fi
+
+  # axis 2: pending retry queue
+  local retry_queue="${OBSIDIAN_VAULT}/.kioku-auto-ingest-retry.json"
+  if [[ ! -f "${retry_queue}" ]]; then
+    add_check "auto-ingest-retry" "ok" \
+      "No pending auto-ingest retry"
+  elif [[ "${HAS_JQ}" -eq 1 ]]; then
+    local entries_count last_error_type
+    entries_count="$(jq -r '.entries | length' "${retry_queue}" 2>/dev/null || echo "?")"
+    last_error_type="$(jq -r '.entries[-1].errorType // "unknown"' "${retry_queue}" 2>/dev/null || echo "unknown")"
+    if [[ "${entries_count}" == "0" ]]; then
+      add_check "auto-ingest-retry" "ok" \
+        "No pending auto-ingest retry (queue file present but empty)"
+    else
+      add_check "auto-ingest-retry" "warn" \
+        "Pending auto-ingest retry queue: ${entries_count} entries (latest error: ${last_error_type})" \
+        "Next cron tick will retry. Inspect: cat \"\${OBSIDIAN_VAULT}/.kioku-auto-ingest-retry.json\""
+    fi
+  else
+    # jq 不在 fallback: file 存在 + 行数で entries を粗く count
+    local rough_count
+    rough_count="$(grep -c '"errorType"' "${retry_queue}" 2>/dev/null | tr -d ' ' || echo "?")"
+    add_check "auto-ingest-retry" "warn" \
+      "Pending auto-ingest retry queue (~${rough_count} entries, install jq for detail)" \
+      "brew install jq  # or: apt-get install jq"
+  fi
+
+  # axis 3: manual review queue (3 連敗 → human review 待ち)
+  local manual_review="${OBSIDIAN_VAULT}/.kioku-auto-ingest-manual-review.json"
+  if [[ ! -f "${manual_review}" ]]; then
+    # absent = 健全 (entry 0 は default state)、ok 行は出さず silent
+    :
+  elif [[ "${HAS_JQ}" -eq 1 ]]; then
+    local manual_count
+    manual_count="$(jq -r '.entries | length' "${manual_review}" 2>/dev/null || echo "?")"
+    if [[ "${manual_count}" == "0" ]]; then
+      :
+    else
+      add_check "auto-ingest-manual" "fail" \
+        "Manual review queue: ${manual_count} entries (3 retry failed, human action required)" \
+        "Inspect: cat \"\${OBSIDIAN_VAULT}/.kioku-auto-ingest-manual-review.json\""
+    fi
+  else
+    local manual_rough
+    manual_rough="$(grep -c '"rawSource"' "${manual_review}" 2>/dev/null | tr -d ' ' || echo "?")"
+    add_check "auto-ingest-manual" "fail" \
+      "Manual review queue: ~${manual_rough} entries (3 retry failed, human action required, install jq for detail)" \
+      "brew install jq"
+  fi
+}
+
+# -----------------------------------------------------------------------------
+# Section: DiscoverQueries state (Sprint 5.5 PR B55)
+#
+# Sprint 5.5 PR A55 で導入した discoverQueries 8th source (session-logs/ scan
+# dynamic learning) は、`.kioku-discoverqueries-usage.json` usage log に
+# query → count を蓄積し、`.kioku-discoverqueries-opt-out` file でユーザーが
+# 無効化できる。doctor.sh はユーザーが「dynamic learning は動いているか」
+# 「opt-out 済か」「usage log は 64KB rotation 間際か」を一目で把握できる
+# read-only diagnostic を提供する。
+#
+# 集約する 3 axis:
+# - discoverqueries-optout : .kioku-discoverqueries-opt-out 存在 → warn
+#                            (dynamic learning disabled、static 7 source のみ)。
+#                            不在なら silent (= dynamic learning 有効が default)
+# - discoverqueries-usage  : .kioku-discoverqueries-usage.json の entries 件数 +
+#                            最終更新時刻 (= entries[].lastSeen の最大値。
+#                            top-level lastUpdated key は production schema に
+#                            無く、jq fallback `max(.entries[].lastSeen)` で
+#                            算出)。不在 / empty は silent (fresh state)、
+#                            entries>=1 は ok。jq 不在は grep ベース概数 fallback
+# - discoverqueries-size   : usage log file size。64KB (USAGE_LOG_MAX_BYTES)
+#                            未満は silent、超過は warn (FIFO rotation 動作示唆)。
+#                            `wc -c` で OS 非依存 (BSD/GNU stat -f / -c 回避)
+#
+# opt-out enabled 時は usage / size axis を skip (dynamic learning disabled で
+# usage log は無いか stale、noise 回避 — check_auto_ingest_state の
+# "absent = silent" convention に倣う)。
+#
+# Vault が存在しない / OBSIDIAN_VAULT 未設定の場合は本 section を丸ごと skip
+# (existing env-vault check が既に状態を伝えている)。
+#
+# DQ_USAGE_LOG_MAX_BYTES は mcp/lib/discoverqueries-learning.mjs の同名 export
+# USAGE_LOG_MAX_BYTES (64 * 1024) と pin。drift すれば DQ-3 test が検出する。
+# -----------------------------------------------------------------------------
+DQ_USAGE_LOG_MAX_BYTES=$((64 * 1024))
+
+check_discoverqueries_state() {
+  if [[ -z "${OBSIDIAN_VAULT:-}" ]] || [[ ! -d "${OBSIDIAN_VAULT}" ]]; then
+    return 0
+  fi
+
+  local optout_file="${OBSIDIAN_VAULT}/.kioku-discoverqueries-opt-out"
+  local usage_log="${OBSIDIAN_VAULT}/.kioku-discoverqueries-usage.json"
+
+  # axis 1: opt-out marker. Present → dynamic learning disabled (warn). When
+  # opted out the usage / size axes are skipped (the log is absent or stale —
+  # surfacing it would be misleading noise).
+  if [[ -f "${optout_file}" ]]; then
+    add_check "discoverqueries-optout" "warn" \
+      "DiscoverQueries dynamic learning: opt-out enabled (static 7 source only)" \
+      "Remove \"\${OBSIDIAN_VAULT}/.kioku-discoverqueries-opt-out\" to re-enable session-log learning"
+    return 0
+  fi
+
+  # axis 2: usage log entries count + last-update timestamp. The production
+  # appendToUsageLog writes no top-level `lastUpdated` key — only per-entry
+  # `lastSeen` — so the jq expression falls back to max(.entries[].lastSeen).
+  if [[ ! -f "${usage_log}" ]]; then
+    # absent = fresh state (no session-log learning has happened yet). Silent,
+    # matching the auto-ingest-manual "absent = healthy default" convention so
+    # the all-ok EXIT-CODE-1 expectation is preserved.
+    :
+  elif [[ "${HAS_JQ}" -eq 1 ]]; then
+    local entries_count last_updated
+    entries_count="$(jq -r '.entries | length' "${usage_log}" 2>/dev/null || echo "?")"
+    last_updated="$(jq -r '.lastUpdated // (.entries | map(.lastSeen) | max) // ""' "${usage_log}" 2>/dev/null || echo "")"
+    if [[ "${entries_count}" == "0" || "${entries_count}" == "?" ]]; then
+      # empty / unreadable usage log → treat as fresh state, stay silent.
+      :
+    else
+      local detail="usage log present, ${entries_count} queries learned"
+      if [[ -n "${last_updated}" ]]; then
+        detail="${detail}, last updated ${last_updated}"
+      fi
+      add_check "discoverqueries-usage" "ok" \
+        "DiscoverQueries dynamic learning: active (${detail})"
+    fi
+  else
+    # jq 不在 fallback: count usage-log entries roughly by "query" occurrences.
+    # `grep -c` prints 0 yet exits 1 on no-match; under `set -o pipefail` that
+    # exit 1 propagates across the pipe and would trip `|| echo "?"`, yielding a
+    # corrupt 2-line "0\n?" capture that matches neither "0" nor "?" and falls
+    # through to a bogus active line on an empty log. Capture pipefail-safe:
+    # tolerate grep's non-zero exit, then strip whitespace/newlines separately.
+    local rough_count
+    rough_count="$(grep -c '"query"' "${usage_log}" 2>/dev/null || true)"
+    rough_count="$(printf '%s' "${rough_count}" | tr -d ' \n')"
+    [[ -z "${rough_count}" ]] && rough_count="?"
+    if [[ "${rough_count}" == "0" || "${rough_count}" == "?" ]]; then
+      :
+    else
+      add_check "discoverqueries-usage" "ok" \
+        "DiscoverQueries dynamic learning: active (usage log present, ~${rough_count} queries learned, install jq for detail)"
+    fi
+  fi
+
+  # axis 3: usage log size vs the 64KB privacy / FIFO-rotation cap. Uses
+  # `wc -c` (OS-neutral) instead of stat -f / -c (BSD vs GNU divergence).
+  if [[ -f "${usage_log}" ]]; then
+    local log_bytes
+    log_bytes="$(wc -c < "${usage_log}" 2>/dev/null | tr -d ' ' || echo "0")"
+    if [[ ! "${log_bytes}" =~ ^[0-9]+$ ]]; then
+      log_bytes=0
+    fi
+    if [[ "${log_bytes}" -gt "${DQ_USAGE_LOG_MAX_BYTES}" ]]; then
+      local log_kb=$((log_bytes / 1024))
+      add_check "discoverqueries-size" "warn" \
+        "DiscoverQueries usage log near capacity: ${log_kb}KB (>64KB cap, FIFO rotation active — oldest queries are being dropped)" \
+        "Expected behavior (64KB bound); no action needed unless query recall degrades"
+    fi
+  fi
+}
+
+# -----------------------------------------------------------------------------
 # Section: Dependencies
 # -----------------------------------------------------------------------------
 check_dependencies() {
@@ -771,6 +986,8 @@ check_mcp_configs
 check_metadata_parity
 check_dependencies
 check_sync_state
+check_auto_ingest_state
+check_discoverqueries_state
 detect_install_mode
 
 if [[ "${JSON_MODE}" -eq 1 ]]; then

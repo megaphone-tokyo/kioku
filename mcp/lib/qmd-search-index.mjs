@@ -23,6 +23,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { handleSearch } from '../tools/search.mjs';
 import { getFileHistory, isGitRepo } from './git-history.mjs';
+import { scanSessionLogs } from './discoverqueries-learning.mjs';
 
 export const SEARCH_INDEX_SCHEMA_VERSION = 1;
 
@@ -113,6 +114,10 @@ export async function buildSearchIndex(vault, options = {}) {
  *      (hot context = 直近 priority、user 関心と整合度高)
  *   7. wiki/*.md broadly-referenced (>=2 files) — bonus 1.2 * (file_count - 1)
  *      (broadly referenced concept; source 3 と独立に bonus、double-count 回避は per-file Set で記録)
+ *   8. session-logs/ user utilization scan (Sprint 5.5 PR A55) — weight 2.8
+ *      (highest single-source weight: dynamic learning from actual user activity.
+ *      Privacy contract: masking SSOT + opt-out file + 64KB usage log rotate.
+ *      See mcp/lib/discoverqueries-learning.mjs for details.)
  *
  * Dedupe / score: Map で同 query 加算、最後に weight 降順 sort + limit clamp。
  *
@@ -217,6 +222,20 @@ async function discoverQueries(vault, limit) {
       const bonus = 1.2 * (fileSet.size - 1);
       counts.set(heading, (counts.get(heading) ?? 0) + bonus);
     }
+  }
+
+  // Source 8 (NEW, Sprint 5.5 PR A55): user utilization log scan (weight 2.8).
+  // session-logs/ scan with masking SSOT for credential safety + opt-out file
+  // for user control + 64KB FIFO rotation for bounded persistence.
+  // graceful skip on any failure: opt-out / session-logs absent / scan error
+  // all yield an empty Map, preserving build precompute robustness.
+  try {
+    const usageMap = await scanSessionLogs(vault);
+    for (const [query, count] of usageMap.entries()) {
+      counts.set(query, (counts.get(query) ?? 0) + 2.8 * count);
+    }
+  } catch {
+    // best-effort: dynamic learning failure must not abort discoverQueries
   }
 
   // sort by weighted score desc, take top N, dedupe (Map keys already unique)

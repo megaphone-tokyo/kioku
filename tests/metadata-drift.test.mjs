@@ -8,6 +8,9 @@
 //   - BLUE-DRIFT-TOOL-1     : MCP server.mjs registerTool ↔ manifest.json tools[].name 一致
 //   - BLUE-DRIFT-TOOL-2     : app/README.md (EN) tool 言及 ⊆ manifest set (no phantom)
 //   - BLUE-DRIFT-TOOL-3     : context/14-mcp-server.md tool 言及 ⊆ manifest set (no phantom)
+//   - BLUE-DRIFT-TOOL-4     : context/14-mcp-server.md "## 提供する N ツール" header N
+//                             === manifest tools[].length (2026-05-14 §47 incident codification、
+//                             LEARN#9 grep-based audit pattern の 機械検出版)
 //   - BLUE-DRIFT-VERSION-1  : 4 metadata file (mcp/package.json, mcp/manifest.json,
 //                             .claude-plugin/plugin.json, .claude-plugin/marketplace.json
 //                             metadata.version) all parity
@@ -173,6 +176,16 @@ function extractKiokuToolMentions(markdown) {
   return set;
 }
 
+// markdown header から「## 提供する N ツール」の N を抽出
+// 例: "## 提供する 11 ツール" → 11
+// 該当 header 不在なら null を返す (test 側で fail にする)
+function extractContextToolCountHeader(markdown) {
+  const re = /^##\s+提供する\s+(\d+)\s+ツール\s*$/m;
+  const match = markdown.match(re);
+  if (!match) return null;
+  return Number.parseInt(match[1], 10);
+}
+
 // markdown から fenced bash/sh/shell code block の本文のみを抽出
 function extractFencedBashBlocks(markdown) {
   const re = /```(?:bash|sh|shell)\s*\n([\s\S]*?)\n```/g;
@@ -243,6 +256,37 @@ describe('BLUE-DRIFT-TOOL: MCP tool registry drift', () => {
         `  expected: context/14 で言及される kioku_* tool は全て manifest.json tools[].name に存在\n` +
         `  found phantom: ${phantom.join(', ')}\n` +
         `  fix: context/14-mcp-server.md から該当 tool 言及を削除する、または manifest に追加する`,
+    );
+  });
+
+  test('BLUE-DRIFT-TOOL-4: context/14-mcp-server.md "## 提供する N ツール" header N === manifest tools[].length', async () => {
+    // 2026-05-14 §47 incident codification:
+    //   Sprint 2 v0.7.4 で kioku_health を MCP tool に追加した際、
+    //   context/14-mcp-server.md 本文は更新したが section header の "10" → "11" を更新し忘れ。
+    //   tests + manifest + server.mjs は全部 11 に整合、context doc header のみが古いまま残った。
+    //   本 test は header N と manifest tools[].length の drift を機械検出する 4th drift category。
+    //   LEARN#9 grep-based audit pattern の 機械検出版。
+    const manifest = await readJson(PATHS.manifest);
+    const manifestCount = manifest.tools.length;
+
+    const contextText = await readText(PATHS.contextMcp);
+    const headerCount = extractContextToolCountHeader(contextText);
+
+    assert.notEqual(
+      headerCount,
+      null,
+      `context/14-mcp-server.md に "## 提供する N ツール" header が見つかりません。\n` +
+        `  expected: "## 提供する <N> ツール" 形式の H2 header が 1 つ存在\n` +
+        `  fix: 該当 section を context/14-mcp-server.md に追加する、または regex を更新する`,
+    );
+
+    assert.equal(
+      headerCount,
+      manifestCount,
+      `context/14-mcp-server.md tool count header drift detected (§47 incident type)。\n` +
+        `  expected: header "## 提供する N ツール" の N が manifest.json tools[].length と一致\n` +
+        `  found: header N = ${headerCount}, manifest tools[].length = ${manifestCount}\n` +
+        `  fix: context/14-mcp-server.md L31 付近の header を "## 提供する ${manifestCount} ツール" に修正する`,
     );
   });
 });

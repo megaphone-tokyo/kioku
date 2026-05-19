@@ -34,6 +34,49 @@ elapsed_seconds() {
 }
 
 # -----------------------------------------------------------------------------
+# Auto-ingest retry queue (Sprint 5 PR A5)
+# -----------------------------------------------------------------------------
+# extract pre-step (PDF / EPUB / DOCX / URL) と LLM 呼び出し (claude -p) の失敗を
+# Vault 内 JSON に記録し、3 回 retry 後に manual review queue へ promote する。
+# Implementation: hooks/auto-ingest-retry.mjs (Node ESM、scripts/lib/masking.mjs SSOT 経由 credential 自動マスク)
+#
+# Bash 側は rc/stderr を helper に渡すだけで、queue I/O / 分類 / promotion logic は
+# 全て Node 側。 cron 環境で node 不在の場合は record_* は silent no-op、auto-ingest 本体
+# の動作には影響しない (resilience-first)。
+AUTO_INGEST_RETRY_HELPER="$(dirname "$0")/../hooks/auto-ingest-retry.mjs"
+
+# 失敗を記録 (extract または LLM)。$3 が指定されていればそのファイルから stderr を読む、
+# 無ければ空 stdin で起動 (errorType を caller が決め打ちするケース)。
+record_auto_ingest_failure() {
+  local raw_source="$1"
+  local error_type="$2"
+  local stderr_log="${3:-}"
+  if [[ ! -f "${AUTO_INGEST_RETRY_HELPER}" ]] || ! command -v node >/dev/null 2>&1; then
+    return 0
+  fi
+  if [[ -n "${stderr_log}" ]] && [[ -f "${stderr_log}" ]]; then
+    OBSIDIAN_VAULT="${OBSIDIAN_VAULT}" \
+      node "${AUTO_INGEST_RETRY_HELPER}" --enqueue "${raw_source}" "${error_type}" \
+      < "${stderr_log}" >/dev/null 2>&1 || true
+  else
+    OBSIDIAN_VAULT="${OBSIDIAN_VAULT}" \
+      node "${AUTO_INGEST_RETRY_HELPER}" --enqueue "${raw_source}" "${error_type}" \
+      </dev/null >/dev/null 2>&1 || true
+  fi
+}
+
+# 成功を記録 (rawSource を retry queue から削除、manual review queue は触らない)。
+record_auto_ingest_success() {
+  local raw_source="$1"
+  if [[ ! -f "${AUTO_INGEST_RETRY_HELPER}" ]] || ! command -v node >/dev/null 2>&1; then
+    return 0
+  fi
+  OBSIDIAN_VAULT="${OBSIDIAN_VAULT}" \
+    node "${AUTO_INGEST_RETRY_HELPER}" --remove "${raw_source}" \
+    </dev/null >/dev/null 2>&1 || true
+}
+
+# -----------------------------------------------------------------------------
 # Raw MD sha256 計算 helper (v0.6 Phase C-3)
 # -----------------------------------------------------------------------------
 # raw-sources/<subdir>/<name>.md (fetched/ 以外、ユーザー直接配置) の source_sha256 を
@@ -244,18 +287,24 @@ if [[ -d "${RAW_SOURCES_DIR}" ]] \
       subdir_prefix="root"
     fi
 
+    pdf_stderr_log=$(mktemp)
     set +e
-    bash "${EXTRACT_PDF_SCRIPT}" "${pdf}" "${CACHE_DIR}" "${subdir_prefix}"
+    bash "${EXTRACT_PDF_SCRIPT}" "${pdf}" "${CACHE_DIR}" "${subdir_prefix}" 2>"${pdf_stderr_log}"
     rc=$?
+    cat "${pdf_stderr_log}" >&2
     set -e
     case "${rc}" in
-      0) ;;
+      0) record_auto_ingest_success "${pdf}" ;;
       2) echo "${LOG_PREFIX} [info] skipped PDF (encrypted/invalid): ${pdf}" >&2 ;;
       3) echo "${LOG_PREFIX} [info] skipped PDF (empty text / scanned): ${pdf}" >&2 ;;
       4) echo "${LOG_PREFIX} [info] skipped PDF (exceeds hard page limit): ${pdf}" >&2 ;;
       5) echo "${LOG_PREFIX} [warn] PDF outside raw-sources/: ${pdf}" >&2 ;;
-      *) echo "${LOG_PREFIX} [warn] extract-pdf.sh failed (rc=${rc}): ${pdf}" >&2 ;;
+      *)
+        echo "${LOG_PREFIX} [warn] extract-pdf.sh failed (rc=${rc}): ${pdf}" >&2
+        record_auto_ingest_failure "${pdf}" "extract_failed" "${pdf_stderr_log}"
+        ;;
     esac
+    rm -f "${pdf_stderr_log}"
   done < <(find "${RAW_SOURCES_DIR}" -type f -name "*.pdf" 2>/dev/null)
 elif [[ -d "${RAW_SOURCES_DIR}" ]] && find "${RAW_SOURCES_DIR}" -type f -name "*.pdf" 2>/dev/null | grep -q .; then
   echo "${LOG_PREFIX} [warn] PDF(s) present in raw-sources/ but poppler (pdfinfo/pdftotext) or extract-pdf.sh is unavailable. Install poppler to enable PDF ingestion." >&2
@@ -292,23 +341,29 @@ if [[ -d "${RAW_SOURCES_DIR}" ]] && [[ -f "${EXTRACT_EPUB_SCRIPT}" ]]; then
     # OBSIDIAN_VAULT と KIOKU_DOC_MAX_* を呼出側が明示注入 (child-env allowlist 不変)。
     # KIOKU_DOC_MAX_* を allowlist に追加すると prompt injection 経由で size cap を巨大化
     # される攻撃余地ができる (meeting 26042202 合意)。
+    epub_stderr_log=$(mktemp)
     set +e
     OBSIDIAN_VAULT="${OBSIDIAN_VAULT}" \
     KIOKU_DOC_MAX_EXTRACT_BYTES="${KIOKU_DOC_MAX_EXTRACT_BYTES:-209715200}" \
     KIOKU_DOC_MAX_ENTRIES="${KIOKU_DOC_MAX_ENTRIES:-5000}" \
     KIOKU_DOC_MAX_ENTRY_BYTES="${KIOKU_DOC_MAX_ENTRY_BYTES:-52428800}" \
     KIOKU_DOC_MAX_INPUT_BYTES="${KIOKU_DOC_MAX_INPUT_BYTES:-104857600}" \
-      node "${EXTRACT_EPUB_SCRIPT}" "${epub}" "${RAW_SOURCES_DIR}" "${subdir_prefix}"
+      node "${EXTRACT_EPUB_SCRIPT}" "${epub}" "${RAW_SOURCES_DIR}" "${subdir_prefix}" 2>"${epub_stderr_log}"
     rc=$?
+    cat "${epub_stderr_log}" >&2
     set -e
     case "${rc}" in
-      0) ;;
+      0) record_auto_ingest_success "${epub}" ;;
       2) echo "${LOG_PREFIX} [info] skipped EPUB (invalid): ${epub}" >&2 ;;
       3) echo "${LOG_PREFIX} [info] skipped EPUB (empty spine): ${epub}" >&2 ;;
       4) echo "${LOG_PREFIX} [info] skipped EPUB (exceeds max input size): ${epub}" >&2 ;;
       5) echo "${LOG_PREFIX} [warn] EPUB outside raw-sources/: ${epub}" >&2 ;;
-      *) echo "${LOG_PREFIX} [warn] extract-epub.mjs failed (rc=${rc}): ${epub}" >&2 ;;
+      *)
+        echo "${LOG_PREFIX} [warn] extract-epub.mjs failed (rc=${rc}): ${epub}" >&2
+        record_auto_ingest_failure "${epub}" "extract_failed" "${epub_stderr_log}"
+        ;;
     esac
+    rm -f "${epub_stderr_log}"
   done < <(find "${RAW_SOURCES_DIR}" -type f -name "*.epub" 2>/dev/null)
 fi
 
@@ -343,23 +398,29 @@ if [[ -d "${RAW_SOURCES_DIR}" ]] && [[ -f "${EXTRACT_DOCX_SCRIPT}" ]]; then
     # OBSIDIAN_VAULT と KIOKU_DOC_MAX_* を呼出側が明示注入 (child-env allowlist 不変)。
     # KIOKU_DOC_MAX_* を allowlist に追加すると prompt injection 経由で size cap を巨大化
     # される攻撃余地ができる (meeting 26042202 合意、EPUB と同方針)。
+    docx_stderr_log=$(mktemp)
     set +e
     OBSIDIAN_VAULT="${OBSIDIAN_VAULT}" \
     KIOKU_DOC_MAX_EXTRACT_BYTES="${KIOKU_DOC_MAX_EXTRACT_BYTES:-209715200}" \
     KIOKU_DOC_MAX_ENTRIES="${KIOKU_DOC_MAX_ENTRIES:-5000}" \
     KIOKU_DOC_MAX_ENTRY_BYTES="${KIOKU_DOC_MAX_ENTRY_BYTES:-52428800}" \
     KIOKU_DOC_MAX_INPUT_BYTES="${KIOKU_DOC_MAX_INPUT_BYTES:-104857600}" \
-      node "${EXTRACT_DOCX_SCRIPT}" "${docx}" "${RAW_SOURCES_DIR}" "${subdir_prefix}"
+      node "${EXTRACT_DOCX_SCRIPT}" "${docx}" "${RAW_SOURCES_DIR}" "${subdir_prefix}" 2>"${docx_stderr_log}"
     rc=$?
+    cat "${docx_stderr_log}" >&2
     set -e
     case "${rc}" in
-      0) ;;
+      0) record_auto_ingest_success "${docx}" ;;
       2) echo "${LOG_PREFIX} [info] skipped DOCX (invalid): ${docx}" >&2 ;;
       3) echo "${LOG_PREFIX} [info] skipped DOCX (empty content): ${docx}" >&2 ;;
       4) echo "${LOG_PREFIX} [info] skipped DOCX (exceeds max input size): ${docx}" >&2 ;;
       5) echo "${LOG_PREFIX} [warn] DOCX outside raw-sources/: ${docx}" >&2 ;;
-      *) echo "${LOG_PREFIX} [warn] extract-docx.mjs failed (rc=${rc}): ${docx}" >&2 ;;
+      *)
+        echo "${LOG_PREFIX} [warn] extract-docx.mjs failed (rc=${rc}): ${docx}" >&2
+        record_auto_ingest_failure "${docx}" "extract_failed" "${docx_stderr_log}"
+        ;;
     esac
+    rm -f "${docx_stderr_log}"
   done < <(find "${RAW_SOURCES_DIR}" -type f -name "*.docx" 2>/dev/null)
 fi
 
@@ -395,16 +456,22 @@ if [[ -d "${RAW_SOURCES_DIR}" ]] && [[ -f "${EXTRACT_URL_SCRIPT}" ]]; then
 
     url_subdir="$(basename "$(dirname "${urls_file}")")"
 
+    url_stderr_log=$(mktemp)
     set +e
     bash "${EXTRACT_URL_SCRIPT}" \
       --urls-file "${urls_file}" \
       --vault "${OBSIDIAN_VAULT}" \
-      --subdir "${url_subdir}"
+      --subdir "${url_subdir}" 2>"${url_stderr_log}"
     rc=$?
+    cat "${url_stderr_log}" >&2
     set -e
     if [[ "${rc}" -ne 0 ]]; then
       echo "${LOG_PREFIX} [warn] extract-url.sh for ${urls_file} exited ${rc}" >&2
+      record_auto_ingest_failure "${urls_file}" "extract_failed" "${url_stderr_log}"
+    else
+      record_auto_ingest_success "${urls_file}"
     fi
+    rm -f "${url_stderr_log}"
   done < <(find "${RAW_SOURCES_DIR}" -type f -name "urls.txt" 2>/dev/null)
 fi
 
@@ -673,7 +740,30 @@ run_ingest() {
     --max-turns 60
 }
 
-run_ingest
+# Sprint 5 PR A5: LLM 呼び出しの失敗を retry queue に記録する。
+# `<llm-batch>` placeholder を rawSource に使う (LLM は全 unprocessed sources を
+# 1 回で処理するため per-source 粒度は持たない。3 連敗で manual review queue 行き)。
+#
+# trap chain: claude -p は 25 分動く可能性があるため、SIGTERM / SIGKILL で kill
+# された場合に tmp file を /tmp に残さないよう、acquire_lock の EXIT trap を
+# release_lock + LLM_STDERR_LOG cleanup の合成 handler に上書きする (bash trap は
+# per-signal で 1 handler、複数 cleanup は `;` 区切りで chain)。
+LLM_STDERR_LOG=$(mktemp)
+trap 'release_lock; rm -f "${LLM_STDERR_LOG:-}"' EXIT
+
+set +e
+run_ingest 2>"${LLM_STDERR_LOG}"
+LLM_RC=$?
+cat "${LLM_STDERR_LOG}" >&2 || true
+set -e
+
+if [[ "${LLM_RC}" -ne 0 ]]; then
+  echo "${LOG_PREFIX} [warn] claude -p failed (rc=${LLM_RC})" >&2
+  record_auto_ingest_failure "<llm-batch>" "llm_failed" "${LLM_STDERR_LOG}"
+else
+  record_auto_ingest_success "<llm-batch>"
+fi
+rm -f "${LLM_STDERR_LOG}" || true
 
 # -----------------------------------------------------------------------------
 # Ingest 結果を commit & push
