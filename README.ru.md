@@ -331,6 +331,17 @@ KIOKU спроектирован для **совместного использ�
 
 ## История изменений
 
+### 2026-05-19 — v0.10.0: "Ваш auto-ingest никогда не падает молча, а поиск учится на ваших сессиях" — Sprint 5 + 5.5 завершён (reliability + intelligence の 2 軸進化)
+
+v0.10.0 — **Sprint 5 (axis A) + Sprint 5.5 (axis B) 全完走**. reliability + intelligence の 2 軸進化, bundle minor release.
+
+- **Sprint 5 axis A (auto-ingest reliability)**: `hooks/auto-ingest-retry.mjs` retry queue (3x exponential backoff + persistent resume) + classify (network/transient/permanent) + manual review queue + credential masking (`applyMasks` SSOT), `scripts/doctor.sh` `check_auto_ingest_state` diagnostic, LEARN#8b N=3 extract
+- **Sprint 5.5 axis B (discoverQueries 自動学習)**: `mcp/lib/discoverqueries-learning.mjs` session-logs/ scan = 8th source (weight 2.8, 最高), privacy contract 3 axis (`applyMasks` SSOT / `.kioku-discoverqueries-opt-out` / `.kioku-discoverqueries-usage.json` 64KB FIFO), `scripts/doctor.sh` `check_discoverqueries_state`, LEARN#8b N=4 reinforcement
+- **Hardened design contract**: credential masking SSOT (`applyMasks`) reused across auto-ingest retry log + discoverQueries usage log
+- **Tests**: Sprint 5 + 5.5 全 BLUE-* green, Sprint 4 累計 regression なし
+- **subagent-driven N=29-34 cycle** — Sprint 5 (N=29-31) + Sprint 5.5 (N=32-34)
+- [Release v0.10.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.10.0) — `kioku-wiki-0.10.0.mcpb` attached
+
 ### 2026-05-15 — v0.9.0: "Откройте wiki в браузере, ищите с Claude, даже с телефона" — Sprint 4 завершен (4 pillar: Shell + Search + Mobile + Sync polish)
 
 v0.9.0 — marker **Sprint 4 全 phase 完走**. 4 pillar narrative: **Hardened LLM Wiki for Professionals + Claude-augmented Search + Mobile responsive + Sync polished**. Path C+β progress 70% → 100% завершено, Sprint 4 全 cycle completion marker.

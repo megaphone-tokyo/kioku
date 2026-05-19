@@ -465,6 +465,29 @@ If you find a security issue, please report it via [SECURITY.md](SECURITY.md) �
 
 ## Changelog
 
+### 2026-05-19 — v0.10.0: "Your auto-ingest never fails silently, and search learns from your own sessions" — Sprint 5 + 5.5 完走 (reliability + intelligence の 2 軸進化)
+
+v0.10.0 ships **Sprint 5 (axis A) + Sprint 5.5 (axis B) 全完走** — v0.9.0 (Sprint 4) で「使いたい時に使える体験」が 4 軸揃った上で、v0.10.0 は **基盤の信頼性と検索の知能を 2 軸** で底上げする。「自動取り込みが network 一時失敗で静かに止まらない」「検索 query が自分の過去 session から自動で学習して賢くなる」 — この 2 つを reliability + intelligence の bundle minor release として land。
+
+KIOKU positioning に **reliability (auto-ingest 自己回復) + intelligence (discoverQueries 自動学習)** の 2 軸が加わる。Sprint 4 (v0.9.0) の 4 pillar narrative の上に、基盤を強くする 2 軸進化。
+
+- **Sprint 5 axis A — auto-ingest pipeline reliability** ("取り込みが静かに失敗しない"):
+  - `hooks/auto-ingest-retry.mjs` — auto-ingest 失敗を **retry queue** で 3 回 exponential backoff + persistent queue、次回起動時 resume
+  - **classify** — 失敗を category 分類 (network / transient / permanent) して recovery 戦略を分岐
+  - **manual review queue** — 自動回復不能な item を user が後から確認できる queue へ退避
+  - **credential masking** — retry log に token / password が残らないよう `applyMasks` SSOT で redact
+  - `scripts/doctor.sh` **`check_auto_ingest_state`** — queue 残件 / 最終成功時刻 / 失敗 category を read-only diagnostic
+  - LEARN#8b N=3 mandatory extract pattern 達成
+- **Sprint 5.5 axis B — discoverQueries 自動学習** ("検索が自分の会話から自動で賢くなる"):
+  - `mcp/lib/discoverqueries-learning.mjs` — `discoverQueries` に **session-logs/ scan = 8th source** (weight 2.8、既存 7 source 中最高) を additive 統合、過去 session から query を dynamic 学習
+  - **privacy contract 3 axis** — (1) masking SSOT `applyMasks` で sensitive content を pin (2) `.kioku-discoverqueries-opt-out` で opt-out (3) `.kioku-discoverqueries-usage.json` 64KB FIFO rotate で usage log を bounded に
+  - `scripts/doctor.sh` **`check_discoverqueries_state`** — 3 axis (learning 有効性 / opt-out / usage log) を read-only diagnostic
+  - LEARN#8b N=4 reinforcement (mockSessionLogScan + readUsageLog)
+- **Hardened 設計契約 2 axis 通底** — credential masking SSOT (`applyMasks`) を auto-ingest retry log と discoverQueries usage log の両方で再利用、秘密を共有しても漏れない契約を 2 軸横断で維持
+- **Tests** — Sprint 5 (auto-ingest-retry .mjs/.sh + auto-ingest-diagnostic + doctor) + Sprint 5.5 (discoverqueries-learning + discoverqueries-privacy + discoverqueries-diagnostic) 全 BLUE-* green、Sprint 4 累計 regression なし
+- **subagent-driven N=29-34 cycle** — Sprint 5 (N=29-31) + Sprint 5.5 (N=32-34)、axis A+B 各 PR A/B/C の N=3 cycle 簡略形 × 2
+- [Release v0.10.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.10.0) — `kioku-wiki-0.10.0.mcpb` attached
+
 ### 2026-05-15 — v0.9.0: "Open your wiki in a browser, search with Claude, even from your phone" — Sprint 4 完走 (4 pillar: Shell + Search + Mobile + Sync polish)
 
 v0.9.0 ships **Sprint 4 全 phase 完走** — Sprint 3 (v0.8.0 Visualizer β) で「過去が見える」が揃った上で、Sprint 4 は **「使いたい時に使える体験」を 4 軸** で揃える。「Obsidian を起動せずブラウザで Wiki を一望」「ブラウザで keyword 検索 → Claude で深掘り」「スマホで Wiki を読める」「Git push が静かに失敗しない」 — この 4 つの疑問に 3 日間 (5/13–5/15) で 4 phase land。
