@@ -16,6 +16,7 @@
 //     - 7b: getFileHistory が `{ commits: [], error: 'not_a_git_repo' }` shape を返した second-layer guard (defense-in-depth)
 //   - F8 (BLUE-QMD-INDEX-8): wiki/hot.md content scan で ATX heading + 単独行 #tag 抽出 (weight 2.5)
 //   - F9 (BLUE-QMD-INDEX-9): empty PM-Vault-like fixture (no log tags, no index wikilinks, no concept files) でも raw-sources + git + hot.md から >= 3 query 産出 (regression guard)
+//   - F10 (BLUE-QMD-INDEX-10): Sprint 5.5 PR A55/B55 — discoverQueries が session-logs/ を Source 8 (weight 2.8) として additive 統合 + opt-out hard gate (両側 pin、LEARN#5 cross-suite reference)
 
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -459,6 +460,71 @@ describe('qmd-search-index', () => {
       // duplicate なし
       const uniq = new Set(queries);
       assert.equal(uniq.size, queries.length, 'discoverQueries must dedupe');
+    } finally {
+      await rm(ws, { recursive: true, force: true });
+    }
+  });
+
+  // Sprint 5.5 PR A55/B55: 8th source (session-logs/ scan) integration.
+  // A55 で discoverqueries-learning.test.mjs 側に統合 test (BLUE-DQ-LEARN-A55-4)
+  // はあるが、本 file 側からも「discoverQueries が session-logs/ 由来 query を
+  // Source 8 として weight 2.8 で additive 統合する」ことを pin して両側 guard
+  // にする (LEARN#5 cross-suite reference pinning: scanSessionLogs call が
+  // qmd-search-index.mjs discoverQueries から脱落しないこと)。
+  test('BLUE-QMD-INDEX-10 (F10): discoverQueries integrates session-logs/ as Source 8 (weight 2.8, additive)', async () => {
+    assert.ok(__test__);
+    const { discoverQueries } = __test__;
+    const ws = await mkdtemp(join(tmpdir(), 'kioku-qmd-f10-'));
+    const v = join(ws, 'vault');
+    try {
+      // Static source (Source 1): a low-count log.md tag.
+      await mkdir(join(v, 'wiki'), { recursive: true });
+      await writeFile(
+        join(v, 'wiki', 'log.md'),
+        '# Log\n\n- 2026-05-15 #f10-static-tag mention\n',
+      );
+
+      // Source 8: session-logs/ file mentioning a unique query repeatedly.
+      // weight 2.8 * occurrences should clearly surface it in TopN while the
+      // static tag still remains (additive, not replacement).
+      await mkdir(join(v, 'session-logs'), { recursive: true });
+      await writeFile(
+        join(v, 'session-logs', '20260515-120000-aaaa-f10.md'),
+        [
+          '## User (12:00:00)',
+          '',
+          '#f10-session-query asked repeatedly',
+          '',
+          '# f10-session-query Heading',
+          '',
+          'More about #f10-session-query here.',
+          '',
+        ].join('\n'),
+      );
+
+      const queries = await discoverQueries(v, 20);
+      assert.ok(Array.isArray(queries));
+      assert.ok(
+        queries.includes('f10-session-query'),
+        `Source 8 (session-logs/) query missing from TopN, got: ${queries.join(', ')}`,
+      );
+      assert.ok(
+        queries.includes('f10-static-tag'),
+        `static log.md tag must still appear (Source 8 is additive), got: ${queries.join(', ')}`,
+      );
+
+      // opt-out hard gate: with the marker present, Source 8 yields nothing
+      // (the static tag still appears — proves graceful additive skip).
+      await writeFile(join(v, '.kioku-discoverqueries-opt-out'), '', 'utf8');
+      const optedOut = await discoverQueries(v, 20);
+      assert.ok(
+        !optedOut.includes('f10-session-query'),
+        `opt-out must suppress Source 8, got: ${optedOut.join(', ')}`,
+      );
+      assert.ok(
+        optedOut.includes('f10-static-tag'),
+        `static sources unaffected by opt-out, got: ${optedOut.join(', ')}`,
+      );
     } finally {
       await rm(ws, { recursive: true, force: true });
     }

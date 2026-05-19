@@ -1012,6 +1012,124 @@ EOF
 }
 
 # -----------------------------------------------------------------------------
+# BLUE-DOCTOR-AI-INT-1: check_auto_ingest_state surfaces in default doctor output
+#
+# Sprint 5 PR B5 で追加した check_auto_ingest_state が main() に正しく登録されていて、
+# retry queue + manual review queue が text mode 出力にも JSON mode にも現れることを
+# pin する。auto-ingest-* の詳細 unit test は tests/auto-ingest-diagnostic.test.sh で
+# 持つが、本 assertion は「main() から関数 call が脱落しないこと」を保証する
+# regression guard (LEARN#5 cross-suite reference pinning、check_sync_state の AI-INT
+# 版)。
+# -----------------------------------------------------------------------------
+test_auto_ingest_state_integrated() {
+  echo "BLUE-DOCTOR-AI-INT-1: check_auto_ingest_state lines appear in default doctor output"
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "  skip  jq not available"
+    return 0
+  fi
+  local d
+  d="$(new_case "auto-ingest-integrated")"
+  stub_full_clis "${d}/bin"
+  stub_node_18 "${d}/bin"
+  stub_curl_ok "${d}/bin"
+  init_full_vault_with_commit "${d}/vault"
+
+  # Seed a summary so check_auto_ingest_state's "last marker" axis returns ok
+  # (rather than the "no activity yet" warn). init_full_vault_with_commit only
+  # creates empty wiki/ — we add wiki/summaries/seed.md to exercise the mtime
+  # fallback path of check_auto_ingest_state.
+  mkdir -p "${d}/vault/wiki/summaries"
+  cat >"${d}/vault/wiki/summaries/seed.md" <<'EOF'
+---
+type: summary
+---
+seed
+EOF
+
+  # Pre-populate a retry queue with the production schema (Sprint 5 PR A5
+  # writeAutoIngestRetryQueue output shape) so the integration assertion also
+  # pins schema parity with hooks/auto-ingest-retry.mjs.
+  cat >"${d}/vault/.kioku-auto-ingest-retry.json" <<'EOF'
+{
+  "version": 1,
+  "entries": [
+    {
+      "rawSource": "raw-sources/articles/integration-test.pdf",
+      "errorType": "extract_failed",
+      "message": "extract-pdf.sh: failed (rc=99) — integration test seed",
+      "firstAttempt": "2026-05-17T01:00:00.000Z",
+      "lastAttempt": "2026-05-17T02:00:00.000Z",
+      "retryCount": 0
+    }
+  ]
+}
+EOF
+
+  local out
+  set +e
+  out="$(run_doctor "${d}" OBSIDIAN_VAULT="${d}/vault" 2>&1)"
+  set -e
+
+  assert_contains "${out}" "Last auto-ingest activity:" \
+    "AI-INT-1: last auto-ingest line surfaces in integrated output"
+  assert_contains "${out}" "Pending auto-ingest retry queue" \
+    "AI-INT-1: pending retry line surfaces in integrated output"
+  assert_contains "${out}" "extract_failed" \
+    "AI-INT-1: errorType parsed from production-schema queue file"
+}
+
+# -----------------------------------------------------------------------------
+# BLUE-DOCTOR-DQ-INT-1: check_discoverqueries_state surfaces in default doctor output
+#
+# Sprint 5.5 PR B55 で追加した check_discoverqueries_state が main() に正しく
+# 登録されていて、usage log present 時に discoverqueries-usage ok line が
+# text mode 出力に現れることを pin する。discoverqueries-* の詳細 unit test は
+# tests/discoverqueries-diagnostic.test.sh で持つが、本 assertion は
+# 「main() から関数 call が脱落しないこと」を保証する regression guard
+# (LEARN#5 cross-suite reference pinning、check_auto_ingest_state の AI-INT 版)。
+# -----------------------------------------------------------------------------
+test_discoverqueries_state_integrated() {
+  echo "BLUE-DOCTOR-DQ-INT-1: check_discoverqueries_state lines appear in default doctor output"
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "  skip  jq not available"
+    return 0
+  fi
+  local d
+  d="$(new_case "discoverqueries-integrated")"
+  stub_full_clis "${d}/bin"
+  stub_node_18 "${d}/bin"
+  stub_curl_ok "${d}/bin"
+  init_full_vault_with_commit "${d}/vault"
+
+  # Pre-populate a usage log with the production schema (Sprint 5.5 PR A55
+  # appendToUsageLog output shape) so the integration assertion also pins
+  # schema parity with mcp/lib/discoverqueries-learning.mjs.
+  cat >"${d}/vault/.kioku-discoverqueries-usage.json" <<'EOF'
+{
+  "version": 1,
+  "entries": [
+    {
+      "query": "integration-test-query",
+      "count": 5,
+      "firstSeen": "2026-05-15T01:00:00.000Z",
+      "lastSeen": "2026-05-15T02:00:00.000Z"
+    }
+  ]
+}
+EOF
+
+  local out
+  set +e
+  out="$(run_doctor "${d}" OBSIDIAN_VAULT="${d}/vault" 2>&1)"
+  set -e
+
+  assert_contains "${out}" "DiscoverQueries dynamic learning: active" \
+    "DQ-INT-1: discoverqueries-usage active line surfaces in integrated output"
+  assert_contains "${out}" "queries learned" \
+    "DQ-INT-1: entries count parsed from production-schema usage log"
+}
+
+# -----------------------------------------------------------------------------
 # Run all
 # -----------------------------------------------------------------------------
 test_env_unset
@@ -1038,6 +1156,8 @@ test_install_mode_mcp_only
 test_install_mode_unknown
 test_install_mode_json
 test_sync_state_integrated
+test_auto_ingest_state_integrated
+test_discoverqueries_state_integrated
 
 echo ""
 echo "doctor.test.sh: ${PASS} passed, ${FAIL} failed"
