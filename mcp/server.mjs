@@ -35,7 +35,7 @@ const debug = (msg) => {
 };
 
 const server = new McpServer(
-  { name: 'kioku-wiki', version: '0.1.0' },
+  { name: 'kioku-wiki', version: '0.10.0' },
   { capabilities: { tools: {} } },
 );
 
