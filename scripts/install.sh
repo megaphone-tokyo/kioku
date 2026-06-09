@@ -7,7 +7,7 @@
 #   Mode C: Codex / Gemini / 一般 user 向け manual install (本 script が clone + hooks 登録を実行)
 #
 # 使い方:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/megaphone-tokyo/kioku/main/install.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/megaphone-tokyo/kioku/main/scripts/install.sh)
 #   bash install.sh                       # smart default 判定 + 確認 prompt
 #   bash install.sh --yes                 # 確認 prompt skip (smart default に従う)
 #   bash install.sh --mode=a              # Mode A を強制 (案内のみ、user が Claude Code で実行)
