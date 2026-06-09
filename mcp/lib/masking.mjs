@@ -3,6 +3,14 @@
 // IMPORTANT: hooks/session-logger.mjs の MASK_RULES と同じ内容を保つこと。
 // 新パターンを追加するときは、scan-secrets.sh の PATTERNS と合わせて 3 箇所同期する。
 // 順序重要: 長いプレフィックスから先にマッチさせる。
+//
+// 2026-06-05 F-libs-03 (H1-IMM-04) fix:
+//   sanitizeSourceType は scripts/lib/masking.mjs の同名関数と byte-identical な
+//   関数 body を維持する (4-way SSOT: parent scripts / parent mcp / app scripts /
+//   app mcp)。MCP 経路 (kioku_ingest_url 等) で source_type を frontmatter に
+//   落とす前に必ず通すことで、prompt injection / シェルメタ / 不可視 Unicode を
+//   除去する。横展開 (kioku_write_note / kioku_write_wiki / kioku_ingest_document /
+//   kioku_ingest_pdf) は H2 defer。
 
 export const MASK_RULES = [
   [/sk-ant-[A-Za-z0-9\-_]{20,}/g, 'sk-ant-***'],
@@ -47,4 +55,22 @@ export function applyMasks(text) {
     out = out.replace(re, repl);
   }
   return out;
+}
+
+// source_type や frontmatter 由来の短い文字列を YAML/シェルに安全に落とすための
+// sanitize。設計書 26041705 §4.2 の規約に基づき、以下を除去する:
+//   - 制御文字 (U+0000〜U+001F, U+007F)
+//   - Unicode 不可視/書字方向制御文字 (ZWSP, RTLO, BOM, soft hyphen 等)
+//   - シェルメタ文字 (` $ ; & |)
+// 出力は NFC 正規化してホモグリフ攻撃の一次防御とする。
+// 目的は prompt injection 耐性と YAML/シェル整合性の保証のみで、
+// 一般的な記号 (英数 / ハイフン / アンダースコア / 空白 / ドット / コロン) は通す。
+export function sanitizeSourceType(value) {
+  if (typeof value !== 'string') return '';
+  return value
+    .replace(/[\u0000-\u001F\u007F]/g, '')
+    .replace(INVISIBLE_CHARS_RE, '')
+    .replace(/[`$;&|]/g, '')
+    .normalize('NFC')
+    .trim();
 }

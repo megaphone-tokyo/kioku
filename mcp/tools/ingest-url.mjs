@@ -41,6 +41,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { withLock } from '../lib/lock.mjs';
+import { sanitizeSourceType } from '../lib/masking.mjs';
 import { checkRobots, RobotsError } from '../lib/robots-check.mjs';
 import { envPositiveInt } from '../lib/env-helpers.mjs';
 import { extractAndSaveUrl } from '../lib/url-extract.mjs';
@@ -253,6 +254,14 @@ export async function handleIngestUrl(vault, args, injections = {}) {
 
     // 5. HTML → orchestrator に委譲。refresh_days は呼び出し引数 > env > default。
     const refreshDays = args.refresh_days ?? getDefaultRefreshDays();
+    // F-libs-03 (2026-06-05): source_type は frontmatter に落ちる前に sanitize する。
+    //   制御文字 / シェルメタ / 不可視 Unicode を除去して prompt injection / YAML 偽装の
+    //   経路を断つ。空文字に潰れた場合 (例: ;;;) は extractAndSaveUrl の default
+    //   ('article') に委譲するため undefined を渡す。横展開 (kioku_write_note 等) は H2 defer。
+    const sanitizedSourceType =
+      args.source_type != null ? sanitizeSourceType(args.source_type) : undefined;
+    const sourceTypeForExtract =
+      sanitizedSourceType && sanitizedSourceType.length > 0 ? sanitizedSourceType : undefined;
     try {
       const r = await extractAndSaveUrl({
         url,
@@ -260,7 +269,7 @@ export async function handleIngestUrl(vault, args, injections = {}) {
         subdir,
         refreshDays,
         title: args.title,
-        sourceType: args.source_type,
+        sourceType: sourceTypeForExtract,
         tags: args.tags ?? [],
         robotsUrlOverride: injections.robotsUrlOverride,
         claudeBin: injections.claudeBin,

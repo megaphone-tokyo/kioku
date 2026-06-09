@@ -20,7 +20,7 @@ const { findWikilinks, hasWikilink, appendRelatedLink } =
   await import(join(MCP_DIR, 'lib', 'wikilinks.mjs'));
 const { withLock, LockTimeoutError, writeSummaryLock, summaryLockPath } =
   await import(join(MCP_DIR, 'lib', 'lock.mjs'));
-const { applyMasks, MASK_RULES } =
+const { applyMasks, MASK_RULES, sanitizeSourceType } =
   await import(join(MCP_DIR, 'lib', 'masking.mjs'));
 const { loadTemplate, VALID_TEMPLATES } =
   await import(join(MCP_DIR, 'lib', 'templates.mjs'));
@@ -322,6 +322,62 @@ describe('masking', () => {
       assert.ok(rule[0] instanceof RegExp);
       assert.equal(typeof rule[1], 'string');
     }
+  });
+
+  // LIB44-LIB48: F-libs-03 (2026-06-05) — mcp/lib/masking.mjs から
+  // sanitizeSourceType が export されており、scripts/lib/masking.mjs と同等の
+  // sanitize 挙動 (control char / shell metachar / invisible unicode 除去) を
+  // 提供することを pinning する。kioku_ingest_url 経由で MCP 境界に到達した
+  // source_type が prompt injection / YAML 偽装に使われる latent risk を防ぐ。
+  test('LIB44 sanitizeSourceType is exported from mcp/lib/masking.mjs', () => {
+    assert.equal(typeof sanitizeSourceType, 'function');
+  });
+
+  test('LIB45 sanitizeSourceType strips control characters (U+0000-U+001F, U+007F)', () => {
+    // 各種制御文字を組み合わせて除去できることを確認 (NUL, BEL, US, DEL)
+    assert.equal(sanitizeSourceType('pap\x00er\x07\x1f\x7f'), 'paper');
+    // 中間にも複数挟まる場合
+    assert.equal(sanitizeSourceType('a\x01b\x10c\x7fd'), 'abcd');
+    // 純粋な制御文字だけは空に潰れる
+    assert.equal(sanitizeSourceType('\x00\x07\x1f\x7f'), '');
+  });
+
+  test('LIB46 sanitizeSourceType strips shell metacharacters', () => {
+    // 設計書 26041705 §4.2 の shell メタ集合: backtick / $ / ; / & / |
+    assert.equal(sanitizeSourceType('; rm -rf /'), 'rm -rf /');
+    assert.equal(sanitizeSourceType('bad`back$tick&pipe|'), 'badbacktickpipe');
+    // backslash は除去対象外 (parent と挙動を合わせる)。残ること自体は OK
+    // ただし通常の英数とハイフンは保持する
+    assert.equal(sanitizeSourceType('paper'), 'paper');
+    assert.equal(sanitizeSourceType('ISO-standard'), 'ISO-standard');
+  });
+
+  test('LIB47 sanitizeSourceType strips invisible unicode (ZWSP, BOM, LSEP)', () => {
+    // U+200B ZWSP, U+FEFF BOM, U+202E RTLO
+    assert.equal(
+      sanitizeSourceType('paper\u202Eignore\u200Binstructions\uFEFF'),
+      'paperignoreinstructions',
+    );
+    // U+2028 LINE SEPARATOR は INVISIBLE_CHARS_RE の範囲外 (U+202A-U+202E のみ) — code-style.md
+    // LEARN#13 の通り regex literal には書かない。parent 実装と byte-identical なので、
+    // INVISIBLE_CHARS_RE のカバー範囲 (soft hyphen / Mongolian VS / ZWSP/ZWNJ/ZWJ/LRM/RLM /
+    // LRE/RLE/PDF/LRO/RLO / WJ / 不可視数学演算子 / BOM) のうち最も典型を再確認する。
+    // U+00AD SOFT HYPHEN も除去されること:
+    assert.equal(sanitizeSourceType('soft\u00ADhyphen'), 'softhyphen');
+    // U+2060 WORD JOINER も除去:
+    assert.equal(sanitizeSourceType('word\u2060joiner'), 'wordjoiner');
+  });
+
+  test('LIB48 sanitizeSourceType normalizes NFC and handles non-string input', () => {
+    // NFD "é" (e + combining acute) → NFC "é" (single codepoint)
+    const nfd = 'pape\u0301r';
+    const nfc = 'pap\u00E9r';
+    assert.equal(sanitizeSourceType(nfd), nfc);
+    // 非文字列入力は空文字を返す (silent coerce ではなく安全側に倒す)
+    assert.equal(sanitizeSourceType(null), '');
+    assert.equal(sanitizeSourceType(undefined), '');
+    assert.equal(sanitizeSourceType(42), '');
+    assert.equal(sanitizeSourceType({}), '');
   });
 });
 
