@@ -331,6 +331,18 @@ KIOKU 是一個存取**所有 Claude Code 工作階段 I/O** 的 Hook 系統。
 
 ## 更新歷史
 
+### 2026-07-09 — v0.11.0：「記憶優先你最新的關注，健康檢查 0.1 秒完成」— internal hardening 6 件 + recency decay
+
+v0.11.0 是 **recency decay (時間減衰) + internal hardening 6 件** 的 bundle release。search 優先你最新的關注，健康檢查 0.1 秒完成，hook 的靜默失敗變得可見。
+
+- **recency decay**：session-logs 學習 (v0.10.0 8th source) 加入**半衰期 14 天**指數衰減，`KIOKU_DQ_HALFLIFE_DAYS` 可調，opt-out (`.kioku-discoverqueries-opt-out`) / privacy contract 不變
+- **doctor --quick**：`bash scripts/doctor.sh --quick` = 3 項健康檢查 < 0.1 秒 (`--json` 可用)，完整 38 項診斷不變
+- **install script 分層**：`scripts/install/user/` (面向使用者 3 個) + `scripts/install/internal/` (內部 7 個)，舊 path = `[DEPRECATED]` 相容 shim 維持 2 個 release，一鍵 install URL (`scripts/install.sh`) 不變
+- **Mode gate**：在 Claude Code 環境手動 install hook 時引導使用 `/plugin install` (`--force` 可覆蓋)
+- **Hook silent failure 可見化 + 內部強化**：靜默失敗 (空回應 / 轉換拒絕 / 檔案衝突) 全部記錄 (經 masking) + doctor 診斷 + session 開始通知，masking 規則 (21 patterns) / vault path 驗證 → SSOT 統合 + parity test
+- **Tests**：full test suite exit 0 (doctor 89 / install-hierarchy 58 / mask-parity 7)，8 PR + branch 橫斷統合 review Critical 0
+- [Release v0.11.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.11.0)
+
 ### 2026-05-19 — v0.10.0：「auto-ingest 不再靜默失敗，search 從你自己的 session 自動學習」— Sprint 5 + 5.5 完成 (reliability + intelligence の 2 軸進化)
 
 v0.10.0 是 **Sprint 5 (axis A) + Sprint 5.5 (axis B) 全完走** marker。reliability + intelligence の 2 軸進化，bundle minor release。

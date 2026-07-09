@@ -484,6 +484,28 @@ KIOKU は Claude Code の**全セッション入出力にアクセスする Hook
 
 ## 更新履歴
 
+### 2026-07-09 — v0.11.0: 「記憶が新しい関心を優先し、健康確認が 0.1 秒になった」— internal hardening 6 件 + recency decay
+
+v0.11.0 は **recency decay (検索の時間減衰) + internal hardening 6 件** をまとめた release。v0.10.0 (Sprint 5.5) で入った「使うほど賢くなる検索」(session-logs 学習) が**新しい関心を優先**するようになり、「自分の KIOKU は健康?」が **0.1 秒** で分かり、hook の**静かな失敗に気づける**ようになる。
+
+v0.10.0 の reliability + intelligence 2 軸をそのまま深掘りする進化 — intelligence 側は時間減衰で「今の関心」に追従し、reliability 側は見えない失敗の可視化と SSOT 統合で土台を固める。
+
+- **検索の時間減衰 (recency decay)**（「検索が古い関心に引きずられない」）:
+  - session-logs 学習 (v0.10.0 の Source 8) に**半減期 14 日の指数減衰**を追加 — 古い高頻度の関心より、新しい関心が上位に
+  - `KIOKU_DQ_HALFLIFE_DAYS` 環境変数で半減期を調整可
+  - opt-out (`.kioku-discoverqueries-opt-out`) とプライバシー契約は従来のまま不変
+- **doctor --quick**（「自分の KIOKU は健康? が 0.1 秒で分かる」）:
+  - `bash scripts/doctor.sh --quick` — 3 項目 (直近セッションログの有無 / wiki の中身 / MCP 登録) を **0.1 秒未満** で確認
+  - フル診断 (38 項目) は従来どおり flag なし、`--json` 併用可
+- **install script 階層化** — `scripts/install/user/` (ユーザーが触る 3 本) と `scripts/install/internal/` (内部用 7 本) に整理。旧 path は `[DEPRECATED]` 案内付きの互換 shim を 2 release 維持、ワンライナー install の公開 URL (`scripts/install.sh`) は不変
+- **Mode gate** — Claude Code 環境で手動 hook install しようとすると `/plugin install` を案内 (`--force` で override 可)
+- **Hook silent failure の可視化 + 内部堅牢化**:
+  - hook の静かな失敗 (空の応答 / 変換拒否 / ファイル競合) を全てログ記録 (masking 経由) + doctor 診断 + セッション開始時の通知で可視化 — 秘匿情報がログに漏れない設計はここでも維持
+  - masking ルール (21 パターン) と検証ロジックを共有リテラル構造に統合、drift を機械検出する parity test を新設
+  - vault path 検証を 12 script の個別実装から 1 ライブラリに SSOT 統合
+- **Tests** — full test suite exit 0 (doctor 89 / install-hierarchy 58 / mask-parity 7 assertion 他)、8 PR + branch 横断の統合レビューで Critical 0
+- [Release v0.11.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.11.0)
+
 ### 2026-05-19 — v0.10.0: 「取り込みは静かに失敗しない、検索はあなたの会話から自動で賢くなる」— Sprint 5 + 5.5 完走 (reliability + intelligence の 2 軸進化)
 
 v0.10.0 は **Sprint 5 (axis A) + Sprint 5.5 (axis B) 全完走**。v0.9.0 (Sprint 4) で「使いたい時に使える体験」が 4 軸揃った上で、v0.10.0 は **基盤の信頼性と検索の知能を 2 軸** で底上げする。「自動取り込みが network 一時失敗で静かに止まらない」「検索 query が自分の過去 session から自動で学習して賢くなる」 — この 2 つを reliability + intelligence の bundle minor release として land。

@@ -263,6 +263,18 @@ KIOKU एक Hook सिस्टम है जो **सभी Claude Code स�
 
 ## परिवर्तन इतिहास
 
+### 2026-07-09 — v0.11.0: "आपकी memory नई रुचियों को प्राथमिकता देती है, और health check 0.1 सेकंड में पूरा होता है" — internal hardening 6 件 + recency decay
+
+v0.11.0 = **recency decay + internal hardening 6 件**, bundle release. search आपकी नई रुचियों को follow करता है, health check 0.1s में पूरा होता है, और hooks की चुपचाप विफलताएं दिखने लगती हैं.
+
+- **recency decay**: session-logs learning (v0.10.0 का 8th source) में **14 दिन half-life** exponential decay जुड़ा, `KIOKU_DQ_HALFLIFE_DAYS` से adjustable, opt-out (`.kioku-discoverqueries-opt-out`) / privacy contract अपरिवर्तित
+- **doctor --quick**: `bash scripts/doctor.sh --quick` = 3-item health check < 0.1s (`--json` उपलब्ध), पूरा 38-item diagnostic पहले जैसा
+- **install script hierarchy**: `scripts/install/user/` (user के लिए 3) + `scripts/install/internal/` (internal 7), पुराने paths = `[DEPRECATED]` compat shim 2 releases तक, one-liner install URL (`scripts/install.sh`) अपरिवर्तित
+- **Mode gate**: Claude Code में manual hook install पर `/plugin install` का सुझाव (`--force` से override)
+- **Hook silent failure visibility + hardening**: चुपचाप विफलताएं (खाली response / conversion अस्वीकार / file conflict) masking के जरिए log + doctor diagnostic + session शुरू होने पर सूचना, masking rules (21 patterns) / vault path validation → SSOT + parity test
+- **Tests**: full test suite exit 0 (doctor 89 / install-hierarchy 58 / mask-parity 7), 8 PR + branch-wide integration review Critical 0
+- [Release v0.11.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.11.0)
+
 ### 2026-05-19 — v0.10.0: "आपका auto-ingest कभी चुपचाप fail नहीं होता, और search आपके अपने sessions से सीखता है" — Sprint 5 + 5.5 पूर्ण (reliability + intelligence の 2 軸進化)
 
 v0.10.0 = **Sprint 5 (axis A) + Sprint 5.5 (axis B) 全完走**. reliability + intelligence の 2 軸進化, bundle minor release.

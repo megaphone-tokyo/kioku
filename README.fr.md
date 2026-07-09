@@ -326,6 +326,18 @@ Si vous trouvez un probleme de securite, veuillez le signaler via [SECURITY.md](
 
 ## Journal des modifications
 
+### 2026-07-09 — v0.11.0 : "Votre memoire privilegie vos interets les plus recents, et le bilan de sante prend 0.1 seconde" — internal hardening 6 件 + recency decay
+
+v0.11.0 marque **recency decay + internal hardening 6 件**, bundle release. La recherche suit vos interets les plus recents, le bilan de sante prend 0.1s, et les echecs silencieux des hooks deviennent visibles.
+
+- **recency decay**: l'apprentissage des session-logs (8th source de v0.10.0) gagne une **decroissance exponentielle avec demi-vie de 14 jours**, ajustable via `KIOKU_DQ_HALFLIFE_DAYS`, opt-out (`.kioku-discoverqueries-opt-out`) / privacy contract inchanges
+- **doctor --quick**: `bash scripts/doctor.sh --quick` = bilan de sante en 3 points en < 0.1s (`--json` disponible), le diagnostic complet en 38 points reste inchange
+- **install script hierarchy**: `scripts/install/user/` (3 cote utilisateur) + `scripts/install/internal/` (7 internes), anciens paths = shim compatible `[DEPRECATED]` pendant 2 releases, l'URL de l'install en une ligne (`scripts/install.sh`) ne change pas
+- **Mode gate**: install manuel des hooks sous Claude Code → orientation vers `/plugin install` (override avec `--force`)
+- **Hook silent failure visibility + hardening**: echecs silencieux (reponse vide / refus de conversion / conflit de fichiers) journalises via masking + diagnostic doctor + notification en debut de session, regles de masking (21 patterns) / validation du vault path → SSOT + parity test
+- **Tests**: full test suite exit 0 (doctor 89 / install-hierarchy 58 / mask-parity 7), 8 PR + branch-wide integration review Critical 0
+- [Release v0.11.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.11.0)
+
 ### 2026-05-19 — v0.10.0 : "Votre auto-ingest n'echoue jamais en silence, et la recherche apprend de vos propres sessions" — Sprint 5 + 5.5 termine (reliability + intelligence の 2 軸進化)
 
 v0.10.0 marque le **Sprint 5 (axis A) + Sprint 5.5 (axis B) 全完走**. reliability + intelligence の 2 軸進化, bundle minor release.

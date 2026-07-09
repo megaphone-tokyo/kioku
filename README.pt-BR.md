@@ -326,6 +326,18 @@ Se voce encontrar um problema de seguranca, por favor reporte via [SECURITY.md](
 
 ## Histórico de mudanças
 
+### 2026-07-09 — v0.11.0: "Sua memoria prioriza seus interesses mais recentes, e o check de saude termina em 0.1 segundo" — internal hardening 6 件 + recency decay
+
+v0.11.0 marca **recency decay + internal hardening 6 件**, bundle release. A busca segue seus interesses mais recentes, o check de saude termina em 0.1s, e as falhas silenciosas dos hooks ficam visiveis.
+
+- **recency decay**: o aprendizado de session-logs (8th source do v0.10.0) ganha **decaimento exponencial com meia-vida de 14 dias**, ajustavel via `KIOKU_DQ_HALFLIFE_DAYS`, opt-out (`.kioku-discoverqueries-opt-out`) / privacy contract sem mudancas
+- **doctor --quick**: `bash scripts/doctor.sh --quick` = check de saude de 3 itens em < 0.1s (`--json` disponivel), o diagnostico completo de 38 itens continua igual
+- **install script hierarchy**: `scripts/install/user/` (3 para o usuario) + `scripts/install/internal/` (7 internos), paths antigos = shim compativel `[DEPRECATED]` por 2 releases, a URL do install de uma linha (`scripts/install.sh`) nao muda
+- **Mode gate**: install manual de hooks no Claude Code → orientacao para `/plugin install` (override com `--force`)
+- **Hook silent failure visibility + hardening**: falhas silenciosas (resposta vazia / recusa de conversao / conflito de arquivos) registradas via masking + diagnostico doctor + aviso no inicio da sessao, regras de masking (21 patterns) / validacao de vault path → SSOT + parity test
+- **Tests**: full test suite exit 0 (doctor 89 / install-hierarchy 58 / mask-parity 7), 8 PR + branch-wide integration review Critical 0
+- [Release v0.11.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.11.0)
+
 ### 2026-05-19 — v0.10.0: "Seu auto-ingest nunca falha em silencio, e a busca aprende das suas proprias sessoes" — Sprint 5 + 5.5 concluido (reliability + intelligence の 2 軸進化)
 
 v0.10.0 marca o **Sprint 5 (axis A) + Sprint 5.5 (axis B) 全完走**. reliability + intelligence の 2 軸進化, bundle minor release.

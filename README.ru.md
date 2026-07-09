@@ -331,6 +331,18 @@ KIOKU спроектирован для **совместного использ�
 
 ## История изменений
 
+### 2026-07-09 — v0.11.0: "Ваша память отдаёт приоритет новым интересам, а проверка здоровья занимает 0.1 секунды" — internal hardening 6 件 + recency decay
+
+v0.11.0 — **recency decay + internal hardening 6 件**, bundle release. Поиск следует вашим новым интересам, проверка здоровья занимает 0.1с, а тихие сбои hook становятся видимыми.
+
+- **recency decay**: обучение на session-logs (8th source из v0.10.0) получает **экспоненциальное затухание с периодом полураспада 14 дней**, настраивается через `KIOKU_DQ_HALFLIFE_DAYS`, opt-out (`.kioku-discoverqueries-opt-out`) / privacy contract без изменений
+- **doctor --quick**: `bash scripts/doctor.sh --quick` = проверка здоровья по 3 пунктам за < 0.1с (`--json` доступен), полная диагностика из 38 пунктов без изменений
+- **install script hierarchy**: `scripts/install/user/` (3 пользовательских) + `scripts/install/internal/` (7 внутренних), старые paths = совместимый shim `[DEPRECATED]` на 2 release, URL однострочного install (`scripts/install.sh`) не меняется
+- **Mode gate**: ручной install hook в Claude Code → подсказка использовать `/plugin install` (override через `--force`)
+- **Hook silent failure visibility + hardening**: тихие сбои (пустой ответ / отказ конвертации / конфликт файлов) логируются через masking + диагностика doctor + уведомление в начале сессии, правила masking (21 pattern) / валидация vault path → SSOT + parity test
+- **Tests**: full test suite exit 0 (doctor 89 / install-hierarchy 58 / mask-parity 7), 8 PR + branch-wide integration review Critical 0
+- [Release v0.11.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.11.0)
+
 ### 2026-05-19 — v0.10.0: "Ваш auto-ingest никогда не падает молча, а поиск учится на ваших сессиях" — Sprint 5 + 5.5 завершён (reliability + intelligence の 2 軸進化)
 
 v0.10.0 — **Sprint 5 (axis A) + Sprint 5.5 (axis B) 全完走**. reliability + intelligence の 2 軸進化, bundle minor release.

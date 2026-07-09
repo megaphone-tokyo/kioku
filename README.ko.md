@@ -326,6 +326,18 @@ KIOKU은 **모든 Claude Code 세션 입출력**에 접근하는 Hook 시스템�
 
 ## 변경 이력
 
+### 2026-07-09 — v0.11.0: "기억이 최신 관심사를 우선하고, 건강 확인은 0.1초" — internal hardening 6 件 + recency decay
+
+v0.11.0은 **recency decay (時間減衰) + internal hardening 6 件** bundle release. search가 최신 관심사를 우선하고, 건강 확인은 0.1초, hook의 조용한 실패는 가시화.
+
+- **recency decay**: session-logs 학습 (v0.10.0 8th source)에 **반감기 14일** 지수 감쇠 추가, `KIOKU_DQ_HALFLIFE_DAYS`로 조정 가능, opt-out (`.kioku-discoverqueries-opt-out`) / privacy contract 불변
+- **doctor --quick**: `bash scripts/doctor.sh --quick` = 3항목 건강 확인 < 0.1초 (`--json` 지원), 전체 38항목 진단은 그대로
+- **install script 계층화**: `scripts/install/user/` (사용자용 3개) + `scripts/install/internal/` (내부용 7개), 구 path는 `[DEPRECATED]` 호환 shim 2 release 유지, 원라이너 install URL (`scripts/install.sh`) 불변
+- **Mode gate**: Claude Code 환경에서 수동 hook install 시 `/plugin install` 안내 (`--force`로 override 가능)
+- **Hook silent failure 가시화 + 내부 강화**: 조용한 실패 (빈 응답 / 변환 거부 / 파일 충돌)를 전부 기록 (masking 경유) + doctor 진단 + session 시작 알림, masking 규칙 (21 patterns) / vault path 검증 → SSOT 통합 + parity test
+- **Tests**: full test suite exit 0 (doctor 89 / install-hierarchy 58 / mask-parity 7), 8 PR + branch 횡단 통합 review Critical 0
+- [Release v0.11.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.11.0)
+
 ### 2026-05-19 — v0.10.0: "auto-ingest가 조용히 실패하지 않고, search가 내 session에서 스스로 학습" — Sprint 5 + 5.5 완주 (reliability + intelligence の 2 軸進化)
 
 v0.10.0은 **Sprint 5 (axis A) + Sprint 5.5 (axis B) 全完走**. reliability + intelligence の 2 軸進化, bundle minor release.
