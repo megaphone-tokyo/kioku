@@ -263,6 +263,18 @@ Si encuentras un problema de seguridad, repórtalo a través de [SECURITY.md](SE
 
 ## Cambios
 
+### 2026-07-09 — v0.11.0: "Tu memoria prioriza tus intereses mas recientes, y el chequeo de salud termina en 0.1 segundos" — internal hardening 6 件 + recency decay
+
+v0.11.0 marca **recency decay + internal hardening 6 件**, bundle release. La busqueda sigue tus intereses mas recientes, el chequeo de salud termina en 0.1s, y los fallos silenciosos de los hooks se vuelven visibles.
+
+- **recency decay**: el aprendizaje de session-logs (8th source de v0.10.0) suma **decaimiento exponencial con semivida de 14 dias**, ajustable via `KIOKU_DQ_HALFLIFE_DAYS`, opt-out (`.kioku-discoverqueries-opt-out`) / privacy contract sin cambios
+- **doctor --quick**: `bash scripts/doctor.sh --quick` = chequeo de salud de 3 items en < 0.1s (`--json` disponible), el diagnostico completo de 38 items sigue igual
+- **install script hierarchy**: `scripts/install/user/` (3 para el usuario) + `scripts/install/internal/` (7 internos), paths antiguos = shim compatible `[DEPRECATED]` durante 2 releases, la URL del install de una linea (`scripts/install.sh`) no cambia
+- **Mode gate**: install manual de hooks en Claude Code → guia hacia `/plugin install` (override con `--force`)
+- **Hook silent failure visibility + hardening**: fallos silenciosos (respuesta vacia / rechazo de conversion / conflicto de archivos) registrados via masking + diagnostico doctor + aviso al inicio de sesion, reglas de masking (21 patterns) / validacion de vault path → SSOT + parity test
+- **Tests**: full test suite exit 0 (doctor 89 / install-hierarchy 58 / mask-parity 7), 8 PR + branch-wide integration review Critical 0
+- [Release v0.11.0](https://github.com/megaphone-tokyo/kioku/releases/tag/v0.11.0)
+
 ### 2026-05-19 — v0.10.0: "Tu auto-ingest nunca falla en silencio, y la busqueda aprende de tus propias sesiones" — Sprint 5 + 5.5 completado (reliability + intelligence の 2 軸進化)
 
 v0.10.0 marca el **Sprint 5 (axis A) + Sprint 5.5 (axis B) 全完走**. reliability + intelligence の 2 軸進化, bundle minor release.
