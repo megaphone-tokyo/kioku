@@ -109,9 +109,11 @@ bash tools/claude-brain/scripts/setup-vault.sh
 
 ```bash
 # 自動マージ（推奨）
-bash tools/claude-brain/scripts/install-hooks.sh --apply
+bash tools/claude-brain/scripts/install/user/install-hooks.sh --apply --force
 
 # diff が表示される。内容を確認して y で適用
+# (--force: Claude Code 検出環境では plugin 経由 install を推奨する Mode gate が
+#  発火するため、手動 install を選ぶ場合は --force で明示 override する)
 ```
 
 **このコマンドが行うこと**:
@@ -141,7 +143,7 @@ KIOKU_DRY_RUN=1 bash tools/claude-brain/scripts/auto-ingest.sh
 KIOKU_DRY_RUN=1 bash tools/claude-brain/scripts/auto-lint.sh
 
 # 問題なければ定期実行を設定
-bash tools/claude-brain/scripts/install-schedule.sh
+bash tools/claude-brain/scripts/install/internal/install-schedule.sh
 ```
 
 **OS に応じた動作**:
@@ -160,7 +162,7 @@ Step 0 で検出した Node バージョン管理ツールが Volta / mise 以�
 
 ```bash
 bash tools/claude-brain/scripts/setup-qmd.sh
-bash tools/claude-brain/scripts/install-qmd-daemon.sh
+bash tools/claude-brain/scripts/install/internal/install-qmd-daemon.sh
 ```
 
 ### Step 7: Wiki Ingest スキル (任意)
@@ -170,7 +172,7 @@ bash tools/claude-brain/scripts/install-qmd-daemon.sh
 **なぜ必要か**: 既存プロジェクトの知識を一括で Wiki に取り込める。
 
 ```bash
-bash tools/claude-brain/scripts/install-skills.sh
+bash tools/claude-brain/scripts/install/internal/install-skills.sh
 ```
 
 ### 完了

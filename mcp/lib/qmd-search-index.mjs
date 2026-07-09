@@ -52,6 +52,23 @@ const STANDALONE_TAG_RE = /^\s*#([a-z][a-z0-9-]{1,30})\s*$/gim;
 // Source 3 / wiki/*.md heading scan cap (mirrors MAX_RAW_SOURCES_SCAN).
 const MAX_SCAN_FILES = 30;
 
+// Source 8 recency decay (v0.11 S6-7, axis F): session-logs 由来 candidate の
+// score に指数減衰 0.5^(ageDays / halfLife) を掛ける。halfLife default は 14 日
+// (暫定 default — meeting 26070701 G-5: 効果測定と再調整は publish 後の観察期間
+// データで行う)。env KIOKU_DQ_HALFLIFE_DAYS で override 可。
+const DQ_RECENCY_HALFLIFE_DAYS_DEFAULT = 14;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+// halfLife 解決: env が正の有限数ならその値、それ以外 (未設定 / 空 / NaN / 0 /
+// 負値 / Infinity) は default 14 に fallback。負値をそのまま使うと
+// 0.5^(age/負値) が指数増幅になるため、defensive に default へ落とす。
+// 呼び出しの度に env を読む (test が動的に env を差し替えられるよう module
+// load 時に固定しない)。
+function resolveDqHalfLifeDays() {
+  const raw = Number(process.env.KIOKU_DQ_HALFLIFE_DAYS);
+  return Number.isFinite(raw) && raw > 0 ? raw : DQ_RECENCY_HALFLIFE_DAYS_DEFAULT;
+}
+
 // Source 4 (raw-sources/) の上限 (cf. source 3 と同 MAX_SCAN_FILES、再帰 walker でも cap)。
 const MAX_RAW_SOURCES_SCAN = 30;
 
@@ -115,6 +132,9 @@ export async function buildSearchIndex(vault, options = {}) {
  *   7. wiki/*.md broadly-referenced (>=2 files) — bonus 1.2 * (file_count - 1)
  *      (broadly referenced concept; source 3 と独立に bonus、double-count 回避は per-file Set で記録)
  *   8. session-logs/ user utilization scan (Sprint 5.5 PR A55) — weight 2.8
+ *      × recency decay 0.5^(ageDays / halfLife) (v0.11 S6-7, axis F;
+ *      ageDays = newest source-file mtime 起点、halfLife = env
+ *      KIOKU_DQ_HALFLIFE_DAYS、default 14 日)
  *      (highest single-source weight: dynamic learning from actual user activity.
  *      Privacy contract: masking SSOT + opt-out file + 64KB usage log rotate.
  *      See mcp/lib/discoverqueries-learning.mjs for details.)
@@ -229,10 +249,35 @@ async function discoverQueries(vault, limit) {
   // for user control + 64KB FIFO rotation for bounded persistence.
   // graceful skip on any failure: opt-out / session-logs absent / scan error
   // all yield an empty Map, preserving build precompute robustness.
+  //
+  // v0.11 S6-7 (axis F): recency decay. Each candidate carries the newest
+  // source-file mtime; score = 2.8 * count * 0.5^(ageDays / halfLife) so a
+  // fresh mid-frequency query can outrank a stale high-frequency one.
+  // opt-out はこの decay 以前に scanSessionLogs 側で 8th source ごと skip
+  // (empty Map) される — privacy contract 3 軸は不変。
   try {
     const usageMap = await scanSessionLogs(vault);
-    for (const [query, count] of usageMap.entries()) {
-      counts.set(query, (counts.get(query) ?? 0) + 2.8 * count);
+    const halfLifeDays = resolveDqHalfLifeDays();
+    const nowMs = Date.now();
+    for (const [query, entry] of usageMap.entries()) {
+      // Defensive: tolerate legacy plain-number values alongside the
+      // { count, mtimeMs } shape (cross-boundary drift guard, LEARN#6).
+      const count =
+        typeof entry === 'number'
+          ? entry
+          : entry && Number.isFinite(entry.count)
+            ? entry.count
+            : 0;
+      if (!Number.isFinite(count) || count <= 0) continue;
+      // Unknown / invalid mtime → treat as "now" (decay = 1, pre-S6-7
+      // behavior) rather than nuking the signal with a huge age.
+      const mtimeMs =
+        entry && typeof entry === 'object' && Number.isFinite(entry.mtimeMs) && entry.mtimeMs > 0
+          ? entry.mtimeMs
+          : nowMs;
+      const ageDays = Math.max(0, (nowMs - mtimeMs) / MS_PER_DAY);
+      const decay = Math.pow(0.5, ageDays / halfLifeDays);
+      counts.set(query, (counts.get(query) ?? 0) + 2.8 * count * decay);
     }
   } catch {
     // best-effort: dynamic learning failure must not abort discoverQueries
@@ -360,6 +405,8 @@ export const __test__ = Object.freeze({
   ingestGitSubjects,
   normalizeResults,
   clamp,
+  resolveDqHalfLifeDays,
+  DQ_RECENCY_HALFLIFE_DAYS_DEFAULT,
   TAG_RE,
   WIKILINK_RE,
   HEADING_RE,

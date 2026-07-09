@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# install-mcp-client.test.sh — scripts/install-mcp-client.sh のスモークテスト (Phase M)
+# install-mcp-client.test.sh — scripts/install/internal/install-mcp-client.sh のスモークテスト (Phase M)
 #
 # 検証項目:
 #   MCP29  --dry-run で書き込みなし、出力に置換後 JSON 含む
@@ -14,7 +14,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-INSTALL_SCRIPT="${REPO_ROOT}/tools/claude-brain/scripts/install-mcp-client.sh"
+INSTALL_SCRIPT="${REPO_ROOT}/tools/claude-brain/scripts/install/internal/install-mcp-client.sh"
 
 TMPROOT="$(mktemp -d)"
 trap 'rm -rf "${TMPROOT}"' EXIT

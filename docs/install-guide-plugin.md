@@ -67,15 +67,17 @@ bash ~/.claude/plugins/kioku/scripts/setup-vault.sh
 ### 3. Hook を `~/.claude/settings.json` にマージ
 
 ```bash
-bash ~/.claude/plugins/kioku/scripts/install-hooks.sh --apply
+bash ~/.claude/plugins/kioku/scripts/install/user/install-hooks.sh --apply --force
 # バックアップ作成 → diff 表示 → 確認プロンプト → 既存設定を保持して Hook 追加
+# (--force: Claude Code 検出環境の Mode gate を明示 override する。plugin は
+#  hook を自動登録しないため、この手動マージ step では --force が必要)
 ```
 
 ### 4. LaunchAgent / cron で定期 Ingest (任意)
 
 ```bash
 # OS 自動判別 (macOS → LaunchAgent / Linux → cron)
-bash ~/.claude/plugins/kioku/scripts/install-schedule.sh
+bash ~/.claude/plugins/kioku/scripts/install/internal/install-schedule.sh
 ```
 
 ### 5. MCP server を Claude Desktop に登録 (任意、全 Claude Code skills + Desktop 両方で使う場合)
@@ -85,7 +87,7 @@ bash ~/.claude/plugins/kioku/scripts/install-schedule.sh
 bash ~/.claude/plugins/kioku/scripts/setup-mcp.sh
 
 # Claude Desktop に登録
-bash ~/.claude/plugins/kioku/scripts/install-mcp-client.sh --apply
+bash ~/.claude/plugins/kioku/scripts/install/internal/install-mcp-client.sh --apply
 ```
 
 ## 動作確認

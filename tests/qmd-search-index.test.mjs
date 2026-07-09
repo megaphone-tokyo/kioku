@@ -17,10 +17,14 @@
 //   - F8 (BLUE-QMD-INDEX-8): wiki/hot.md content scan で ATX heading + 単独行 #tag 抽出 (weight 2.5)
 //   - F9 (BLUE-QMD-INDEX-9): empty PM-Vault-like fixture (no log tags, no index wikilinks, no concept files) でも raw-sources + git + hot.md から >= 3 query 産出 (regression guard)
 //   - F10 (BLUE-QMD-INDEX-10): Sprint 5.5 PR A55/B55 — discoverQueries が session-logs/ を Source 8 (weight 2.8) として additive 統合 + opt-out hard gate (両側 pin、LEARN#5 cross-suite reference)
+//   - F11 (BLUE-QMD-INDEX-11): v0.11 S6-7 axis F — Source 8 recency decay (0.5^(ageDays/halfLife))
+//     で「古い高頻度 query より新しい中頻度 query が上位」の順位逆転を pin (synthetic fixture のみ)
+//   - F12 (BLUE-QMD-INDEX-12): KIOKU_DQ_HALFLIFE_DAYS env override (巨大値 → flat 相当で F11 と逆順) +
+//     invalid 値 (非数 / 0 / 負値) は default 14 に fallback (resolveDqHalfLifeDays 単体 pin 含む)
 
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, utimes, writeFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -526,6 +530,107 @@ describe('qmd-search-index', () => {
         `static sources unaffected by opt-out, got: ${optedOut.join(', ')}`,
       );
     } finally {
+      await rm(ws, { recursive: true, force: true });
+    }
+  });
+
+  // v0.11 S6-7 (axis F) F11/F12 共通 synthetic fixture (実セッションログの raw
+  // 流用ではなく、test 内で生成する合成データのみ):
+  //   - old file: 高頻度 (10 回) だが mtime = 60 日前 (utimes で backdate)
+  //   - new file: 中頻度 (3 回) で mtime = now
+  // flat weight なら old = 2.8*10 = 28 > new = 2.8*3 = 8.4 で old が上位。
+  // halfLife=14 の decay では old ≈ 28 * 0.5^(60/14) ≈ 1.44 < 8.4 で逆転する。
+  async function makeRecencyFixtureVault(prefix) {
+    const ws = await mkdtemp(join(tmpdir(), prefix));
+    const v = join(ws, 'vault');
+    const sl = join(v, 'session-logs');
+    await mkdir(sl, { recursive: true });
+    const oldLines = ['## User (12:00:00)', ''];
+    for (let i = 1; i <= 10; i += 1) oldLines.push(`#recency-old-hifreq mention ${i}`);
+    oldLines.push('');
+    const oldFile = join(sl, '20260410-120000-aaaa-old.md');
+    await writeFile(oldFile, oldLines.join('\n'));
+    const oldDate = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+    await utimes(oldFile, oldDate, oldDate);
+    const newLines = ['## User (12:00:00)', ''];
+    for (let i = 1; i <= 3; i += 1) newLines.push(`#recency-new-midfreq mention ${i}`);
+    newLines.push('');
+    await writeFile(join(sl, '20260709-120000-bbbb-new.md'), newLines.join('\n'));
+    return { ws, v };
+  }
+
+  test('BLUE-QMD-INDEX-11 (F11): Source 8 recency decay — new mid-frequency query outranks old high-frequency query', async () => {
+    assert.ok(__test__);
+    const { discoverQueries } = __test__;
+    const prevEnv = process.env.KIOKU_DQ_HALFLIFE_DAYS;
+    delete process.env.KIOKU_DQ_HALFLIFE_DAYS; // default halfLife = 14 days
+    const { ws, v } = await makeRecencyFixtureVault('kioku-qmd-f11-');
+    try {
+      const queries = await discoverQueries(v, 20);
+      const idxNew = queries.indexOf('recency-new-midfreq');
+      const idxOld = queries.indexOf('recency-old-hifreq');
+      assert.ok(idxNew !== -1, `new mid-freq query missing from TopN: ${queries.join(', ')}`);
+      assert.ok(
+        idxOld !== -1,
+        `old high-freq query must still appear (decayed, not dropped): ${queries.join(', ')}`,
+      );
+      assert.ok(
+        idxNew < idxOld,
+        `recency decay must rank new mid-freq ABOVE old high-freq (flat weight would be 28 vs 8.4), got: ${queries.join(', ')}`,
+      );
+    } finally {
+      if (prevEnv === undefined) delete process.env.KIOKU_DQ_HALFLIFE_DAYS;
+      else process.env.KIOKU_DQ_HALFLIFE_DAYS = prevEnv;
+      await rm(ws, { recursive: true, force: true });
+    }
+  });
+
+  test('BLUE-QMD-INDEX-12 (F12): KIOKU_DQ_HALFLIFE_DAYS override + invalid values fall back to default 14', async () => {
+    assert.ok(__test__);
+    const { discoverQueries, resolveDqHalfLifeDays, DQ_RECENCY_HALFLIFE_DAYS_DEFAULT } = __test__;
+    const prevEnv = process.env.KIOKU_DQ_HALFLIFE_DAYS;
+    const { ws, v } = await makeRecencyFixtureVault('kioku-qmd-f12-');
+    try {
+      // resolveDqHalfLifeDays unit pin: default / valid / invalid families.
+      delete process.env.KIOKU_DQ_HALFLIFE_DAYS;
+      assert.equal(DQ_RECENCY_HALFLIFE_DAYS_DEFAULT, 14, 'default halfLife must be 14 days');
+      assert.equal(resolveDqHalfLifeDays(), 14, 'unset env must resolve to default 14');
+      process.env.KIOKU_DQ_HALFLIFE_DAYS = '7';
+      assert.equal(resolveDqHalfLifeDays(), 7, 'positive numeric env must be honored');
+      for (const invalid of ['', 'abc', '0', '-5', 'Infinity']) {
+        process.env.KIOKU_DQ_HALFLIFE_DAYS = invalid;
+        assert.equal(
+          resolveDqHalfLifeDays(),
+          14,
+          `invalid KIOKU_DQ_HALFLIFE_DAYS="${invalid}" must fall back to 14`,
+        );
+      }
+
+      // Huge halfLife → decay ≈ 1 (flat 相当): 同一 fixture で old high-freq が
+      // 上位に戻る = F11 の順位逆転が decay 由来であることの証明。
+      process.env.KIOKU_DQ_HALFLIFE_DAYS = '1000000';
+      const flat = await discoverQueries(v, 20);
+      const flatNew = flat.indexOf('recency-new-midfreq');
+      const flatOld = flat.indexOf('recency-old-hifreq');
+      assert.ok(flatNew !== -1 && flatOld !== -1, `both queries expected, got: ${flat.join(', ')}`);
+      assert.ok(
+        flatOld < flatNew,
+        `huge halfLife must restore flat (pre-decay) ranking (old high-freq first), got: ${flat.join(', ')}`,
+      );
+
+      // Invalid env → default 14 → decay active → F11 と同じ順位逆転。
+      process.env.KIOKU_DQ_HALFLIFE_DAYS = 'abc';
+      const fallback = await discoverQueries(v, 20);
+      const fbNew = fallback.indexOf('recency-new-midfreq');
+      const fbOld = fallback.indexOf('recency-old-hifreq');
+      assert.ok(fbNew !== -1 && fbOld !== -1, `both queries expected, got: ${fallback.join(', ')}`);
+      assert.ok(
+        fbNew < fbOld,
+        `invalid env must behave like default 14 (decay active), got: ${fallback.join(', ')}`,
+      );
+    } finally {
+      if (prevEnv === undefined) delete process.env.KIOKU_DQ_HALFLIFE_DAYS;
+      else process.env.KIOKU_DQ_HALFLIFE_DAYS = prevEnv;
       await rm(ws, { recursive: true, force: true });
     }
   });

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# install-skills.test.sh — scripts/install-skills.sh のスモークテスト
+# install-skills.test.sh — scripts/install/internal/install-skills.sh のスモークテスト
 #
 # 実行: bash tools/claude-brain/tests/install-skills.test.sh
 #
@@ -17,7 +17,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-INSTALL_SCRIPT="${REPO_ROOT}/tools/claude-brain/scripts/install-skills.sh"
+INSTALL_SCRIPT="${REPO_ROOT}/tools/claude-brain/scripts/install/internal/install-skills.sh"
 SKILLS_SRC="${REPO_ROOT}/tools/claude-brain/skills"
 
 TMPROOT="$(mktemp -d)"

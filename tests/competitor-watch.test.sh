@@ -30,7 +30,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 WATCH_SCRIPT="${REPO_ROOT}/tools/claude-brain/scripts/competitor-watch.sh"
-INSTALL_SCRIPT="${REPO_ROOT}/tools/claude-brain/scripts/install-competitor-watch.sh"
+INSTALL_SCRIPT="${REPO_ROOT}/tools/claude-brain/scripts/install/internal/install-competitor-watch.sh"
 
 TMPROOT="$(mktemp -d)"
 trap 'rm -rf "${TMPROOT}"' EXIT

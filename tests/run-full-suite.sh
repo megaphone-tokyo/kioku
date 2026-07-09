@@ -42,10 +42,13 @@ fi
 # Bash test を 1 本ずつ run。失敗を収集しつつ全部回す。
 BASH_TESTS=(
   setup-vault.test.sh
+  install-common.test.sh
+  install-hierarchy.test.sh
   install-hooks.test.sh
   install-hooks-gemini.test.sh
   install-hooks-codex.test.sh
   install-launchagents.test.sh
+  install-cron.test.sh
   install-mcp-client.test.sh
   install-skills.test.sh
   setup-mcp.test.sh

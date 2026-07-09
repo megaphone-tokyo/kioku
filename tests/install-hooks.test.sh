@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# install-hooks.test.sh — scripts/install-hooks.sh のスモークテスト
+# install-hooks.test.sh — scripts/install/user/install-hooks.sh のスモークテスト
 #
 # 実行: bash tools/claude-brain/tests/install-hooks.test.sh
 #
@@ -16,7 +16,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-INSTALL_HOOKS="${REPO_ROOT}/tools/claude-brain/scripts/install-hooks.sh"
+# S6-5: 本体は scripts/install/user/ 配下。Mode gate は install-hierarchy.test.sh が
+# 専用に検証するため、本 suite は全 invocation に --force を付けて merge/snippet
+# 挙動 (gate と直交) を検証する。
+INSTALL_HOOKS="${REPO_ROOT}/tools/claude-brain/scripts/install/user/install-hooks.sh"
 
 TMPROOT="$(mktemp -d)"
 trap 'rm -rf "${TMPROOT}"' EXIT
@@ -62,7 +65,7 @@ echo "test: unset OBSIDIAN_VAULT -> exit 1"
 set +e
 (
   unset OBSIDIAN_VAULT
-  bash "${INSTALL_HOOKS}" >/dev/null 2>&1
+  bash "${INSTALL_HOOKS}" --force >/dev/null 2>&1
 )
 rc=$?
 set -e
@@ -74,7 +77,7 @@ assert_eq "1" "${rc}" "exit code 1 when OBSIDIAN_VAULT unset"
 echo "test: non-git vault produces warnings and still outputs JSON"
 mkdir -p "${TMPROOT}/vault-nogit"
 set +e
-output="$(OBSIDIAN_VAULT="${TMPROOT}/vault-nogit" bash "${INSTALL_HOOKS}" 2>/dev/null)"
+output="$(OBSIDIAN_VAULT="${TMPROOT}/vault-nogit" bash "${INSTALL_HOOKS}" --force 2>/dev/null)"
 rc=$?
 set -e
 assert_eq "0" "${rc}" "exit code 0 for non-git vault"
@@ -173,7 +176,7 @@ mkdir -p "${FULLVAULT}"
 echo "session-logs/" > "${FULLVAULT}/.gitignore"
 
 set +e
-output_full="$(OBSIDIAN_VAULT="${FULLVAULT}" bash "${INSTALL_HOOKS}" 2>/dev/null)"
+output_full="$(OBSIDIAN_VAULT="${FULLVAULT}" bash "${INSTALL_HOOKS}" --force 2>/dev/null)"
 rc=$?
 set -e
 assert_eq "0" "${rc}" "exit code 0 for full vault"
@@ -192,7 +195,7 @@ mkdir -p "${FAKE_HOME}/.claude"
 echo '{"hooks":{}}' > "${FAKE_HOME}/.claude/settings.json"
 orig_hash="$(shasum "${FAKE_HOME}/.claude/settings.json" | awk '{print $1}')"
 
-HOME="${FAKE_HOME}" OBSIDIAN_VAULT="${FULLVAULT}" bash "${INSTALL_HOOKS}" >/dev/null 2>&1
+HOME="${FAKE_HOME}" OBSIDIAN_VAULT="${FULLVAULT}" bash "${INSTALL_HOOKS}" --force >/dev/null 2>&1
 
 after_hash="$(shasum "${FAKE_HOME}/.claude/settings.json" | awk '{print $1}')"
 assert_eq "${orig_hash}" "${after_hash}" "user settings.json untouched"
@@ -222,7 +225,7 @@ JSON
   out_apply="$(
     CLAUDE_SETTINGS_FILE="${APPLY_TARGET}" \
     OBSIDIAN_VAULT="${FULLVAULT}" \
-    bash "${INSTALL_HOOKS}" --apply --yes 2>&1
+    bash "${INSTALL_HOOKS}" --force --apply --yes 2>&1
   )"
   rc=$?
   set -e
@@ -262,7 +265,7 @@ JSON
   echo "test: --apply is idempotent"
   CLAUDE_SETTINGS_FILE="${APPLY_TARGET}" \
   OBSIDIAN_VAULT="${FULLVAULT}" \
-  bash "${INSTALL_HOOKS}" --apply --yes >/dev/null 2>&1
+  bash "${INSTALL_HOOKS}" --force --apply --yes >/dev/null 2>&1
 
   user_len2=$(jq '.hooks.UserPromptSubmit | length' "${APPLY_TARGET}")
   assert_eq "2" "${user_len2}" "second --apply: UserPromptSubmit still 2 (no duplication)"
@@ -286,7 +289,7 @@ JSON
   (
     CLAUDE_SETTINGS_FILE="${BADTARGET}" \
     OBSIDIAN_VAULT="${FULLVAULT}" \
-    bash "${INSTALL_HOOKS}" --apply --yes >/dev/null 2>&1
+    bash "${INSTALL_HOOKS}" --force --apply --yes >/dev/null 2>&1
   )
   rc=$?
   set -e
@@ -301,7 +304,7 @@ JSON
   (
     CLAUDE_SETTINGS_FILE="${MISSING_TARGET}" \
     OBSIDIAN_VAULT="${FULLVAULT}" \
-    bash "${INSTALL_HOOKS}" --apply --yes >/dev/null 2>&1
+    bash "${INSTALL_HOOKS}" --force --apply --yes >/dev/null 2>&1
   )
   rc=$?
   set -e
@@ -324,7 +327,7 @@ mkdir -p "${SPACE_VAULT}"
 cd "${SPACE_VAULT}" && git init -q && echo 'session-logs/' > .gitignore && cd "${TMPROOT}"
 
 set +e
-space_output="$(OBSIDIAN_VAULT="${SPACE_VAULT}" bash "${INSTALL_HOOKS}" 2>/dev/null)"
+space_output="$(OBSIDIAN_VAULT="${SPACE_VAULT}" bash "${INSTALL_HOOKS}" --force 2>/dev/null)"
 rc=$?
 set -e
 assert_eq "0" "${rc}" "exit code 0 for space-in-path vault"

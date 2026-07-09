@@ -35,7 +35,7 @@ What this guide does **not** cover:
   separate Q2 delivery.
 - **Automatic `hot.md` injection** — also relies on Claude Code's session
   lifecycle hooks; same Q2 delivery.
-- **Scheduled auto-ingest** — `scripts/install-schedule.sh` is agent-agnostic
+- **Scheduled auto-ingest** — `scripts/install/internal/install-schedule.sh` is agent-agnostic
   (LaunchAgent / cron), so the Ingest cycle runs even when the agent is not
   Claude. You still get fresh wiki/ generation from raw-sources/.
 
@@ -130,7 +130,7 @@ report any schema mismatch observed against a specific Codex CLI version via
 
 ### Note on per-turn commits (only if you also install the Hook port)
 
-If you have run `bash scripts/install-hooks-codex.sh --apply` (Q2 Hook port,
+If you have run `bash scripts/install/user/install-hooks-codex.sh --apply` (Q2 Hook port,
 v0.7.0), be aware that **Codex CLI lacks a `SessionEnd` event**, so KIOKU
 emulates the Claude end-of-session `git add/commit/push` step on the `Stop`
 event (= turn end). This means **a single Codex session can produce dozens of

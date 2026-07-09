@@ -24,15 +24,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 OBSIDIAN_VAULT="${OBSIDIAN_VAULT:-${HOME}/claude-brain/main-claude-brain}"
 
-# R4-001: OBSIDIAN_VAULT のバリデーション
-validate_vault_path() {
-  local p="$1"
-  local safe_re='^[a-zA-Z0-9/._[:space:]-]+$'
-  if [[ ! "${p}" =~ $safe_re ]]; then
-    echo "${LOG_PREFIX} ERROR: OBSIDIAN_VAULT contains unsafe characters: ${p}" >&2
-    exit 1
-  fi
-}
+# R4-001: OBSIDIAN_VAULT のバリデーション (validate_vault_path は lib/install-common.sh の SSOT、PR S6-1)
+source "$(dirname "${BASH_SOURCE[0]}")/lib/install-common.sh"
 validate_vault_path "${OBSIDIAN_VAULT}"
 
 # Volta 管理下のバイナリ (~/.volta/bin) と mise shims (~/.local/share/mise/shims) も含める。

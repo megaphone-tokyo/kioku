@@ -22,7 +22,7 @@
 import { pathToFileURL } from 'node:url';
 
 import { buildContext, envTruthy, ingestNormalizedEvent, readStdin } from '../session-logger-core.mjs';
-import { assertTranscriptInRoot, safeMain } from './_common.mjs';
+import { assertTranscriptInRoot, debugRejection, safeMain } from './_common.mjs';
 
 // -----------------------------------------------------------------------------
 // Codex CLI hook_event_name → NormalizedEvent.eventName
@@ -47,13 +47,27 @@ const EVENT_MAP = {
  * @returns {import('../session-logger-core.mjs').NormalizedEvent | null}
  */
 export function codexPayloadToNormalizedEvent(payload) {
-  if (!payload || typeof payload !== 'object') return null;
+  // S6-4 Layer 1: 各 reject 箇所で debugRejection (KIOKU_DEBUG 時のみ stderr、
+  // reason code のみ / payload 値は書かない)。返却契約 (null) は不変。
+  if (!payload || typeof payload !== 'object') {
+    debugRejection('codex', 'INVALID_PAYLOAD');
+    return null;
+  }
   const rawEvent = payload.hook_event_name;
-  if (typeof rawEvent !== 'string') return null;
+  if (typeof rawEvent !== 'string') {
+    debugRejection('codex', 'INVALID_EVENT_NAME');
+    return null;
+  }
   const eventName = EVENT_MAP[rawEvent];
-  if (!eventName) return null;
+  if (!eventName) {
+    debugRejection('codex', 'UNSUPPORTED_EVENT');
+    return null;
+  }
   const sessionId = payload.session_id;
-  if (typeof sessionId !== 'string' || sessionId.length === 0) return null;
+  if (typeof sessionId !== 'string' || sessionId.length === 0) {
+    debugRejection('codex', 'INVALID_SESSION_ID');
+    return null;
+  }
 
   /** @type {import('../session-logger-core.mjs').NormalizedEvent} */
   const normEv = {
@@ -87,6 +101,7 @@ export function codexPayloadToNormalizedEvent(payload) {
     // core に届ける前に silent drop する。
     const toolName = payload.tool_name;
     if (toolName !== 'Bash') {
+      debugRejection('codex', 'UNSUPPORTED_TOOL');
       return null;
     }
     normEv.toolUse = {

@@ -156,7 +156,7 @@ export async function handleGenerateViz(vault, args = {}) {
       mode: 'shell',
       since,
       max_commits: maxCommits,
-      note: 'Open the generated shell HTML in a browser. Dashboard + Visualizer β 4 views available (Search / Navigation / Wikilink graph tabs are placeholders for Phase 2-4).',
+      note: 'Open the generated shell HTML in a browser. Dashboard + Visualizer β 4 views + Search available (Navigation / Wikilink graph tabs are placeholders for Phase 3-4).',
     };
   }
 

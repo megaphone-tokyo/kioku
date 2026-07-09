@@ -37,7 +37,7 @@ Claude Code / Claude Desktop を使っている場合は
   扱います。
 - **`hot.md` 自動注入** — 同じく Claude Code の session lifecycle hook に依存。
   Q2 delivery で対応予定。
-- **定期 auto-ingest** — `scripts/install-schedule.sh` は LaunchAgent / cron
+- **定期 auto-ingest** — `scripts/install/internal/install-schedule.sh` は LaunchAgent / cron
   ベースで **agent 非依存**。エージェントが Claude でなくても、raw-sources/ から
   wiki/ 生成は動き続けます。
 
@@ -131,7 +131,7 @@ schema 齟齬が見つかった場合は [Issues](https://github.com/megaphone-t
 
 ### Per-turn commit に関する注意 (Hook port も併用する場合のみ)
 
-`bash scripts/install-hooks-codex.sh --apply` (Q2 Hook port、v0.7.0) を
+`bash scripts/install/user/install-hooks-codex.sh --apply` (Q2 Hook port、v0.7.0) を
 実行した場合のみ該当します。**Codex CLI には `SessionEnd` event が無い** ため、
 KIOKU は Claude のセッション終了時 `git add/commit/push` を **`Stop` event (=
 turn 終了) で代替** しています。つまり **1 Codex session で数十 commit が

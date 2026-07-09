@@ -10,8 +10,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-INSTALLER="${REPO_ROOT}/scripts/install-hooks-codex.sh"
-INSTALLER_CLAUDE="${REPO_ROOT}/scripts/install-hooks.sh"
+INSTALLER="${REPO_ROOT}/scripts/install/user/install-hooks-codex.sh"
+INSTALLER_CLAUDE="${REPO_ROOT}/scripts/install/user/install-hooks.sh"
 
 fail_count=0
 fail() { echo "FAIL: $*" >&2 ; fail_count=$((fail_count + 1)); }
@@ -122,7 +122,9 @@ fi
 
 # single source of truth check (PM A3 指示): install-hooks.sh Claude SessionEnd
 # stage 2 と byte-identical であること
-claude_stage2="$(OBSIDIAN_VAULT="${OBSIDIAN_VAULT}" bash "${INSTALLER_CLAUDE}" 2>/dev/null | awk '/^{/,/^}$/' | jq -r '.hooks.SessionEnd[1].hooks[0].command')"
+# S6-5: install-hooks.sh は Mode A 環境 (dev 機の実 ~/.claude) で Mode gate が
+# 発火するため --force を付けて snippet を取得する (gate は install-hierarchy.test.sh が検証)
+claude_stage2="$(OBSIDIAN_VAULT="${OBSIDIAN_VAULT}" bash "${INSTALLER_CLAUDE}" --force 2>/dev/null | awk '/^{/,/^}$/' | jq -r '.hooks.SessionEnd[1].hooks[0].command')"
 if [[ "${claude_stage2}" == "${stage2_cmd}" ]]; then
   ok "IH-CODEX-GIT-SYNC-1: stage 2 command byte-identical to install-hooks.sh Claude SessionEnd (single source of truth)"
 else

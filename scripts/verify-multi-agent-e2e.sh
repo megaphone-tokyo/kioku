@@ -27,7 +27,7 @@
 #   1  fatal error (env / CLI / config 問題、verify fail)
 #
 # 関連:
-#   - scripts/install-hooks-gemini.sh / install-hooks-codex.sh (本 script 内部で呼ぶ)
+#   - scripts/install/user/install-hooks-{gemini,codex}.sh (本 script 内部で呼ぶ)
 #   - docs/install-guide-multi-agent.md (user 向け setup guide)
 #   - handoff/post-release-v0-7-0.md §Checkpoint 1 (本 script の想定利用場面)
 
@@ -125,13 +125,13 @@ if [[ "${AGENT}" == "gemini" ]]; then
   CLI_NAME="gemini"
   INSTALL_HINT="npm install -g @google/gemini-cli"
   CONFIG_PATH="${HOME}/.gemini/settings.json"
-  INSTALL_HOOKS_SCRIPT="${SCRIPT_DIR}/install-hooks-gemini.sh"
+  INSTALL_HOOKS_SCRIPT="${SCRIPT_DIR}/install/user/install-hooks-gemini.sh"
   EXPECTED_HOOK_KEYS=("BeforeAgent" "AfterAgent" "AfterTool" "SessionEnd")
 else  # codex
   CLI_NAME="codex"
   INSTALL_HINT="npm install -g @openai/codex"
   CONFIG_PATH="${HOME}/.codex/hooks.json"
-  INSTALL_HOOKS_SCRIPT="${SCRIPT_DIR}/install-hooks-codex.sh"
+  INSTALL_HOOKS_SCRIPT="${SCRIPT_DIR}/install/user/install-hooks-codex.sh"
   EXPECTED_HOOK_KEYS=("SessionStart" "UserPromptSubmit" "Stop" "PostToolUse")
 fi
 

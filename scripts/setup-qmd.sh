@@ -37,15 +37,8 @@ done
 
 OBSIDIAN_VAULT="${OBSIDIAN_VAULT:-${HOME}/claude-brain/main-claude-brain}"
 
-# R4-001: OBSIDIAN_VAULT のバリデーション
-validate_vault_path() {
-  local p="$1"
-  local safe_re='^[a-zA-Z0-9/._[:space:]-]+$'
-  if [[ ! "${p}" =~ $safe_re ]]; then
-    echo "${LOG_PREFIX} ERROR: OBSIDIAN_VAULT contains unsafe characters: ${p}" >&2
-    exit 1
-  fi
-}
+# R4-001: OBSIDIAN_VAULT のバリデーション (validate_vault_path は lib/install-common.sh の SSOT、PR S6-1)
+source "$(dirname "${BASH_SOURCE[0]}")/lib/install-common.sh"
 validate_vault_path "${OBSIDIAN_VAULT}"
 
 # cron や非対話シェルからも qmd を見つけられるよう、mise shims / Volta を補完する。
@@ -164,7 +157,7 @@ echo "登録済みコレクション:"
 qmd collection list 2>/dev/null || echo "  (qmd collection list failed)"
 echo ""
 echo "次のステップ:"
-echo "  1. MCP デーモンを起動: bash $(dirname "$0")/install-qmd-daemon.sh"
+echo "  1. MCP デーモンを起動: bash $(dirname "$0")/install/internal/install-qmd-daemon.sh"
 echo "  2. ~/.claude/settings.json に qmd MCP サーバー設定を追加"
 echo "     (install-qmd-daemon.sh が完了時に出力する設定例を参照)"
 echo "  3. 動作確認: qmd query \"設計判断\""

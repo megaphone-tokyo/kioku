@@ -16,11 +16,15 @@
 //                          and influences TopN sort
 //   - BLUE-DQ-LEARN-A55-5: regression guard — static 7 source behavior is
 //                          unchanged when session-logs/ is absent (additive only)
+//   - BLUE-DQ-LEARN-S67-1: (v0.11 S6-7, axis F) scanSessionLogs returns
+//                          { count, mtimeMs } per candidate — counts aggregate
+//                          across files, mtimeMs keeps the NEWEST source-file
+//                          mtime (recency anchor for caller-side decay)
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -99,9 +103,10 @@ describe('discoverqueries-learning', () => {
       assert.ok(usage instanceof Map);
       assert.ok(usage.size > 0, 'must extract at least one query');
 
-      // Tags (lowercased)
+      // Tags (lowercased). Values follow the v0.11 S6-7 { count, mtimeMs }
+      // shape — count semantics unchanged from the A55 contract.
       assert.ok(usage.has('hot-cache'), `expected #hot-cache, got: ${Array.from(usage.keys()).join(', ')}`);
-      assert.equal(usage.get('wiki-rotting'), 2, '#wiki-rotting must appear twice');
+      assert.equal(usage.get('wiki-rotting').count, 2, '#wiki-rotting must appear twice');
 
       // Wikilinks (lowercased)
       assert.ok(usage.has('visualizer'), 'expected [[visualizer]]');
@@ -113,6 +118,83 @@ describe('discoverqueries-learning', () => {
         `expected h1 heading, got keys: ${Array.from(usage.keys()).join(', ')}`,
       );
       assert.ok(usage.has('implementation notes'), 'expected h2 heading');
+    } finally {
+      await rm(ws, { recursive: true, force: true });
+    }
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // BLUE-DQ-LEARN-S67-1: recency shape — { count, mtimeMs } per candidate
+  // (v0.11 S6-7, axis F)
+  // ───────────────────────────────────────────────────────────────────────────
+
+  test('BLUE-DQ-LEARN-S67-1: scanSessionLogs returns { count, mtimeMs } with newest source-file mtime', async () => {
+    const ws = await mkdtemp(join(tmpdir(), 'kioku-dq-learn-s67-1-'));
+    const vault = join(ws, 'vault');
+    try {
+      const sessionLogsDir = join(vault, 'session-logs');
+      await mkdir(sessionLogsDir, { recursive: true });
+
+      // Synthetic fixtures (raw real session logs are prohibited as fixtures):
+      // the same query appears in an OLD file and a NEW file — the entry must
+      // aggregate counts across both files while keeping the NEWEST mtime.
+      const oldFile = join(sessionLogsDir, '20260401-000000-aaaa-old.md');
+      const newFile = join(sessionLogsDir, '20260709-000000-bbbb-new.md');
+      await writeFile(
+        oldFile,
+        '## User\n\n#s67-shared-tag old mention\n#s67-old-only-tag here\n',
+      );
+      await writeFile(newFile, '## User\n\n#s67-shared-tag new mention\n');
+
+      const nowMs = Date.now();
+      const oldDate = new Date(nowMs - 60 * 24 * 60 * 60 * 1000); // 60 days ago
+      await utimes(oldFile, oldDate, oldDate);
+
+      const usage = await scanSessionLogs(vault);
+      assert.ok(usage instanceof Map);
+      assert.ok(usage.size > 0, 'must extract at least one query');
+
+      // Every entry follows the { count, mtimeMs } shape.
+      for (const [k, v] of usage.entries()) {
+        assert.ok(v && typeof v === 'object', `entry for "${k}" must be an object`);
+        assert.ok(
+          Number.isFinite(v.count) && v.count > 0,
+          `entry.count for "${k}" must be a positive number`,
+        );
+        assert.ok(
+          Number.isFinite(v.mtimeMs) && v.mtimeMs > 0,
+          `entry.mtimeMs for "${k}" must be a positive ms-epoch`,
+        );
+      }
+
+      // Shared query: counts aggregate across files, mtimeMs = NEWEST file.
+      const shared = usage.get('s67-shared-tag');
+      assert.ok(shared, 'shared tag must be extracted');
+      assert.equal(shared.count, 2, 'shared tag must aggregate counts across old + new files');
+      assert.ok(
+        shared.mtimeMs > nowMs - 5 * 60 * 1000,
+        `shared tag must carry the NEWEST source-file mtime (~now), got ${shared.mtimeMs}`,
+      );
+
+      // Old-only query: mtimeMs matches the backdated old-file mtime.
+      const oldOnly = usage.get('s67-old-only-tag');
+      assert.ok(oldOnly, 'old-only tag must be extracted');
+      assert.ok(
+        Math.abs(oldOnly.mtimeMs - oldDate.getTime()) < 5000,
+        `old-only tag mtimeMs must match backdated file mtime, got ${oldOnly.mtimeMs} vs ${oldDate.getTime()}`,
+      );
+
+      // Chain contract: the scan result Map remains directly consumable by
+      // appendToUsageLog (values are normalized to their count internally).
+      await appendToUsageLog(vault, usage);
+      const persisted = await readUsageLog(vault);
+      const persistedShared = persisted.entries.find((e) => e.query === 's67-shared-tag');
+      assert.ok(persistedShared, 'scan → append chain must persist the shared tag');
+      assert.equal(persistedShared.count, 2, 'persisted count must equal the scan count');
+      assert.ok(
+        !('mtimeMs' in persistedShared),
+        'mtimeMs is a scan-time signal and must NOT be persisted (schema unchanged)',
+      );
     } finally {
       await rm(ws, { recursive: true, force: true });
     }
@@ -373,8 +455,8 @@ describe('discoverqueries-learning', () => {
   });
 
   test('scanSessionLogs returns Map only — caller is responsible for persistence', async () => {
-    // Library-clean contract: scanSessionLogs returns Map<query,count>; the
-    // caller (e.g., qmd-search-index.mjs Source 8) decides whether to call
+    // Library-clean contract: scanSessionLogs returns Map<query,{count,mtimeMs}>;
+    // the caller (e.g., qmd-search-index.mjs Source 8) decides whether to call
     // appendToUsageLog. This separation enables read-only scans (e.g., doctor
     // diagnostics) without side effects on the usage log file.
     const ws = await mkdtemp(join(tmpdir(), 'kioku-dq-learn-aux-6-'));

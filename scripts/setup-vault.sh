@@ -54,16 +54,8 @@ die() {
   exit "${code}"
 }
 
-# OSS-007: OBSIDIAN_VAULT のバリデーション (シェルメタ文字を拒否)
-validate_vault_path() {
-  local p="$1"
-  local safe_re='^[a-zA-Z0-9/._[:space:]-]+$'
-  if [[ ! "${p}" =~ $safe_re ]]; then
-    echo "error: OBSIDIAN_VAULT contains unsafe characters: ${p}" >&2
-    echo "       Only alphanumerics, /, ., _, space, and - are allowed." >&2
-    exit 1
-  fi
-}
+# OSS-007: OBSIDIAN_VAULT のバリデーション (validate_vault_path は lib/install-common.sh の SSOT、PR S6-1)
+source "$(dirname "${BASH_SOURCE[0]}")/lib/install-common.sh"
 
 # -----------------------------------------------------------------------------
 # 入力検証

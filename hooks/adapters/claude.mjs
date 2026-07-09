@@ -13,7 +13,7 @@
 import { pathToFileURL } from 'node:url';
 
 import { buildContext, envTruthy, ingestNormalizedEvent, readStdin } from '../session-logger-core.mjs';
-import { assertTranscriptInRoot, escapeForSystemMessage, safeMain } from './_common.mjs';
+import { assertTranscriptInRoot, debugRejection, escapeForSystemMessage, safeMain } from './_common.mjs';
 
 // -----------------------------------------------------------------------------
 // Claude Code v2 hook_event_name → NormalizedEvent.eventName
@@ -37,13 +37,27 @@ const EVENT_MAP = {
  * @returns {import('../session-logger-core.mjs').NormalizedEvent | null}
  */
 export function claudePayloadToNormalizedEvent(payload) {
-  if (!payload || typeof payload !== 'object') return null;
+  // S6-4 Layer 1: 各 reject 箇所で debugRejection (KIOKU_DEBUG 時のみ stderr、
+  // reason code のみ / payload 値は書かない)。返却契約 (null) は不変。
+  if (!payload || typeof payload !== 'object') {
+    debugRejection('claude', 'INVALID_PAYLOAD');
+    return null;
+  }
   const rawEvent = payload.hook_event_name;
-  if (typeof rawEvent !== 'string') return null;
+  if (typeof rawEvent !== 'string') {
+    debugRejection('claude', 'INVALID_EVENT_NAME');
+    return null;
+  }
   const eventName = EVENT_MAP[rawEvent];
-  if (!eventName) return null;
+  if (!eventName) {
+    debugRejection('claude', 'UNSUPPORTED_EVENT');
+    return null;
+  }
   const sessionId = payload.session_id;
-  if (typeof sessionId !== 'string' || sessionId.length === 0) return null;
+  if (typeof sessionId !== 'string' || sessionId.length === 0) {
+    debugRejection('claude', 'INVALID_SESSION_ID');
+    return null;
+  }
 
   /** @type {import('../session-logger-core.mjs').NormalizedEvent} */
   const normEv = {
