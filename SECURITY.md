@@ -184,4 +184,4 @@ To prevent secrets and security flags from leaking into the child context, `mcp/
 
 This defense-in-depth addresses the risk of a test fixture leaking into production (for example, a developer leaving `KIOKU_URL_ALLOW_LOOPBACK=1` in `~/.zprofile`). Even if the parent leaks, the child is clean.
 
-`scripts/install-mcp-client.sh` writes to `~/Library/Application Support/Claude/claude_desktop_config.json` only with `--apply`. It uses `jq` for idempotent merges, validates `OBSIDIAN_VAULT` against `^[a-zA-Z0-9/._[:space:]-]+$`, refuses to touch broken JSON, and creates `.bak.YYYYMMDD-HHMMSS` backups.
+`scripts/install/internal/install-mcp-client.sh` writes to `~/Library/Application Support/Claude/claude_desktop_config.json` only with `--apply`. It uses `jq` for idempotent merges, validates `OBSIDIAN_VAULT` against `^[a-zA-Z0-9/._[:space:]-]+$`, refuses to touch broken JSON, and creates `.bak.YYYYMMDD-HHMMSS` backups.

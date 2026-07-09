@@ -101,7 +101,7 @@ cat <<EOF
 完了。次に Claude Desktop / Claude Code に kioku MCP を登録してください
 ============================================================
 
-  bash tools/claude-brain/scripts/install-mcp-client.sh --dry-run   # 確認
-  bash tools/claude-brain/scripts/install-mcp-client.sh --apply     # 登録
+  bash tools/claude-brain/scripts/install/internal/install-mcp-client.sh --dry-run   # 確認
+  bash tools/claude-brain/scripts/install/internal/install-mcp-client.sh --apply     # 登録
 
 EOF

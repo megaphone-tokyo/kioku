@@ -1,17 +1,31 @@
 // masking.mjs — 親リポ内の秘密情報マスキング規則と値 sanitize の共通供給源。
 //
 // この ES モジュールは以下から import される:
-//   - hooks/session-logger.mjs           (session-logs/ への書き込み時)
-//   - scripts/mask-text.mjs              (extract-pdf.sh のパイプで使う CLI)
+//   - hooks/session-logger-core.mjs ほか hooks/ 各種 (session-logs/ への書き込み時)
+//   - scripts/mask-text.mjs (extract-pdf.sh のパイプで使う CLI)
+//   - mcp/lib/wiki-snapshot.mjs (snapshot 書き出し時)
 //
-// 独立サブプロジェクト境界の関係で mcp/lib/masking.mjs は同内容を再宣言しており、
-// 完全共通化は設計書 26041705 §11.5 の通り別 PR の課題として残している。
-// 新しいパターンを追加するときは以下 3 箇所を同期すること:
-//   1. tools/claude-brain/scripts/lib/masking.mjs   (本ファイル / 親リポ)
-//   2. tools/claude-brain/mcp/lib/masking.mjs       (MCP 独立プロジェクト)
-//   3. tools/claude-brain/scripts/scan-secrets.sh   (Bash 側 ERE 再表現)
-//
+// masking SSOT の構造 (v0.11 S6-3、plan 26070601 §4.3):
+//   独立サブプロジェクト境界の関係で mcp/lib/masking.mjs は下記 SHARED LITERAL
+//   ブロックを再宣言している。wrapper の関数名が歴史的に 2 系統 (maskText /
+//   applyMasks) あり file 単位の byte-identical 統合は不可能なため、
+//   「SHARED LITERAL ブロックの literal 一致 + thin wrapper の明示分離」を
+//   SSOT の定義とする。新しいパターンを追加するときは以下を同期すること:
+//     1. tools/claude-brain/scripts/lib/masking.mjs   (本ファイル / 親リポ)
+//     2. tools/claude-brain/mcp/lib/masking.mjs       (MCP 独立プロジェクト)
+//     3. tools/claude-brain/scripts/scan-secrets.sh   (Bash 側 ERE 再表現)
+//     4. app/ 側 2 copy は sync-to-app.sh 経由で反映 (直接編集禁止、LEARN#11)
+//   1 ⇔ 2 の同一性は tests/mask-parity.test.mjs が機械 verify する。
+
+// ============================================================================
+// === BEGIN SHARED LITERAL (masking SSOT) ===
+// このブロックは scripts/lib/masking.mjs と mcp/lib/masking.mjs で literal 一致
+// を維持する (plan 26070601 §4.3)。同一性は tests/mask-parity.test.mjs が
+// (a) MASK_RULES の serialize 比較 (b) sanitizeSourceType.toString() 比較
+// (c) 代表 input 12 種の behavioral parity で機械 verify する。
+// このブロックを編集するときは必ず両 file を同時に更新し、同 test を回すこと。
 // 順序重要: 長いプレフィックスから先にマッチさせる。
+// ============================================================================
 
 export const MASK_RULES = [
   [/sk-ant-[A-Za-z0-9\-_]{20,}/g, 'sk-ant-***'],
@@ -43,21 +57,11 @@ export const MASK_RULES = [
   ],
 ];
 
-// pdftotext 抽出テキストや Hook 入力に対してマスキングルールを適用する。
-// MASK_RULES 適用前に、以下の Unicode 不可視/書字方向制御文字を除去したうえで
-// NFC 正規化する。理由はソフトハイフンや ZWSP が ASCII パターンを分断して
-// トークン (sk-ant-*, ghp_*, AKIA*, Bearer *) を素通りさせる攻撃を防ぐため。
+// MASK_RULES 適用前に Unicode 不可視/書字方向制御文字を除去して NFC 正規化する
+// ための前処理 regex。ソフトハイフンや ZWSP が ASCII パターンを分断してトークン
+// (sk-ant-*, ghp_*, AKIA*, Bearer *) を素通りさせる攻撃を防ぐ。
 // 参照: security-review/meeting/2026-04-17_feature-2-red-blue.md (VULN-002/003/014)
 const INVISIBLE_CHARS_RE = /[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\uFEFF]/gu;
-
-export function maskText(text) {
-  if (typeof text !== 'string') return text;
-  let out = text.replace(INVISIBLE_CHARS_RE, '').normalize('NFC');
-  for (const [re, repl] of MASK_RULES) {
-    out = out.replace(re, repl);
-  }
-  return out;
-}
 
 // source_type や frontmatter 由来の短い文字列を YAML/シェルに安全に落とすための
 // sanitize。設計書 26041705 §4.2 の規約に基づき、以下を除去する:
@@ -75,4 +79,26 @@ export function sanitizeSourceType(value) {
     .replace(/[`$;&|]/g, '')
     .normalize('NFC')
     .trim();
+}
+
+// ============================================================================
+// === END SHARED LITERAL ===
+// ============================================================================
+
+// ============================================================================
+// thin wrapper — SHARED LITERAL の外。関数名は歴史的経緯で file ごとに異なる
+// (本 file = maskText / mcp/lib/masking.mjs = applyMasks)。呼び出し元が多く regression 面積が大きいため
+// rename はしない (plan 26070601 §4.3 drift D1)。関数 body は両 file で同一
+// logic を保ち、tests/mask-parity.test.mjs (c) の behavioral parity で verify
+// する。
+// ============================================================================
+
+// pdftotext 抽出テキストや Hook 入力に対してマスキングルールを適用する。
+export function maskText(text) {
+  if (typeof text !== 'string') return text;
+  let out = text.replace(INVISIBLE_CHARS_RE, '').normalize('NFC');
+  for (const [re, repl] of MASK_RULES) {
+    out = out.replace(re, repl);
+  }
+  return out;
 }

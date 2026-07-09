@@ -7,7 +7,9 @@
 //   - Scan ${vault}/session-logs/*.md (top MAX_SCAN_FILES by mtime desc) and
 //     extract user-typed query signals (tag refs / wikilinks / ATX h1-h3
 //     headings) for use as Source 8 in qmd-search-index.mjs discoverQueries
-//     (weight 2.8, highest among all 8 sources).
+//     (weight 2.8, highest among all 8 sources). Each candidate carries the
+//     newest source-file mtime (`mtimeMs`) so the caller can apply recency
+//     decay (v0.11 S6-7, axis F) — decay itself lives in qmd-search-index.mjs.
 //   - Persist a usage log (`.kioku-discoverqueries-usage.json`) of accumulated
 //     query → count entries with FIFO rotation at 64KB cap.
 //
@@ -236,7 +238,11 @@ export async function isOptedOut(vault) {
 /**
  * Scan `${vault}/session-logs/*.md` (top MAX_SCAN_FILES by mtime descending),
  * apply pre-strip + masking + PII sanitize, then extract query signals.
- * Returns Map<string, number> of query → aggregate count across scanned files.
+ * Returns Map<string, { count, mtimeMs }> of query → aggregate count across
+ * scanned files + newest source-file mtime (ms epoch) among the files the
+ * query was seen in. `mtimeMs` is the recency anchor for the caller-side
+ * exponential decay (qmd-search-index.mjs Source 8, v0.11 S6-7 axis F) —
+ * it is a scan-time ranking signal only and is never persisted.
  *
  * Privacy contract:
  *   1. opt-out hard gate (early return empty Map)
@@ -250,7 +256,7 @@ export async function isOptedOut(vault) {
  *
  * @param {string} vault
  * @param {object} [options] - reserved for future scan options (currently ignored); scan is always pure/read-only
- * @returns {Promise<Map<string, number>>}
+ * @returns {Promise<Map<string, { count: number, mtimeMs: number }>>}
  */
 export async function scanSessionLogs(vault, options = {}) {
   void options; // reserved
@@ -299,7 +305,16 @@ export async function scanSessionLogs(vault, options = {}) {
     const sanitized = sanitizePII(masked);
     const signals = extractQuerySignals(sanitized);
     for (const [k, v] of signals.entries()) {
-      out.set(k, (out.get(k) ?? 0) + v);
+      const prev = out.get(k);
+      if (prev) {
+        prev.count += v;
+        // Keep the NEWEST mtime across source files (recency anchor).
+        // `selected` is already mtime-desc, but max() keeps this robust
+        // against future ordering changes.
+        if (c.mtimeMs > prev.mtimeMs) prev.mtimeMs = c.mtimeMs;
+      } else {
+        out.set(k, { count: v, mtimeMs: c.mtimeMs });
+      }
     }
   }
 
@@ -342,7 +357,11 @@ export async function readUsageLog(vault) {
 }
 
 /**
- * Append incoming queries (Map<string, number>) to the usage log. Existing
+ * Append incoming queries to the usage log. Map values may be plain finite
+ * numbers (legacy Map<string, number>) OR `{ count }` objects as returned by
+ * `scanSessionLogs` (v0.11 S6-7 shape) — only the count increment is
+ * persisted; `mtimeMs` is a scan-time ranking signal and is intentionally NOT
+ * written (usage log JSON schema + 64KB FIFO contract unchanged). Existing
  * entries have their `count` incremented and `lastSeen` updated; new entries
  * are created with `firstSeen = lastSeen = now`. The serialized result is
  * checked against USAGE_LOG_MAX_BYTES; oldest entries (by `lastSeen` ASC) are
@@ -353,7 +372,7 @@ export async function readUsageLog(vault) {
  * usage log file is neither created nor modified).
  *
  * @param {string} vault
- * @param {Map<string, number>} queries
+ * @param {Map<string, number | { count: number, mtimeMs?: number }>} queries
  * @returns {Promise<void>}
  */
 export async function appendToUsageLog(vault, queries) {
@@ -387,8 +406,17 @@ export async function appendToUsageLog(vault, queries) {
   }
 
   const now = new Date().toISOString();
-  for (const [query, inc] of queries.entries()) {
+  for (const [query, incRaw] of queries.entries()) {
     if (typeof query !== 'string' || query.length === 0) continue;
+    // Normalize: accept plain finite numbers (legacy shape) and
+    // { count, mtimeMs } objects (scanSessionLogs v0.11 S6-7 shape) so the
+    // documented scan → append chain keeps working across the shape change.
+    const inc =
+      typeof incRaw === 'number'
+        ? incRaw
+        : incRaw && typeof incRaw === 'object' && Number.isFinite(incRaw.count)
+          ? incRaw.count
+          : NaN;
     if (!Number.isFinite(inc) || inc <= 0) continue;
     const prev = idx.get(query);
     if (prev) {

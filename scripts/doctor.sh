@@ -9,6 +9,7 @@
 # 使い方:
 #   bash scripts/doctor.sh           # human-readable な出力 (default)
 #   bash scripts/doctor.sh --json    # 機械 readable な JSON 出力
+#   bash scripts/doctor.sh --quick   # quick-start check: 3 項目のみ・30 秒以内 (--json 併用可)
 #
 # Exit code:
 #   0 = 全 ok
@@ -33,9 +34,11 @@ CB_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"  # tools/claude-brain/
 # Args
 # -----------------------------------------------------------------------------
 JSON_MODE=0
+QUICK_MODE=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --json) JSON_MODE=1; shift ;;
+    --quick) QUICK_MODE=1; shift ;;
     -h|--help)
       cat <<'USAGE'
 KIOKU Doctor — 状態の一括診断 (read-only)
@@ -43,6 +46,7 @@ KIOKU Doctor — 状態の一括診断 (read-only)
 Usage:
   bash scripts/doctor.sh           Human-readable output (default)
   bash scripts/doctor.sh --json    Machine-readable JSON output
+  bash scripts/doctor.sh --quick   Quick-start check: 3 items only, <30s (combinable with --json)
 
 Exit codes:
   0  all ok
@@ -314,7 +318,7 @@ check_hook_configs() {
   elif [[ ! -f "${claude_settings}" ]]; then
     add_check "hook-claude" "fail" \
       "${claude_settings} does not exist" \
-      "bash scripts/install-hooks.sh --apply"
+      "bash scripts/install/user/install-hooks.sh --apply"
   elif [[ "${HAS_JQ}" -ne 1 ]]; then
     add_check "hook-claude" "warn" \
       "jq not available; cannot inspect ${claude_settings}" \
@@ -325,7 +329,7 @@ check_hook_configs() {
   else
     add_check "hook-claude" "fail" \
       "~/.claude/settings.json does not register KIOKU session-logger hook" \
-      "bash scripts/install-hooks.sh --apply"
+      "bash scripts/install/user/install-hooks.sh --apply"
   fi
 
   # Codex hook
@@ -336,7 +340,7 @@ check_hook_configs() {
   elif [[ ! -f "${codex_hooks}" ]]; then
     add_check "hook-codex" "fail" \
       "${codex_hooks} does not exist" \
-      "bash scripts/install-hooks-codex.sh --apply"
+      "bash scripts/install/user/install-hooks-codex.sh --apply"
   elif [[ "${HAS_JQ}" -ne 1 ]]; then
     add_check "hook-codex" "warn" \
       "jq not available; cannot inspect ${codex_hooks}" \
@@ -347,7 +351,7 @@ check_hook_configs() {
   else
     add_check "hook-codex" "fail" \
       "~/.codex/hooks.json does not register KIOKU codex adapter" \
-      "bash scripts/install-hooks-codex.sh --apply"
+      "bash scripts/install/user/install-hooks-codex.sh --apply"
   fi
 
   # Gemini hook
@@ -358,7 +362,7 @@ check_hook_configs() {
   elif [[ ! -f "${gemini_settings}" ]]; then
     add_check "hook-gemini" "fail" \
       "${gemini_settings} does not exist" \
-      "bash scripts/install-hooks-gemini.sh --apply"
+      "bash scripts/install/user/install-hooks-gemini.sh --apply"
   elif [[ "${HAS_JQ}" -ne 1 ]]; then
     add_check "hook-gemini" "warn" \
       "jq not available; cannot inspect ${gemini_settings}" \
@@ -369,7 +373,7 @@ check_hook_configs() {
   else
     add_check "hook-gemini" "fail" \
       "~/.gemini/settings.json does not register KIOKU gemini hooks" \
-      "bash scripts/install-hooks-gemini.sh --apply"
+      "bash scripts/install/user/install-hooks-gemini.sh --apply"
   fi
 }
 
@@ -401,7 +405,7 @@ check_mcp_configs() {
   if [[ ! -f "${claude_desktop_config}" ]]; then
     add_check "mcp-claude-desktop" "warn" \
       "Claude Desktop config not found at ${claude_desktop_config} (Claude Desktop may not be installed)" \
-      "bash scripts/install-mcp-client.sh --apply  # if Claude Desktop is in use"
+      "bash scripts/install/internal/install-mcp-client.sh --apply  # if Claude Desktop is in use"
   elif [[ "${HAS_JQ}" -ne 1 ]]; then
     add_check "mcp-claude-desktop" "warn" \
       "jq not available; cannot inspect ${claude_desktop_config}"
@@ -411,7 +415,7 @@ check_mcp_configs() {
   else
     add_check "mcp-claude-desktop" "fail" \
       "Claude Desktop config does not register KIOKU MCP server" \
-      "bash scripts/install-mcp-client.sh --apply"
+      "bash scripts/install/internal/install-mcp-client.sh --apply"
   fi
 
   # Codex MCP (TOML, jq 不要)
@@ -700,6 +704,72 @@ check_auto_ingest_state() {
 }
 
 # -----------------------------------------------------------------------------
+# Section: Hook health (v0.11 S6-4 Layer 2)
+#
+# hooks (session-logger-core.mjs) は silent failure を errors.log に WARN として
+# structured logging する (S6-4 Layer 1: 空 assistant_stop / transcript TOCTOU
+# 縮小 / transcript 不達など)。doctor は「直近 window 行の WARN 件数」を集計し、
+# 閾値以上なら warn を表示して hook の取りこぼしを可視化する。
+#
+# - window   : 直近 KIOKU_HOOK_WARN_WINDOW 行 (default 200) を tail で読む。
+#              ISO timestamp の時刻 parse は BSD/GNU date 差異があるため
+#              行数 window を採用 (OS 非依存)
+# - threshold: KIOKU_HOOK_WARN_THRESHOLD (default 10)。以上で warn
+# - errors.log 不在 = 健全 default → silent (auto-ingest-manual convention)
+# - threshold 未満は ok 行で件数を表示 (観測性)
+#
+# default 値 (200 / 10) と env 変数名は hooks/wiki-context-injector.mjs の
+# SessionStart 通知 (Layer 3) と共有する。drift すれば OBS-PARITY-1 test
+# (tests/hooks/session-logger-observability.test.mjs) が検出する。
+# -----------------------------------------------------------------------------
+HOOK_WARN_WINDOW_DEFAULT=200
+HOOK_WARN_THRESHOLD_DEFAULT=10
+
+check_hook_health() {
+  if [[ -z "${OBSIDIAN_VAULT:-}" ]] || [[ ! -d "${OBSIDIAN_VAULT}" ]]; then
+    return 0
+  fi
+
+  local errors_log="${OBSIDIAN_VAULT}/session-logs/.claude-brain/errors.log"
+  if [[ ! -f "${errors_log}" ]]; then
+    # absent = 健全 (hook が一度も WARN/ERROR を出していない or hooks 未 install)。
+    # silent (check_auto_ingest_state の "absent = healthy default" convention)
+    return 0
+  fi
+
+  local window="${KIOKU_HOOK_WARN_WINDOW:-${HOOK_WARN_WINDOW_DEFAULT}}"
+  local threshold="${KIOKU_HOOK_WARN_THRESHOLD:-${HOOK_WARN_THRESHOLD_DEFAULT}}"
+  if [[ ! "${window}" =~ ^[0-9]+$ ]] || [[ "${window}" -eq 0 ]]; then
+    window="${HOOK_WARN_WINDOW_DEFAULT}"
+  fi
+  if [[ ! "${threshold}" =~ ^[0-9]+$ ]] || [[ "${threshold}" -eq 0 ]]; then
+    threshold="${HOOK_WARN_THRESHOLD_DEFAULT}"
+  fi
+
+  # `grep -c` は 0 件時に exit 1 を返す。pipefail 下で `|| echo` を使うと
+  # "0\n?" の 2 行 capture になる罠があるため `|| true` + 後段 sanitize
+  # (check_discoverqueries_state axis 2 の既知 pattern に倣う)
+  local warn_count
+  warn_count="$(tail -n "${window}" "${errors_log}" 2>/dev/null | grep -c 'WARN:' || true)"
+  warn_count="$(printf '%s' "${warn_count}" | tr -d ' \n')"
+  if [[ ! "${warn_count}" =~ ^[0-9]+$ ]]; then
+    warn_count=0
+  fi
+
+  if [[ "${warn_count}" -ge "${threshold}" ]]; then
+    add_check "hook-health" "warn" \
+      "Hook errors.log: ${warn_count} WARN entries in last ${window} lines (>= threshold ${threshold} — hooks may be silently failing)" \
+      "Inspect: tail -50 \"\${OBSIDIAN_VAULT}/session-logs/.claude-brain/errors.log\""
+  elif [[ "${warn_count}" -gt 0 ]]; then
+    add_check "hook-health" "ok" \
+      "Hook errors.log: ${warn_count} WARN entries in last ${window} lines (below threshold ${threshold})"
+  else
+    add_check "hook-health" "ok" \
+      "Hook errors.log: no WARN entries in last ${window} lines"
+  fi
+}
+
+# -----------------------------------------------------------------------------
 # Section: DiscoverQueries state (Sprint 5.5 PR B55)
 #
 # Sprint 5.5 PR A55 で導入した discoverQueries 8th source (session-logs/ scan
@@ -752,6 +822,18 @@ check_discoverqueries_state() {
       "Remove \"\${OBSIDIAN_VAULT}/.kioku-discoverqueries-opt-out\" to re-enable session-log learning"
     return 0
   fi
+
+  # axis 4 (v0.11 S6-7): recency decay half-life. Mirrors the resolution in
+  # mcp/lib/qmd-search-index.mjs resolveDqHalfLifeDays(): env
+  # KIOKU_DQ_HALFLIFE_DAYS when a positive number, else default 14. Displayed
+  # only when dynamic learning is enabled (opt-out early-returns above, where
+  # the 8th source — and therefore decay — is skipped entirely).
+  local dq_half_life="${KIOKU_DQ_HALFLIFE_DAYS:-14}"
+  if [[ ! "${dq_half_life}" =~ ^[0-9]+([.][0-9]+)?$ ]] || [[ "${dq_half_life}" =~ ^0+([.]0+)?$ ]]; then
+    dq_half_life=14
+  fi
+  add_check "discoverqueries-recency" "ok" \
+    "DiscoverQueries recency boost: halfLife=${dq_half_life} days (decay active)"
 
   # axis 2: usage log entries count + last-update timestamp. The production
   # appendToUsageLog writes no top-level `lastUpdated` key — only per-entry
@@ -838,6 +920,145 @@ check_dependencies() {
 }
 
 # -----------------------------------------------------------------------------
+# Section: Quick checks (v0.11 S6-6、--quick / quick-start-check)
+#
+# `--quick` は「KIOKU の quick start が成立しているか」を 30 秒以内・3 項目で
+# 判定する軽量 view。新規 script は作らず doctor.sh 内の flag で実装する
+# (doctor.sh = 健康判定の唯一 SSOT、meeting 26070701 UX 役条件)。
+# full check との対応表は context/26-doctor.md §Quick check を参照。
+#
+# 3 check:
+# - quick-session-log : session-logs/ に 24h 以内の *.md がある。Hook が実際に
+#                       ログを出している「結果」の evidence check (full 側の
+#                       hook-claude/codex/gemini は config 登録を見る「設定」check)
+# - quick-wiki        : wiki/ に .md が 1 file 以上ある (ingest 済の evidence)
+# - quick-mcp-config  : いずれかの MCP client config に kioku 登録がある。
+#                       full 側 mcp-claude-desktop / mcp-codex / mcp-gemini の
+#                       3 check を 1 行に集約 (config 検査のみ、実 server 起動なし)
+#
+# 制約 (30 秒以内保証): network probe (curl) / git 操作を含む check は --quick
+# に含めない。24h 判定は find -mtime -1 (BSD/GNU 共通) を使い stat -f / -c は
+# 使わない。OBSIDIAN_VAULT 未設定でも 3 項目とも必ず 1 行出す (常に 3 行 invariant)。
+# -----------------------------------------------------------------------------
+check_quick_session_log() {
+  if [[ -z "${OBSIDIAN_VAULT:-}" ]]; then
+    add_check "quick-session-log" "fail" \
+      "OBSIDIAN_VAULT is not set — cannot check session-logs/" \
+      "export OBSIDIAN_VAULT=\"\$HOME/claude-brain/main-claude-brain\" in ~/.zshrc or ~/.bashrc"
+    return 0
+  fi
+  local logs_dir="${OBSIDIAN_VAULT}/session-logs"
+  if [[ ! -d "${logs_dir}" ]]; then
+    add_check "quick-session-log" "fail" \
+      "session-logs/ does not exist under Vault" \
+      "bash scripts/setup-vault.sh"
+    return 0
+  fi
+  # -mtime -1 = 24h 未満に更新された file。head -1 で最初の hit で短絡する。
+  # pipefail 下で head の早期 close が find に SIGPIPE を返しても || true で吸収
+  local recent
+  recent="$(find "${logs_dir}" -type f -name "*.md" -mtime -1 2>/dev/null | head -1 || true)"
+  if [[ -n "${recent}" ]]; then
+    add_check "quick-session-log" "ok" \
+      "session-logs/ has a log written within 24h (hooks are producing logs)"
+  else
+    add_check "quick-session-log" "warn" \
+      "session-logs/ has no log newer than 24h (no recent session, or hooks are not firing)" \
+      "Run one Claude Code session, then re-run. If it persists: bash scripts/doctor.sh (full check)"
+  fi
+}
+
+check_quick_wiki() {
+  if [[ -z "${OBSIDIAN_VAULT:-}" ]]; then
+    add_check "quick-wiki" "fail" \
+      "OBSIDIAN_VAULT is not set — cannot check wiki/" \
+      "export OBSIDIAN_VAULT=\"\$HOME/claude-brain/main-claude-brain\" in ~/.zshrc or ~/.bashrc"
+    return 0
+  fi
+  local wiki_dir="${OBSIDIAN_VAULT}/wiki"
+  if [[ ! -d "${wiki_dir}" ]]; then
+    add_check "quick-wiki" "fail" \
+      "wiki/ does not exist under Vault" \
+      "bash scripts/setup-vault.sh"
+    return 0
+  fi
+  local first_md
+  first_md="$(find "${wiki_dir}" -type f -name "*.md" 2>/dev/null | head -1 || true)"
+  if [[ -n "${first_md}" ]]; then
+    add_check "quick-wiki" "ok" \
+      "wiki/ has at least one .md (ingest has produced wiki content)"
+  else
+    add_check "quick-wiki" "warn" \
+      "wiki/ has no .md yet (nothing ingested)" \
+      "Ingest something: /wiki-ingest in Claude Code, or bash scripts/auto-ingest.sh"
+  fi
+}
+
+check_quick_mcp_config() {
+  local home="${HOME}"
+  local uname_s
+  uname_s="$(uname -s 2>/dev/null || echo unknown)"
+
+  # Claude Desktop config path resolution は check_mcp_configs と同一
+  # (CLAUDE_DESKTOP_CONFIG env override 含む) — 判定 marker も full 側と同じ
+  # ものを使い、quick / full で健康表示が分裂しないようにする
+  local claude_desktop_config
+  if [[ "${uname_s}" == "Darwin" ]]; then
+    claude_desktop_config="${home}/Library/Application Support/Claude/claude_desktop_config.json"
+  else
+    claude_desktop_config="${home}/.config/Claude/claude_desktop_config.json"
+  fi
+  if [[ -n "${CLAUDE_DESKTOP_CONFIG:-}" ]]; then
+    claude_desktop_config="${CLAUDE_DESKTOP_CONFIG}"
+  fi
+  local codex_config="${home}/.codex/config.toml"
+  local gemini_settings="${home}/.gemini/settings.json"
+
+  local found="" candidates=0 jq_blocked=0
+
+  if [[ -f "${claude_desktop_config}" ]]; then
+    candidates=$((candidates + 1))
+    if json_string_contains "${claude_desktop_config}" "kioku"; then
+      found="Claude Desktop config"
+    elif [[ "${HAS_JQ}" -ne 1 ]]; then
+      jq_blocked=1
+    fi
+  fi
+  if [[ -z "${found}" && -f "${codex_config}" ]]; then
+    candidates=$((candidates + 1))
+    if grep -qE '^\[mcp_servers\.(kioku|"kioku|kioku-wiki|"kioku-wiki)' "${codex_config}"; then
+      found="Codex config.toml"
+    fi
+  fi
+  if [[ -z "${found}" && -f "${gemini_settings}" ]]; then
+    candidates=$((candidates + 1))
+    if [[ "${HAS_JQ}" -eq 1 ]] && jq -e '.mcpServers // {} | has("kioku") or has("kioku-wiki")' \
+        "${gemini_settings}" >/dev/null 2>&1; then
+      found="Gemini settings"
+    elif [[ "${HAS_JQ}" -ne 1 ]]; then
+      jq_blocked=1
+    fi
+  fi
+
+  if [[ -n "${found}" ]]; then
+    add_check "quick-mcp-config" "ok" \
+      "MCP config registers KIOKU: ${found} (config-level check; server not launched)"
+  elif [[ "${jq_blocked}" -eq 1 ]]; then
+    add_check "quick-mcp-config" "warn" \
+      "jq not available; cannot inspect MCP client configs" \
+      "brew install jq  # or: apt-get install jq"
+  elif [[ "${candidates}" -eq 0 ]]; then
+    add_check "quick-mcp-config" "warn" \
+      "No MCP client config found (Claude Desktop / Codex / Gemini) — kioku_search is not reachable from any client" \
+      "bash scripts/install/internal/install-mcp-client.sh --apply  # if Claude Desktop is in use"
+  else
+    add_check "quick-mcp-config" "fail" \
+      "MCP client config(s) found but none registers KIOKU — kioku_search will not work" \
+      "bash scripts/install/internal/install-mcp-client.sh --apply"
+  fi
+}
+
+# -----------------------------------------------------------------------------
 # Section: Install mode detection (derived from hook/MCP checks)
 #
 # 既存の hook-* / mcp-* check 結果を集約して、現在の install mode を判定する。
@@ -890,7 +1111,11 @@ detect_install_mode() {
 # -----------------------------------------------------------------------------
 print_text() {
   local total=$((OK_COUNT + WARN_COUNT + FAIL_COUNT))
-  echo "KIOKU Doctor"
+  if [[ "${QUICK_MODE}" -eq 1 ]]; then
+    echo "KIOKU Doctor (quick)"
+  else
+    echo "KIOKU Doctor"
+  fi
   echo ""
 
   local i=0
@@ -908,6 +1133,12 @@ print_text() {
   echo ""
   printf 'Summary: %d ok / %d warn / %d fail\n' \
     "${OK_COUNT}" "${WARN_COUNT}" "${FAIL_COUNT}"
+
+  # quick mode: full 診断への pointer を 1 行 (install mode 判定は quick では
+  # 走らないため INSTALL_MODE_LABEL は空 = 下の [mode] block は出ない)
+  if [[ "${QUICK_MODE}" -eq 1 ]]; then
+    echo "Quick check only (3 items). Run 'bash scripts/doctor.sh' for the full diagnosis."
+  fi
 
   # Install mode (derived view from hook/MCP checks)
   if [[ -n "${INSTALL_MODE_LABEL}" ]]; then
@@ -978,17 +1209,27 @@ print_json() {
 # -----------------------------------------------------------------------------
 # Main
 # -----------------------------------------------------------------------------
-check_environment
-check_runtime
-check_cli_agents
-check_hook_configs
-check_mcp_configs
-check_metadata_parity
-check_dependencies
-check_sync_state
-check_auto_ingest_state
-check_discoverqueries_state
-detect_install_mode
+if [[ "${QUICK_MODE}" -eq 1 ]]; then
+  # --quick: 3 check のみ (v0.11 S6-6)。network / git 操作を含む check は走らせ
+  # ない (30 秒以内保証)。install mode 判定は hook-* / mcp-* check の結果に依存
+  # するため quick では skip する (INSTALL_MODE_LABEL は空のまま)
+  check_quick_session_log
+  check_quick_wiki
+  check_quick_mcp_config
+else
+  check_environment
+  check_runtime
+  check_cli_agents
+  check_hook_configs
+  check_mcp_configs
+  check_metadata_parity
+  check_dependencies
+  check_sync_state
+  check_auto_ingest_state
+  check_hook_health
+  check_discoverqueries_state
+  detect_install_mode
+fi
 
 if [[ "${JSON_MODE}" -eq 1 ]]; then
   print_json

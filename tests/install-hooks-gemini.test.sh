@@ -12,7 +12,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-INSTALLER="${REPO_ROOT}/scripts/install-hooks-gemini.sh"
+INSTALLER="${REPO_ROOT}/scripts/install/user/install-hooks-gemini.sh"
 ADAPTER="${REPO_ROOT}/hooks/adapters/gemini.mjs"
 
 fail_count=0

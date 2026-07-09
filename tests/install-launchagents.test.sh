@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# install-launchagents.test.sh — scripts/install-launchagents.sh のスモークテスト (Phase L)
+# install-launchagents.test.sh — scripts/install/internal/install-launchagents.sh のスモークテスト (Phase L)
 #
 # 実行: bash tools/claude-brain/tests/install-launchagents.test.sh
 #
@@ -22,7 +22,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
-INSTALL_SCRIPT="${REPO_ROOT}/tools/claude-brain/scripts/install-launchagents.sh"
+INSTALL_SCRIPT="${REPO_ROOT}/tools/claude-brain/scripts/install/internal/install-launchagents.sh"
 
 TMPROOT="$(mktemp -d)"
 trap 'rm -rf "${TMPROOT}"' EXIT

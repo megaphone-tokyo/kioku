@@ -59,8 +59,21 @@ for arg in "$@"; do
 done
 
 # -----------------------------------------------------------------------------
-# 環境 sensor — smart default 判定
+# 環境 sensor — smart default 判定 (S6-5: SSOT は scripts/lib/install-common.sh)
+#
+# repo checkout から実行された場合は lib を source する。一方、公開 URL からの
+# 一行実行 (`bash <(curl -fsSL .../install.sh)`) では script 単体で動く必要が
+# あり lib に到達できないため、同一 literal の fallback block を下に持つ。
+# BEGIN/END marker 間は lib/install-common.sh と 1 文字も違えないこと
+# (SHARED LITERAL 方式、tests/install-hierarchy.test.sh の parity assertion が
+# drift を検出する)。
 # -----------------------------------------------------------------------------
+INSTALL_COMMON_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || true)/lib/install-common.sh"
+if [[ -f "${INSTALL_COMMON_LIB}" ]]; then
+  # shellcheck source=lib/install-common.sh
+  source "${INSTALL_COMMON_LIB}"
+else
+# === BEGIN SHARED LITERAL (mode-detection SSOT) ===
 
 # sensor 1: Claude Code CLI が利用可能か (CLI command または settings dir)
 has_claude_code() {
@@ -127,6 +140,9 @@ detect_recommended_mode() {
   fi
   echo "a"
 }
+
+# === END SHARED LITERAL (mode-detection SSOT) ===
+fi
 
 # -----------------------------------------------------------------------------
 # 環境表示 + Mode 決定
@@ -292,19 +308,20 @@ mode_c_dispatch() {
   steps+=("setup-vault:setup-vault.sh")
 
   # Step 2: CLI 別 hook 登録 (検出した CLI に応じて選択)
+  # S6-5: user 直接実行 3 本は scripts/install/user/ 配下に移動
   if has_claude_code; then
-    steps+=("install-hooks:install-hooks.sh")
+    steps+=("install-hooks:install/user/install-hooks.sh")
   fi
   if has_codex; then
-    steps+=("install-hooks-codex:install-hooks-codex.sh")
+    steps+=("install-hooks-codex:install/user/install-hooks-codex.sh")
   fi
   if has_gemini; then
-    steps+=("install-hooks-gemini:install-hooks-gemini.sh")
+    steps+=("install-hooks-gemini:install/user/install-hooks-gemini.sh")
   fi
 
   # Step 3: skills install (Claude Code 専用、CLI 検出時のみ)
   if has_claude_code; then
-    steps+=("install-skills:install-skills.sh")
+    steps+=("install-skills:install/internal/install-skills.sh")
   fi
 
   # 何も CLI が無い場合は明示
@@ -312,7 +329,7 @@ mode_c_dispatch() {
     echo ""
     echo "NOTE: Claude Code / Codex / Gemini いずれも検出されませんでした。"
     echo "      Vault 初期化のみ実行します。後で CLI を install してから:"
-    echo "        bash ${scripts_dir}/install-hooks.sh --apply"
+    echo "        bash ${scripts_dir}/install/user/install-hooks.sh --apply"
     echo "      を手動で実行してください。"
     echo ""
   fi
@@ -322,6 +339,15 @@ mode_c_dispatch() {
     local name="${step%%:*}"
     local script="${step#*:}"
     local path="${scripts_dir}/${script}"
+
+    # S6-5 移行期 fallback: 新 path (install/{user,internal}/) が無い旧 clone
+    # (v0.10 以前の KIOKU_INSTALL_DIR 再利用) では旧 flat path に落とす
+    if [[ ! -f "${path}" ]]; then
+      local legacy_path="${scripts_dir}/$(basename "${script}")"
+      if [[ -f "${legacy_path}" ]]; then
+        path="${legacy_path}"
+      fi
+    fi
 
     if [[ ! -f "${path}" ]]; then
       echo "WARN: ${script} not found at ${path}, skipping" >&2
@@ -366,8 +392,29 @@ mode_c_dispatch_one() {
         bash "${path}"
       fi
       ;;
-    install-hooks|install-hooks-codex|install-hooks-gemini)
-      # install-hooks*.sh は --apply で merge、無しなら stdout 出力 (= 事実上の dry-run)
+    install-hooks)
+      # install-hooks.sh (新 path 版) は S6-5 Mode gate を持つ。ここに来るのは
+      # user が明示的に Mode C を選んだ場合のみ (has_claude_code 検出 + --mode=c)
+      # なので --force を透過して gate を override する。legacy fallback で
+      # 旧 clone (v0.10 以前、--force 未対応) に解決された場合は付けない。
+      # --apply で merge、無しなら stdout 出力 (= 事実上の dry-run)
+      local gate_args=()
+      if [[ "${path}" == */install/user/* ]]; then
+        gate_args+=("--force")
+      fi
+      if [[ "${DRY_RUN}" == "1" ]]; then
+        # stdout 出力のみ (破壊しない)
+        bash "${path}" ${gate_args[@]+"${gate_args[@]}"} >/dev/null
+      else
+        if [[ "${ASSUME_YES}" == "1" ]]; then
+          bash "${path}" --apply --yes ${gate_args[@]+"${gate_args[@]}"}
+        else
+          bash "${path}" --apply ${gate_args[@]+"${gate_args[@]}"}
+        fi
+      fi
+      ;;
+    install-hooks-codex|install-hooks-gemini)
+      # install-hooks-{codex,gemini}.sh は --apply で merge、無しなら stdout 出力 (= 事実上の dry-run)
       if [[ "${DRY_RUN}" == "1" ]]; then
         # 無引数で stdout 出力のみ (破壊しない)
         bash "${path}" >/dev/null

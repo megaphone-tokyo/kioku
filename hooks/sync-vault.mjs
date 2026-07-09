@@ -2,9 +2,9 @@
 // hooks/sync-vault.mjs — Vault Git sync with retry queue (Sprint 4 Phase 4 PR A4).
 //
 // Replaces the inline shell oneliners that previously lived in:
-//   - scripts/install-hooks.sh         SessionStart (pull) / SessionEnd (push)
-//   - scripts/install-hooks-gemini.sh  same pair
-//   - scripts/install-hooks-codex.sh   same pair
+//   - scripts/install/user/install-hooks.sh         SessionStart (pull) / SessionEnd (push)
+//   - scripts/install/user/install-hooks-gemini.sh  same pair
+//   - scripts/install/user/install-hooks-codex.sh   same pair
 //
 // Two CLI modes invoked by hook commands:
 //   --pull-and-retry  (SessionStart): git pull --rebase, then drain retry queue

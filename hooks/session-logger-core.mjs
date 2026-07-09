@@ -217,7 +217,12 @@ export async function writeErrorLog(ctx, msg) {
   if (!ctx || !ctx.internalDir) return;
   try {
     await mkdir(ctx.internalDir, { recursive: true });
-    const line = `[${new Date().toISOString()}] ${msg}\n`;
+    // S6-4 (G-1): errors.log への全出力は masking SSOT (maskText) を必ず経由する。
+    // message には err.message 等の環境由来文字列 (path / URL) が混ざるため、
+    // credential 二次漏洩をこの単一 choke point で一括遮断する (per-call 側の
+    // mask 忘れに依存しない)。payload 本体はそもそも渡さない (shape のみ) 規約
+    // だが、defense-in-depth として choke point 側でも mask する。
+    const line = `[${new Date().toISOString()}] ${mask(String(msg))}\n`;
     await appendFile(join(ctx.internalDir, 'errors.log'), line, 'utf8');
   } catch {
     // 無視
@@ -437,6 +442,18 @@ export async function ensureSessionFile(ctx, index, normEv, ts) {
 // イベントハンドラ (NormalizedEvent 対応、agent 非依存)
 // -----------------------------------------------------------------------------
 
+// S6-4 Layer 1 (F-hooks-06): transcript の stat() → open() 間 TOCTOU 縮小検出の
+// 純関数部。openSize < statSize (truncate / rotate) なら offset を 0 に戻して
+// open 時点の実 size を read 上限にする。それ以外は現行挙動 (旧 stat の size を
+// 上限、追記分は次回 Stop で拾う) を維持。handler 内の race を決定的に再現
+// できないため、分岐 logic をここに分離して unit test で pin する (OBS-CORE-*)。
+export function resolveTranscriptWindow(offset, statSize, openSize) {
+  if (openSize < statSize) {
+    return { offset: 0, size: openSize, shrank: true };
+  }
+  return { offset, size: statSize, shrank: false };
+}
+
 async function handleUserPrompt(normEv, ctx, index, entry, ts) {
   const text = normEv.userPrompt?.text;
   if (typeof text !== 'string' || text.length === 0) return OUTPUT_NONE;
@@ -478,7 +495,21 @@ async function handleAssistantStop(normEv, ctx, index, entry, ts) {
     try {
       const fh = await open(transcriptPath, 'r');
       try {
-        const toRead = fileStat.size - offset;
+        // S6-4 Layer 1 (F-hooks-06): stat() と open() の間に transcript が縮小
+        // (truncate / rotate) される TOCTOU window の検出。旧 stat の size で
+        // read すると short read の NUL 埋め buffer が chunk に混入し、offset
+        // 計算も無効になる。open 済 fd の fh.stat() で size を再取得し、縮小を
+        // 検出したら offset=0 リセット + WARN log (silent 失敗の可視化)。
+        const liveStat = await fh.stat();
+        const win = resolveTranscriptWindow(offset, fileStat.size, liveStat.size);
+        if (win.shrank) {
+          await writeErrorLog(
+            ctx,
+            `WARN: transcript shrank between stat and open (session=${normEv.sessionId} statSize=${fileStat.size} openSize=${liveStat.size}) — offset reset to 0`,
+          );
+        }
+        offset = win.offset;
+        const toRead = win.size - offset;
         if (toRead <= 0) return OUTPUT_NONE;
         const buf = Buffer.alloc(toRead);
         await fh.read(buf, 0, toRead, offset);
@@ -522,6 +553,14 @@ async function handleAssistantStop(normEv, ctx, index, entry, ts) {
     entry.transcript_read_offset = newOffset;
 
     if (assistantTexts.length === 0) {
+      // S6-4 Layer 1: silent return の observability 化。schema drift /
+      // thinking-only turn / corrupted transcript の判別材料として WARN を残す。
+      // transcript 本文は書かない (shape = 行数のみ)。件数は doctor.sh
+      // check_hook_health (Layer 2) と SessionStart 通知 (Layer 3) が集計する。
+      await writeErrorLog(
+        ctx,
+        `WARN: assistant_stop yielded no text (schema drift / thinking-only / corrupted transcript) session=${normEv.sessionId} consumedLines=${consumedLines.length}`,
+      );
       return OUTPUT_NONE;
     }
 

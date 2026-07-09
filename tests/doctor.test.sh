@@ -155,6 +155,40 @@ run_doctor() {
     bash "${DOCTOR}"
 }
 
+# run_doctor と同じ env 組み立てで `--quick` を渡す (v0.11 S6-6)。
+# run_doctor は末尾可変長引数を env entries として受けるため script 引数を
+# 渡せない — quick 用に helper を分ける (env 組み立ての duplication は許容)。
+run_doctor_quick() {
+  local case_dir="$1"; shift
+  local home="${case_dir}/home"
+  local case_bin="${case_dir}/bin"
+  local path
+  path="$(build_path "${case_bin}")"
+
+  env -i \
+    HOME="${home}" \
+    PATH="${path}" \
+    TMPDIR="${TMPDIR:-/tmp}" \
+    "$@" \
+    bash "${DOCTOR}" --quick
+}
+
+# `--quick --json` 組合せ (v0.11 S6-6 受け入れ基準)
+run_doctor_quick_json() {
+  local case_dir="$1"; shift
+  local home="${case_dir}/home"
+  local case_bin="${case_dir}/bin"
+  local path
+  path="$(build_path "${case_bin}")"
+
+  env -i \
+    HOME="${home}" \
+    PATH="${path}" \
+    TMPDIR="${TMPDIR:-/tmp}" \
+    "$@" \
+    bash "${DOCTOR}" --quick --json
+}
+
 # -----------------------------------------------------------------------------
 # Stub builders for common scenarios
 #
@@ -519,7 +553,12 @@ EOF
 
   assert_contains "${out}" "[fail] ~/.claude/settings.json does not register KIOKU session-logger hook" \
     "HOOK-CLAUDE-2: fail line"
-  assert_contains "${out}" "install-hooks.sh --apply" "HOOK-CLAUDE-2: suggests install-hooks.sh"
+  # v0.11 S6-6: hint は S6-5 の新階層 path を指す (旧 flat path は shim 経由で
+  # 動くが、hint は新 path に統一。negative assertion で旧 path 回帰を pinning)
+  assert_contains "${out}" "bash scripts/install/user/install-hooks.sh --apply" \
+    "HOOK-CLAUDE-2: suggests install-hooks.sh at new hierarchy path"
+  assert_not_contains "${out}" "bash scripts/install-hooks.sh" \
+    "HOOK-CLAUDE-2: old flat path no longer suggested"
   assert_eq "1" "${rc}" "HOOK-CLAUDE-2: exit code 1"
 }
 
@@ -1127,6 +1166,306 @@ EOF
     "DQ-INT-1: discoverqueries-usage active line surfaces in integrated output"
   assert_contains "${out}" "queries learned" \
     "DQ-INT-1: entries count parsed from production-schema usage log"
+
+  # v0.11 S6-7 (axis F): recency decay half-life surfaces (run_doctor is
+  # env -i clean, so KIOKU_DQ_HALFLIFE_DAYS is unset → default 14).
+  assert_contains "${out}" "halfLife=14 days (decay active)" \
+    "DQ-INT-2: recency decay half-life line surfaces with default 14"
+
+  # env override: KIOKU_DQ_HALFLIFE_DAYS=7 → halfLife=7 days
+  local out_hl7
+  set +e
+  out_hl7="$(run_doctor "${d}" OBSIDIAN_VAULT="${d}/vault" KIOKU_DQ_HALFLIFE_DAYS=7 2>&1)"
+  set -e
+  assert_contains "${out_hl7}" "halfLife=7 days (decay active)" \
+    "DQ-INT-3: KIOKU_DQ_HALFLIFE_DAYS env override surfaces in recency line"
+
+  # invalid env value falls back to default 14 (mirrors resolveDqHalfLifeDays)
+  local out_hlbad
+  set +e
+  out_hlbad="$(run_doctor "${d}" OBSIDIAN_VAULT="${d}/vault" KIOKU_DQ_HALFLIFE_DAYS=abc 2>&1)"
+  set -e
+  assert_contains "${out_hlbad}" "halfLife=14 days (decay active)" \
+    "DQ-INT-4: invalid KIOKU_DQ_HALFLIFE_DAYS falls back to default 14"
+}
+
+# -----------------------------------------------------------------------------
+# BLUE-DOCTOR-HOOK-HEALTH-* (v0.11 S6-4 Layer 2): check_hook_health
+#
+# errors.log (session-logs/.claude-brain/errors.log) の直近 window 行の WARN
+# 件数集計。閾値以上 → warn / 未満 → ok (件数表示) / log 不在 → silent。
+# window / threshold は KIOKU_HOOK_WARN_WINDOW / KIOKU_HOOK_WARN_THRESHOLD で
+# 可変 (default 200 / 10、injector Layer 3 と共有 — OBS-PARITY-1 が pin)。
+# -----------------------------------------------------------------------------
+
+# make_errors_log <vault> <warn_n> [debug_n]: WARN 行 warn_n 件 + DEBUG 行
+# debug_n 件 (WARN の後に追記 = より新しい) の synthetic errors.log を作る。
+# 実セッションログ raw は使わない (synthetic fixture のみ)。
+make_errors_log() {
+  local vault="$1"
+  local warn_n="$2"
+  local debug_n="${3:-0}"
+  mkdir -p "${vault}/session-logs/.claude-brain"
+  local f="${vault}/session-logs/.claude-brain/errors.log"
+  : > "${f}"
+  local i
+  for ((i = 1; i <= warn_n; i++)); do
+    printf '[2026-07-09T00:00:00.000Z] WARN: assistant_stop yielded no text (schema drift / thinking-only / corrupted transcript) session=test-session-hh%d consumedLines=1\n' "${i}" >> "${f}"
+  done
+  for ((i = 1; i <= debug_n; i++)); do
+    printf '[2026-07-09T01:00:00.000Z] DEBUG: handled user_prompt session=test-ses\n' >> "${f}"
+  done
+}
+
+test_hook_health_warn_over_threshold() {
+  echo "BLUE-DOCTOR-HOOK-HEALTH-1: WARN 12 件 (>= default threshold 10) → warn"
+  local d
+  d="$(new_case "hook-health-over")"
+  stub_full_clis "${d}/bin"
+  stub_node_18 "${d}/bin"
+  init_full_vault "${d}/vault"
+  make_errors_log "${d}/vault" 12
+
+  local out
+  set +e
+  out="$(run_doctor "${d}" OBSIDIAN_VAULT="${d}/vault" 2>&1)"
+  set -e
+
+  assert_contains "${out}" "[warn] Hook errors.log: 12 WARN entries in last 200 lines" \
+    "HOOK-HEALTH-1: warn line with WARN count over threshold"
+  assert_contains "${out}" "hooks may be silently failing" \
+    "HOOK-HEALTH-1: warn line explains silent failure risk"
+  assert_contains "${out}" 'tail -50 "${OBSIDIAN_VAULT}/session-logs/.claude-brain/errors.log"' \
+    "HOOK-HEALTH-1: next action points at errors.log"
+}
+
+test_hook_health_below_threshold() {
+  echo "BLUE-DOCTOR-HOOK-HEALTH-2: WARN 2 件 (< default threshold 10) → ok (件数表示)"
+  local d
+  d="$(new_case "hook-health-below")"
+  stub_full_clis "${d}/bin"
+  stub_node_18 "${d}/bin"
+  init_full_vault "${d}/vault"
+  make_errors_log "${d}/vault" 2
+
+  local out
+  set +e
+  out="$(run_doctor "${d}" OBSIDIAN_VAULT="${d}/vault" 2>&1)"
+  set -e
+
+  assert_contains "${out}" "[ok]   Hook errors.log: 2 WARN entries in last 200 lines (below threshold 10)" \
+    "HOOK-HEALTH-2: ok line with WARN count below threshold"
+  assert_not_contains "${out}" "[warn] Hook errors.log" \
+    "HOOK-HEALTH-2: no warn line below threshold"
+}
+
+test_hook_health_absent_log_silent() {
+  echo "BLUE-DOCTOR-HOOK-HEALTH-3: errors.log 不在 → silent (healthy default)"
+  local d
+  d="$(new_case "hook-health-absent")"
+  stub_full_clis "${d}/bin"
+  stub_node_18 "${d}/bin"
+  init_full_vault "${d}/vault"
+
+  local out
+  set +e
+  out="$(run_doctor "${d}" OBSIDIAN_VAULT="${d}/vault" 2>&1)"
+  set -e
+
+  assert_not_contains "${out}" "Hook errors.log" \
+    "HOOK-HEALTH-3: no hook-health line when errors.log is absent"
+}
+
+test_hook_health_window_and_threshold_env() {
+  echo "BLUE-DOCTOR-HOOK-HEALTH-4: KIOKU_HOOK_WARN_WINDOW / _THRESHOLD env override"
+  local d
+  d="$(new_case "hook-health-env")"
+  stub_full_clis "${d}/bin"
+  stub_node_18 "${d}/bin"
+  init_full_vault "${d}/vault"
+
+  # 4a: WARN 5 件の後に DEBUG 10 行 → window=10 では WARN が window 外
+  make_errors_log "${d}/vault" 5 10
+  local out_win
+  set +e
+  out_win="$(run_doctor "${d}" OBSIDIAN_VAULT="${d}/vault" KIOKU_HOOK_WARN_WINDOW=10 2>&1)"
+  set -e
+  assert_contains "${out_win}" "[ok]   Hook errors.log: no WARN entries in last 10 lines" \
+    "HOOK-HEALTH-4a: old WARN entries outside the window are not counted"
+
+  # 4b: WARN 5 件のみ + threshold=3 → warn
+  make_errors_log "${d}/vault" 5
+  local out_th
+  set +e
+  out_th="$(run_doctor "${d}" OBSIDIAN_VAULT="${d}/vault" KIOKU_HOOK_WARN_THRESHOLD=3 2>&1)"
+  set -e
+  assert_contains "${out_th}" "[warn] Hook errors.log: 5 WARN entries in last 200 lines (>= threshold 3" \
+    "HOOK-HEALTH-4b: lowered threshold via env triggers warn"
+}
+
+# -----------------------------------------------------------------------------
+# BLUE-DOCTOR-QUICK-* (v0.11 S6-6): --quick / quick-start-check
+#
+# --quick は 3 check のみ (quick-session-log / quick-wiki / quick-mcp-config)。
+# network probe (curl) / git 操作 / install mode 判定は走らない。
+# -----------------------------------------------------------------------------
+test_quick_healthy() {
+  echo "BLUE-DOCTOR-QUICK-1: healthy quick state → 3 [ok] + exit 0 (network/git/mode なし)"
+  local d
+  d="$(new_case "quick-healthy")"
+  stub_full_clis "${d}/bin"
+  stub_node_18 "${d}/bin"
+  init_full_vault_with_commit "${d}/vault"
+  # 24h 以内の session log + wiki 1 md + Codex MCP config (kioku 登録)
+  touch "${d}/vault/session-logs/20260709-000000-abcd-fresh.md"
+  echo "# index" > "${d}/vault/wiki/index.md"
+  mkdir -p "${d}/home/.codex"
+  cat >"${d}/home/.codex/config.toml" <<'EOF'
+[mcp_servers.kioku]
+command = "node"
+args = ["/x/server.mjs"]
+EOF
+
+  local out
+  set +e
+  out="$(run_doctor_quick "${d}" OBSIDIAN_VAULT="${d}/vault" 2>&1)"
+  local rc=$?
+  set -e
+
+  assert_contains "${out}" "KIOKU Doctor (quick)" "QUICK-1: quick header"
+  assert_contains "${out}" "[ok]   session-logs/ has a log written within 24h" \
+    "QUICK-1: quick-session-log ok"
+  assert_contains "${out}" "[ok]   wiki/ has at least one .md" \
+    "QUICK-1: quick-wiki ok"
+  assert_contains "${out}" "[ok]   MCP config registers KIOKU: Codex config.toml" \
+    "QUICK-1: quick-mcp-config ok (config-level)"
+  assert_contains "${out}" "Summary: 3 ok / 0 warn / 0 fail" \
+    "QUICK-1: exactly 3 checks in summary"
+  assert_eq "0" "${rc}" "QUICK-1: exit 0"
+  # 30 秒制約: network / git / install mode 系が quick で走らないことを pinning
+  # (vault は git repo + commit 済なので、走っていれば必ず出力に現れる)
+  assert_not_contains "${out}" "Network:" "QUICK-1: no network probe in quick"
+  assert_not_contains "${out}" "Last Vault commit:" "QUICK-1: no git log check in quick"
+  assert_not_contains "${out}" "[mode]" "QUICK-1: no install mode block in quick"
+}
+
+test_quick_stale_log_and_empty_wiki() {
+  echo "BLUE-DOCTOR-QUICK-2: session log >24h + wiki empty → 2 warn + exit 2"
+  local d
+  d="$(new_case "quick-stale")"
+  stub_full_clis "${d}/bin"
+  stub_node_18 "${d}/bin"
+  init_full_vault "${d}/vault"
+  # session log は 2026-01-01 の stale file のみ、wiki/ は empty のまま
+  touch -t 202601010000 "${d}/vault/session-logs/20260101-old.md"
+  mkdir -p "${d}/home/.codex"
+  cat >"${d}/home/.codex/config.toml" <<'EOF'
+[mcp_servers.kioku]
+command = "node"
+EOF
+
+  local out
+  set +e
+  out="$(run_doctor_quick "${d}" OBSIDIAN_VAULT="${d}/vault" 2>&1)"
+  local rc=$?
+  set -e
+
+  assert_contains "${out}" "[warn] session-logs/ has no log newer than 24h" \
+    "QUICK-2: stale session log → warn"
+  assert_contains "${out}" "[warn] wiki/ has no .md yet" \
+    "QUICK-2: empty wiki → warn"
+  assert_eq "2" "${rc}" "QUICK-2: exit 2 (warn only)"
+}
+
+test_quick_mcp_not_registered() {
+  echo "BLUE-DOCTOR-QUICK-3: MCP config はあるが kioku 未登録 → fail + 新 path hint"
+  local d
+  d="$(new_case "quick-mcp-fail")"
+  stub_full_clis "${d}/bin"
+  stub_node_18 "${d}/bin"
+  init_full_vault "${d}/vault"
+  touch "${d}/vault/session-logs/20260709-000000-abcd-fresh.md"
+  echo "# index" > "${d}/vault/wiki/index.md"
+  mkdir -p "${d}/home/.codex"
+  cat >"${d}/home/.codex/config.toml" <<'EOF'
+[mcp_servers.other]
+command = "node"
+EOF
+
+  local out
+  set +e
+  out="$(run_doctor_quick "${d}" OBSIDIAN_VAULT="${d}/vault" 2>&1)"
+  local rc=$?
+  set -e
+
+  assert_contains "${out}" "[fail] MCP client config(s) found but none registers KIOKU" \
+    "QUICK-3: kioku 未登録 config → fail"
+  assert_contains "${out}" "bash scripts/install/internal/install-mcp-client.sh --apply" \
+    "QUICK-3: hint は S6-5 新階層 path"
+  assert_eq "1" "${rc}" "QUICK-3: exit 1 (fail)"
+}
+
+test_quick_vault_unset() {
+  echo "BLUE-DOCTOR-QUICK-4: OBSIDIAN_VAULT 未設定でも常に 3 項目 (invariant)"
+  local d
+  d="$(new_case "quick-unset")"
+  stub_full_clis "${d}/bin"
+  stub_node_18 "${d}/bin"
+
+  local out
+  set +e
+  out="$(run_doctor_quick "${d}" 2>&1)"
+  local rc=$?
+  set -e
+
+  assert_contains "${out}" "[fail] OBSIDIAN_VAULT is not set — cannot check session-logs/" \
+    "QUICK-4: session-log check は vault 未設定を fail 報告"
+  assert_contains "${out}" "[fail] OBSIDIAN_VAULT is not set — cannot check wiki/" \
+    "QUICK-4: wiki check は vault 未設定を fail 報告"
+  # HOME 配下に MCP config が 1 つも無い → warn (常に 3 行 invariant の 3 行目)
+  assert_contains "${out}" "Summary: 0 ok / 1 warn / 2 fail" \
+    "QUICK-4: 3 項目 invariant (2 fail + 1 warn)"
+  assert_eq "1" "${rc}" "QUICK-4: exit 1"
+}
+
+test_quick_json() {
+  echo "BLUE-DOCTOR-QUICK-5: --quick --json → 3 checks の valid JSON"
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "  skip  jq not available"
+    return 0
+  fi
+  local d
+  d="$(new_case "quick-json")"
+  stub_full_clis "${d}/bin"
+  stub_node_18 "${d}/bin"
+  init_full_vault "${d}/vault"
+  touch "${d}/vault/session-logs/20260709-000000-abcd-fresh.md"
+  echo "# index" > "${d}/vault/wiki/index.md"
+  mkdir -p "${d}/home/.codex"
+  cat >"${d}/home/.codex/config.toml" <<'EOF'
+[mcp_servers.kioku]
+command = "node"
+EOF
+
+  local out
+  set +e
+  out="$(run_doctor_quick_json "${d}" OBSIDIAN_VAULT="${d}/vault" 2>/dev/null)"
+  local rc=$?
+  set -e
+
+  local valid
+  valid="$(printf '%s' "${out}" | jq -r 'type' 2>/dev/null || echo "invalid")"
+  assert_eq "object" "${valid}" "QUICK-5: --quick --json は valid JSON object"
+
+  local checks_len ok_count ids
+  checks_len="$(printf '%s' "${out}" | jq -r '.checks | length' 2>/dev/null || echo "?")"
+  ok_count="$(printf '%s' "${out}" | jq -r '.summary.ok' 2>/dev/null || echo "?")"
+  ids="$(printf '%s' "${out}" | jq -r '[.checks[].id] | join(",")' 2>/dev/null || echo "?")"
+  assert_eq "3" "${checks_len}" "QUICK-5: checks は 3 件"
+  assert_eq "3" "${ok_count}" "QUICK-5: summary.ok = 3"
+  assert_eq "quick-session-log,quick-wiki,quick-mcp-config" "${ids}" \
+    "QUICK-5: check id は quick-* 3 種 (この順)"
+  assert_eq "0" "${rc}" "QUICK-5: exit 0"
 }
 
 # -----------------------------------------------------------------------------
@@ -1157,7 +1496,16 @@ test_install_mode_unknown
 test_install_mode_json
 test_sync_state_integrated
 test_auto_ingest_state_integrated
+test_hook_health_warn_over_threshold
+test_hook_health_below_threshold
+test_hook_health_absent_log_silent
+test_hook_health_window_and_threshold_env
 test_discoverqueries_state_integrated
+test_quick_healthy
+test_quick_stale_log_and_empty_wiki
+test_quick_mcp_not_registered
+test_quick_vault_unset
+test_quick_json
 
 echo ""
 echo "doctor.test.sh: ${PASS} passed, ${FAIL} failed"

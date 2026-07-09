@@ -13,7 +13,7 @@
 import { pathToFileURL } from 'node:url';
 
 import { buildContext, envTruthy, ingestNormalizedEvent, readStdin } from '../session-logger-core.mjs';
-import { assertTranscriptInRoot, safeMain } from './_common.mjs';
+import { assertTranscriptInRoot, debugRejection, safeMain } from './_common.mjs';
 
 // -----------------------------------------------------------------------------
 // Gemini CLI hook_event_name → NormalizedEvent.eventName
@@ -74,13 +74,27 @@ function remapToolName(geminiName) {
  * @returns {import('../session-logger-core.mjs').NormalizedEvent | null}
  */
 export function geminiPayloadToNormalizedEvent(payload) {
-  if (!payload || typeof payload !== 'object') return null;
+  // S6-4 Layer 1: 各 reject 箇所で debugRejection (KIOKU_DEBUG 時のみ stderr、
+  // reason code のみ / payload 値は書かない)。返却契約 (null) は不変。
+  if (!payload || typeof payload !== 'object') {
+    debugRejection('gemini', 'INVALID_PAYLOAD');
+    return null;
+  }
   const rawEvent = payload.hook_event_name;
-  if (typeof rawEvent !== 'string') return null;
+  if (typeof rawEvent !== 'string') {
+    debugRejection('gemini', 'INVALID_EVENT_NAME');
+    return null;
+  }
   const eventName = EVENT_MAP[rawEvent];
-  if (!eventName) return null;
+  if (!eventName) {
+    debugRejection('gemini', 'UNSUPPORTED_EVENT');
+    return null;
+  }
   const sessionId = payload.session_id;
-  if (typeof sessionId !== 'string' || sessionId.length === 0) return null;
+  if (typeof sessionId !== 'string' || sessionId.length === 0) {
+    debugRejection('gemini', 'INVALID_SESSION_ID');
+    return null;
+  }
 
   /** @type {import('../session-logger-core.mjs').NormalizedEvent} */
   const normEv = {
@@ -110,6 +124,7 @@ export function geminiPayloadToNormalizedEvent(payload) {
     const geminiToolName = payload.tool_name;
     if (typeof geminiToolName !== 'string' || geminiToolName.length === 0) {
       // tool_name 不在 / 非文字列 → tool_use event 自体を reject (null 返却)
+      debugRejection('gemini', 'INVALID_TOOL_NAME');
       return null;
     }
     const canonical = remapToolName(geminiToolName);
@@ -117,6 +132,7 @@ export function geminiPayloadToNormalizedEvent(payload) {
       // PR #56 SF-C review fix: remapToolName が null → 未知 tool or canonical
       // 名 spoof attempt。tool_use event 自体を reject して core validation に
       // 届ける前に silent drop する。
+      debugRejection('gemini', 'UNSUPPORTED_TOOL');
       return null;
     }
     normEv.toolUse = {

@@ -229,7 +229,9 @@ describe('wiki-context-injector — hot cache (v0.5.1 Phase B)', () => {
 
       const ss = await runInjector({ vault, hookEvent: 'SessionStart', debug: true });
       assert.equal(ss.code, 0);
-      assert.match(ss.stderr, /SessionStart: injected \d+ chars \(index=true, hot=true\)/);
+      // v0.11 S6-4 Layer 3: debug log に health flag が追加された (errors.log
+      // 不在の本 case では health=false)
+      assert.match(ss.stderr, /SessionStart: injected \d+ chars \(index=true, hot=true, health=false\)/);
 
       const pc = await runInjector({ vault, hookEvent: 'PostCompact', debug: true });
       assert.equal(pc.code, 0);

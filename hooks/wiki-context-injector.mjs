@@ -34,7 +34,7 @@
 //   - tools/claude-brain/plan/26041502_参照の方法をKarpathyに合わせた形に修正.md (Phase H)
 //   - tools/claude-brain/plan/claude/26042303_feature-roadmap-post-v0-5-0-impl.md §Phase B
 
-import { readFile, realpath } from 'node:fs/promises';
+import { open, readFile, realpath } from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import { maskText as applyMasks } from '../scripts/lib/masking.mjs';
 
@@ -50,6 +50,17 @@ const MAX_HOT_CHARS = 4000;
 // 2026-04-23 v0.5.1 hotfix 2 で追加 (dogfooding で KIOKU の index.md が 17KB に肥大し、
 // hot.md section が末尾配置のため Claude Code cap で落ちる事象を受けて導入)。
 const MAX_INDEX_CHARS = 10000;
+
+// S6-4 Layer 3: hook health 通知の集計 default。errors.log の「直近 window 行の
+// WARN 件数」が threshold 以上のとき SessionStart context に短い通知を入れる。
+// doctor.sh check_hook_health (Layer 2) と同じ default 値・同じ env 変数
+// (KIOKU_HOOK_WARN_WINDOW / KIOKU_HOOK_WARN_THRESHOLD) を共有する。
+// drift すれば OBS-PARITY-1 test (session-logger-observability.test.mjs) が検出。
+const HOOK_WARN_WINDOW_DEFAULT = 200;
+const HOOK_WARN_THRESHOLD_DEFAULT = 10;
+
+// errors.log tail 読み込みの上限 bytes (肥大した log の全読みを避ける defense)。
+const MAX_ERRORS_TAIL_BYTES = 256 * 1024;
 
 // 全エラーを exit 0 に落とすセーフティネット
 process.on('uncaughtException', () => process.exit(0));
@@ -131,7 +142,57 @@ async function loadHotMd(vault) {
   return content;
 }
 
-function buildSessionStartContext({ projectName, index, hot }) {
+// S6-4 Layer 3: hook health 通知。
+//   - errors.log (session-logs/.claude-brain/errors.log) の直近 window 行のうち
+//     `WARN:` を含む行数を数え、threshold 以上なら通知文字列を返す (未満 / log
+//     不在 / 読み取り失敗は null = 通知しない、fail-safe)
+//   - **log 行の本文は一切注入しない** (payload dump 禁止 — 件数と定型文のみ、
+//     shape only)。credential 二次漏洩の regression は OBS-INJ-* canary test で pin
+//   - tail 読みは MAX_ERRORS_TAIL_BYTES に bound し、肥大 log でも定数コスト
+function positiveIntEnv(name, fallback) {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const n = Number.parseInt(String(raw), 10);
+  return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
+async function loadHookHealthNotice(vault) {
+  const errorsPath = join(vault, 'session-logs', '.claude-brain', 'errors.log');
+  let tailText;
+  try {
+    const fh = await open(errorsPath, 'r');
+    try {
+      const s = await fh.stat();
+      const readBytes = Math.min(s.size, MAX_ERRORS_TAIL_BYTES);
+      const position = s.size - readBytes;
+      const buf = Buffer.alloc(readBytes);
+      await fh.read(buf, 0, readBytes, position);
+      tailText = buf.toString('utf8');
+    } finally {
+      await fh.close();
+    }
+  } catch {
+    // errors.log 不在 (ENOENT) = healthy default、読み取り失敗も silent skip
+    return null;
+  }
+  const windowLines = positiveIntEnv('KIOKU_HOOK_WARN_WINDOW', HOOK_WARN_WINDOW_DEFAULT);
+  const threshold = positiveIntEnv('KIOKU_HOOK_WARN_THRESHOLD', HOOK_WARN_THRESHOLD_DEFAULT);
+  const lines = tailText.split('\n').filter((l) => l.length > 0);
+  const recent = lines.slice(-windowLines);
+  const warnCount = recent.filter((l) => l.includes('WARN:')).length;
+  if (warnCount < threshold) return null;
+  debugLog(`hook health notice: ${warnCount} WARN in last ${recent.length} lines (threshold ${threshold})`);
+  return [
+    '### Hook health 注意 (自動診断)',
+    '',
+    `直近の hook 実行で WARN が ${warnCount} 件記録されています (直近 ${recent.length} 行中、閾値 ${threshold})。`,
+    'セッションログの取りこぼし (silent failure) が続いている可能性があります。',
+    '`bash scripts/doctor.sh` で詳細を確認してください',
+    '(log: $OBSIDIAN_VAULT/session-logs/.claude-brain/errors.log)。',
+  ].join('\n');
+}
+
+function buildSessionStartContext({ projectName, index, hot, health }) {
   const lines = [];
   // ルール + プロジェクト情報は常に先頭 (LLM への指示)
   if (index !== null || hot !== null) {
@@ -149,6 +210,13 @@ function buildSessionStartContext({ projectName, index, hot }) {
       `### 現在のプロジェクト: ${projectName}`,
       '### Wiki パス: $OBSIDIAN_VAULT/wiki/',
     );
+  }
+  // S6-4 Layer 3: hook health 通知は先頭近くに置く (短い定型文 + 件数のみ、
+  // cap で落ちないことを優先)。LEARN#9: SessionStart は hookSpecificOutput
+  // schema のため、この context ごと hookSpecificOutput.additionalContext で
+  // 注入される (top-level systemMessage は PostCompact / Stop 用)。
+  if (health !== null && health !== undefined) {
+    lines.push('', health);
   }
   // hot.md を Wiki 目次より前に置く (Claude Code v2 additionalContext cap 対策)
   // hot.md は小さく (≤4000 char) 重要度が高いため先に届くことを優先。
@@ -211,16 +279,18 @@ async function main() {
     return;
   }
 
-  // SessionStart (default) 経路: index.md + (hot.md があれば) を注入
+  // SessionStart (default) 経路: index.md + (hot.md があれば) + (S6-4 Layer 3:
+  // hook health 通知が閾値超えなら) を注入
   const indexPath = join(vault, 'wiki', 'index.md');
   const index = await readFile(indexPath, 'utf-8').catch(() => null);
-  if (index === null && hot === null) return;
+  const health = await loadHookHealthNotice(vault);
+  if (index === null && hot === null && health === null) return;
 
   const cwd = process.cwd();
   const projectName = cwd.split('/').filter(Boolean).pop() || 'unknown';
-  const context = buildSessionStartContext({ projectName, index, hot });
+  const context = buildSessionStartContext({ projectName, index, hot, health });
   debugLog(
-    `SessionStart: injected ${context.length} chars (index=${index !== null}, hot=${hot !== null})`,
+    `SessionStart: injected ${context.length} chars (index=${index !== null}, hot=${hot !== null}, health=${health !== null})`,
   );
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {

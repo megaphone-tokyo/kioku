@@ -8,6 +8,8 @@ import { homedir } from 'node:os';
 import { join, sep } from 'node:path';
 import { realpath } from 'node:fs/promises';
 
+import { envTruthy } from '../session-logger-core.mjs';
+
 // §38 fix: process listener register を module-scope gate で 1 process 内 1 回のみに
 // 限定する。以前は safeMain 呼び出し毎に process.on(...) が register され、同一
 // process 内で safeMain が複数回実行 (test harness で複数 adapter を import +
@@ -65,6 +67,33 @@ export function safeMain(entryFn) {
       () => process.exit(0),
       () => process.exit(0),
     );
+}
+
+// -----------------------------------------------------------------------------
+// S6-4 Layer 1: converter payload rejection の observability (debug-gated)
+// -----------------------------------------------------------------------------
+
+/**
+ * converter (claudePayloadToNormalizedEvent 等) が payload を reject して null を
+ * 返す箇所の可視化。KIOKU_DEBUG が truthy のときだけ stderr に reason code を
+ * 1 行書く (返却契約は不変の軽量案、handoff 26070602 §S6-4 / workflow 1 verify の
+ * Option 2)。ctx 構築前 (buildContext 失敗時や converter 単体) でも env は読める。
+ *
+ * **payload 本体・field 値は絶対に書かない** — reason は closed set の定数文字列
+ * のみ (INVALID_PAYLOAD / INVALID_EVENT_NAME / UNSUPPORTED_EVENT /
+ * INVALID_SESSION_ID / INVALID_TOOL_NAME / UNSUPPORTED_TOOL)。shape のみの規約は
+ * OBS-ADPT-* test の canary assertion で pin する。
+ *
+ * @param {'claude'|'gemini'|'codex'} agent
+ * @param {string} reason 定数 reason code (上記 closed set)
+ */
+export function debugRejection(agent, reason) {
+  if (!envTruthy(process.env.KIOKU_DEBUG)) return;
+  try {
+    process.stderr.write(`[claude-brain] ${agent} adapter: payload rejected (reason=${reason})\n`);
+  } catch {
+    /* ignore */
+  }
 }
 
 // -----------------------------------------------------------------------------
